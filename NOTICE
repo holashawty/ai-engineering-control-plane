@@ -1,0 +1,26 @@
+AI Engineering Control Plane (AIECP)
+Attribution notice for reused / adapted / referenced upstream work.
+
+STATUS: Draft. Every entry below must be re-verified against the live
+upstream repository (license file, current terms) before any code or
+content is vendored into this project. No upstream code has been vendored
+as of Phase 0.
+
+Systems referenced during research (see docs/research.md for detail):
+
+- obra/superpowers            — license: to be verified
+- github/spec-kit             — license: to be verified (believed Apache-2.0)
+- bmad-code-org/BMAD-METHOD   — license: to be verified
+- OpenHands/OpenHands         — license: to be verified (believed MIT)
+- anthropics/skills           — license: to be verified (believed MIT)
+- agentskills/agentskills     — license: to be verified
+- vercel-labs/skills          — license: to be verified
+
+Adjacent systems referenced for design inspiration only (no code reuse
+intended): Aider, Cursor rules, Cline/Roo Code, Continue, Swe-agent,
+MetaGPT, AutoGen, CrewAI, LangGraph, repomix, tree-sitter, ast-grep.
+
+Before Phase 2 (Core) begins, each entry above must be updated with:
+  - confirmed license identifier (SPDX)
+  - confirmed attribution text required by that license
+  - a link to the exact commit/version referenced

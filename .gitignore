@@ -1,0 +1,16 @@
+# local, potentially sensitive pre-authorized automation policy
+.aiecp/policy.local.yaml
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# node / python transient (dev tooling, not yet used)
+node_modules/
+__pycache__/
+*.pyc
+.env
+.env.local
