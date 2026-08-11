@@ -1,26 +1,36 @@
 AI Engineering Control Plane (AIECP)
 Attribution notice for reused / adapted / referenced upstream work.
 
-STATUS: Draft. Every entry below must be re-verified against the live
-upstream repository (license file, current terms) before any code or
-content is vendored into this project. No upstream code has been vendored
-as of Phase 0.
+STATUS: Live-verified via web search on 2026-08-11 (see docs/research.md
+"Verified" notes per repo for sources). No upstream code has been
+vendored as of Phase 0 — this is attribution bookkeeping in advance of
+any future reuse, per ADR-0004/ADR-0013 and CONTRIBUTING.md.
 
-Systems referenced during research (see docs/research.md for detail):
+Note: exact commit SHAs were not captured (no `git clone` / `gh api`
+access in this environment; verification was via web search + page
+fetch of the repos' current default branch). Before any code is
+actually vendored, pin and record the exact commit SHA at vendor time.
 
-- obra/superpowers            — license: to be verified
-- github/spec-kit             — license: to be verified (believed Apache-2.0)
-- bmad-code-org/BMAD-METHOD   — license: to be verified
-- OpenHands/OpenHands         — license: to be verified (believed MIT)
-- anthropics/skills           — license: to be verified (believed MIT)
-- agentskills/agentskills     — license: to be verified
-- vercel-labs/skills          — license: to be verified
+| Repo | SPDX license | Notes | Verified |
+|---|---|---|---|
+| obra/superpowers | MIT | Root LICENSE file confirmed. Has evolved substantially past a "skills collection" into a full cross-agent methodology (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, and more all supported) with its own eval harness (`superpowers-evals` / "drill"). | 2026-08-11 |
+| github/spec-kit | MIT | Root LICENSE confirmed via badge + repo file listing. CLI (`specify-cli`) is **Python**, not TypeScript or Elixir as earlier assumed — see correction in docs/research.md. Repo also ships its own `AGENTS.md` at root. | 2026-08-11 |
+| bmad-code-org/BMAD-METHOD | MIT | Root LICENSE confirmed ("MIT License — see LICENSE for details"). Note: "BMad" and "BMAD-METHOD" are trademarks of BMad Code, LLC (TRADEMARK.md) — code is MIT but the name/marks are not free to reuse without following their trademark terms. | 2026-08-11 |
+| OpenHands/OpenHands | MIT | Confirmed via repo README/LICENSE and multiple independent sources. Note: `OpenHands/openhands-cloud` (a **different**, adjacent repo) is Polyform Free Trial — NOT open source. Do not conflate the two when citing "OpenHands is MIT." | 2026-08-11 |
+| anthropics/skills | **Mixed — not uniformly MIT** | Example/community-style skills (e.g. `algorithmic-art`, `brand-guidelines`, `internal-comms`) are Apache-2.0. The bundled document skills (`docx`, `pdf`, `pptx`, `xlsx`) are **source-available for reference, not open source** — each folder ships its own `LICENSE.txt`. **Action required:** check the specific folder's `LICENSE.txt` before reusing any individual skill from this repo; do not assume repo-wide MIT/Apache. | 2026-08-11 |
+| agentskills/agentskills | Apache-2.0 (code) + CC-BY-4.0 (documentation) | Confirmed directly from repo README. This is the neutral spec repo (agentskills.io), distinct from anthropics/skills. | 2026-08-11 |
+| vercel-labs/skills | **Could not verify** | Referenced consistently as "Vercel's official Skills CLI tool" across multiple secondary sources, but no direct license confirmation was retrieved. **Must be verified directly (fetch root LICENSE file) before any reuse.** | 2026-08-11 (partial) |
 
 Adjacent systems referenced for design inspiration only (no code reuse
 intended): Aider, Cursor rules, Cline/Roo Code, Continue, Swe-agent,
 MetaGPT, AutoGen, CrewAI, LangGraph, repomix, tree-sitter, ast-grep.
+Licenses not audited for these — inspiration-only, no vendoring planned.
 
-Before Phase 2 (Core) begins, each entry above must be updated with:
-  - confirmed license identifier (SPDX)
-  - confirmed attribution text required by that license
-  - a link to the exact commit/version referenced
+Before any component above is actually vendored/forked into this
+project (per ADR-0003/ADR-0004, only the Evidence Model is being built
+from scratch — everything else is adopt/integrate/adapt candidates),
+each entry must additionally record:
+  - the exact commit SHA or release tag vendored from
+  - the confirmed attribution text required by that license
+  - for anthropics/skills specifically: the per-folder license, checked
+    individually, since it is not repo-wide

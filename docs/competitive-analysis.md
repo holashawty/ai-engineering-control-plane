@@ -1,5 +1,15 @@
 # Competitive Analysis
 
+> **Verification status (2026-08-11):** The narrative facts underlying
+> this matrix were spot-checked in `docs/research.md` (licenses,
+> architecture claims, persona names, CLI language). The 0–3 scores
+> below were **not** independently re-derived from live repo behavior —
+> they were carried over from the original training-knowledge pass.
+> Two corrections are noted below where verification surfaced a
+> concrete reason to revise a score; everything else should be treated
+> as directional until spot-checked against current repo behavior,
+> per `docs/research.md`'s verification summary.
+
 ## Matrix (0 = absent, 1 = weak, 2 = adequate, 3 = strong)
 
 | Capability                      | superpowers | spec-kit | BMAD | OpenHands | anthropics/skills | vercel/skills | **AIECP (target)** |
@@ -20,7 +30,7 @@
 | Self-correction                 | 1 | 0 | 0 | 1 | 0 | 0 | **3** |
 | Repository adaptation           | 1 | 0 | 0 | 0 | 0 | 1 | **3** |
 | Tool usage standardization      | 1 | 1 | 1 | 3 | 0 | 1 | **3** |
-| Agent interoperability          | 0 | 0 | 0 | 0 | 2 | 1 | **3** |
+| Agent interoperability †        | 2 | 2 | 0 | 1 | 2 | 1 | **3** |
 | Local execution                 | 2 | 2 | 2 | 3 | 2 | 2 | **3** |
 | Cloud execution                 | 0 | 0 | 0 | 3 | 0 | 0 | **2** |
 | Web-chat compatibility          | 1 | 1 | 1 | 1 | 2 | 2 | **3** |
@@ -29,6 +39,18 @@
 | Token efficiency                | 3 | 2 | 1 | 1 | 3 | 2 | **3** |
 | Failure-mode modeling           | 1 | 0 | 0 | 1 | 0 | 0 | **3** |
 | Evaluation harness              | 0 | 0 | 0 | 3 | 0 | 0 | **3** |
+
+† **Corrected 2026-08-11.** Original scores were `superpowers=0`,
+`spec-kit=0`, `OpenHands=0`. Live verification found: superpowers now
+runs natively across ~10 coding agents (Claude Code, Codex, Cursor,
+Factory Droid, Gemini CLI, GitHub Copilot CLI, Kimi Code, OpenCode, Pi,
+and more) — raised to 2. spec-kit documents 30+ supported AI coding
+agent integrations — raised to 2. OpenHands added Agent-Client Protocol
+(ACP) support, letting it delegate to Claude Code/Codex/Gemini instead
+of only running its own agent — raised to 1 (still narrower than the
+other two; ACP support is newer and less central to its identity than
+its own agent runtime). No other rows in this table have been
+independently re-verified against live repo behavior yet.
 
 ## Where each system wins (and we should not compete)
 
