@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/validation.schema.json",
+  "title": "Validation",
+  "description": "Did Actual match Expected? This is the entity that operationalizes ADR-0010 (Behavioral Verification is distinct from unit testing) and the AI-output-validation pattern.",
+  "type": "object",
+  "required": ["id", "expected_ref", "actual_ref", "result", "method"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^validation-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "expected_ref": { "type": "string" },
+    "actual_ref": { "type": "string" },
+    "result": { "type": "string", "enum": ["match", "mismatch", "inconclusive"] },
+    "method": {
+      "type": "string",
+      "enum": ["app_validation", "contract_validation", "unit_test", "manual_review", "replay_comparison"],
+      "description": "How the match/mismatch was determined. 'unit_test' passing alone is NOT sufficient to close an Incident — see ADR-0010."
+    },
+    "evidence_refs": { "type": "array", "items": { "type": "string" } },
+    "validated_at": { "type": "string", "format": "date-time" },
+    "decision_ref": {
+      "type": ["string", "null"],
+      "description": "If this Validation is judging an AI-proposed Decision, reference it here."
+    }
+  },
+  "additionalProperties": false
+}

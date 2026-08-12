@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/replay.schema.json",
+  "title": "Replay",
+  "description": "Re-execution of a prior Trace/Reproduction after a fix, to confirm the Incident no longer occurs and no divergence was introduced.",
+  "type": "object",
+  "required": ["id", "original_trace_ref", "result", "environment_fingerprint_ref"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^replay-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "original_trace_ref": { "type": "string" },
+    "replay_trace_ref": {
+      "type": "string",
+      "description": "The new Trace produced by this replay run."
+    },
+    "environment_fingerprint_ref": { "type": "string" },
+    "result": { "type": "string", "enum": ["matches_expected", "diverges", "error"] },
+    "divergence_from_original": {
+      "type": ["string", "null"],
+      "description": "Free-text description of any difference vs the original trace, e.g. environment drift. null if none."
+    },
+    "replayed_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

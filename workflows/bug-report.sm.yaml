@@ -1,0 +1,160 @@
+workflow: bug-report
+schema_version: "1.0.0"
+description: >
+  MVP vertical slice (ADR-0016). Triggered when the user reports unexpected
+  behavior ("login sometimes fails") rather than filing a structured issue.
+  This is the one workflow that must run end-to-end before any other
+  workflow, skill, stack adapter, or agent adapter is built out further.
+
+states:
+  - intake
+  - classify
+  - locate-evidence
+  - reproduce
+  - diagnose
+  - propose-fix
+  - apply-fix
+  - verify
+  - regression-protect
+  - replay
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: locate-evidence, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: locate-evidence, to: reproduce, on: evidence_located }
+  - { from: locate-evidence, to: blocked, on: no_evidence_found }
+  - { from: reproduce, to: diagnose, on: reproduction_ready }
+  - { from: reproduce, to: blocked, on: cannot_reproduce }
+  - { from: diagnose, to: propose-fix, on: root_cause_found }
+  - { from: diagnose, to: locate-evidence, on: root_cause_invalid }
+  - { from: propose-fix, to: apply-fix, on: fix_approved }
+  - { from: apply-fix, to: verify, on: fix_applied }
+  - { from: verify, to: regression-protect, on: behavior_verified }
+  - { from: verify, to: diagnose, on: behavior_not_verified }
+  - { from: regression-protect, to: replay, on: regression_added }
+  - { from: replay, to: report, on: replay_matches }
+  - { from: replay, to: diagnose, on: replay_diverges }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's report verbatim. Do not ask clarifying questions
+      here — that belongs in `classify`, and only if repository inspection
+      genuinely cannot resolve the ambiguity (see docs/workflow-model.md
+      "Question economy").
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine incident class and severity using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the report
+      text. May ask at most ONE necessary, specific, decision-changing
+      question if the class cannot be determined from inspection.
+    emits_evidence: [incident]
+    reads_memory: [project, known-failure]
+
+  locate-evidence:
+    purpose: >
+      Search logs, recent commits, related tests, and known-failure memory
+      for anything matching the reported symptom. No source-reading
+      guesswork — only evidence that can be cited.
+    emits_evidence: [event, trace]
+    reads_memory: [known-failure, environment]
+
+  reproduce:
+    purpose: >
+      Attempt to deterministically reproduce the incident using the
+      project's own test/run tooling (per Project Intelligence
+      capabilities.has_test_suite and project.test_system).
+    emits_evidence: [trace, event]
+    reads_memory: [environment]
+
+  diagnose:
+    purpose: >
+      Walk the debugging chain (docs/evidence-model.md): find the first
+      invalid Decision or state, mark it root_cause candidate, then
+      validate it against evidence before accepting.
+    emits_evidence: [decision, expected, actual, validation]
+    reads_memory: [known-failure]
+
+  propose-fix:
+    purpose: >
+      Propose a minimal fix. This is an AI proposal — per the AI-output
+      validation pattern, the proposal's Decision.validated stays false
+      until app/behavioral validation confirms it in `verify`.
+    emits_evidence: [decision]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  apply-fix:
+    purpose: Apply the approved patch.
+    emits_evidence: [event]
+    safety_gate: edit_source (autonomy policy `allow.edit_source`)
+
+  verify:
+    purpose: >
+      Behavioral verification per ADR-0010 — a passing test suite alone is
+      NOT sufficient. Must produce a Validation with method != "unit_test"
+      alone, or method:"unit_test" combined with an explicit contract/
+      invariant check.
+    emits_evidence: [expected, actual, validation]
+
+  regression-protect:
+    purpose: >
+      Add a regression test/invariant so this incident class cannot recur
+      silently. Write the known-failure memory entry (must reference the
+      Incident id, per memory/schemas/known-failure.schema.json).
+    emits_evidence: []
+    writes_memory: [known-failure]
+
+  replay:
+    purpose: >
+      Re-run the original reproduction against the fixed code to confirm
+      no divergence was introduced elsewhere.
+    emits_evidence: [replay]
+
+  report:
+    purpose: >
+      Summarize the incident, root cause, fix, and evidence chain for the
+      user. Must include the Decision Trace (docs/architecture.md), not
+      just "fixed."
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Must surface a precise gap (missing
+      capability, unreproducible incident, unresolved ambiguity after one
+      question) — never a vague failure, per docs/portability.md failure
+      modes.
+
+skills_required:
+  - systematic-debugging
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: propose-fix
+    gate: broad-refactor
+  - state: apply-fix
+    gate: edit_source
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if Project
+    Intelligence + Discovery + Memory genuinely cannot resolve the
+    ambiguity. See docs/workflow-model.md.

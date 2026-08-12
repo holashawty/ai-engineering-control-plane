@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/decision.schema.json",
+  "title": "Decision",
+  "description": "A choice made by the agent or the system at a fork. First-class artifact per docs/architecture.md invariant 1 and the AI-output-validation pattern in docs/evidence-model.md.",
+  "type": "object",
+  "required": ["id", "trace_ref", "what", "why", "validated"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^decision-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "trace_ref": { "type": "string" },
+    "made_at": { "type": "string", "format": "date-time" },
+    "made_by": { "type": "string", "enum": ["agent", "human", "system"] },
+    "what": {
+      "type": "string",
+      "description": "What was decided, e.g. 'ai_proposal:apply_patch', 'root_cause_candidate:X'."
+    },
+    "why": { "type": "string", "description": "Reasoning, in the agent's own words." },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Event/Trace/Validation ids that justify this decision."
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["option", "rejected_because"],
+        "properties": {
+          "option": { "type": "string" },
+          "rejected_because": { "type": "string" }
+        }
+      }
+    },
+    "result": {
+      "type": "string",
+      "enum": ["pending", "accepted", "rejected", "superseded"]
+    },
+    "validated": {
+      "type": "boolean",
+      "description": "false until at least one Validation entity has evaluated this Decision. AI proposals MUST start false (see AI output validation pattern)."
+    },
+    "root_cause": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set true only after Validation confirms this was the first invalid decision/state in the debugging chain."
+    }
+  },
+  "additionalProperties": false
+}

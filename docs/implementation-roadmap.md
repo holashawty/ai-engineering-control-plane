@@ -6,24 +6,32 @@
 - Risk register ✓
 - License audit — **pending live re-verification** (see `NOTICE`)
 
-## Phase 1 — Architecture (next, before any core code)
-- Finalize schemas for the Evidence Model (validate against 3 real bug
-  scenarios each)
-- Finalize the Memory taxonomy schemas
-- Finalize the Workflow SM YAML schema
-- Finalize **Project Intelligence** schemas (ADR-0015):
-  `project.yaml`, `capabilities.yaml`, `conventions.yaml`,
-  `constraints.yaml`, `dependencies.yaml`, `entrypoints.yaml`,
-  `environments.yaml`, and the `discovery-refresh` trigger that
-  invalidates/updates them
-- Finalize the **autonomy policy** schema (ADR-0014): levels L0–L5 +
-  per-capability `allow`/`ask`/`deny`/`scoped` matrix
-- Finalize the **question economy** enforcement mechanism
-  (`docs/workflow-model.md`)
-- `sync-entrypoints` design (canonical → per-agent)
-- Decide bootstrap language for tooling (proposed: TypeScript for
+## Phase 1 — Architecture (in progress)
+- [x] JSON Schemas for the 8 MVP-scope Evidence Model entities
+  (Incident, Trace, Event, Decision, Expected, Actual, Validation,
+  Replay) — `evidence/schema/*.schema.json`. **Not yet done:**
+  validating each against 3 real bug scenarios (requires the MVP slice
+  to actually run once — Phase 3/4 dependency).
+- [x] JSON Schemas for the 4 MVP-scope Memory types (project, decision,
+  known-failure, environment) — `memory/schemas/*.schema.json`.
+- [x] Workflow SM YAML for `bug-report` (concrete, not just an example)
+  — `workflows/bug-report.sm.yaml` — plus a fleshed-out router table —
+  `workflows/_router.md`.
+- [x] **Project Intelligence** schema (ADR-0015), combined single file
+  — `discovery/schema/project-intelligence.schema.json`. **Not yet
+  done:** the `discovery-refresh` trigger implementation (needs
+  detectors, Phase 3).
+- [x] **Autonomy policy** schema (ADR-0014) — `constitution/autonomy-policy.schema.json`.
+  **Not yet done:** the enforceable prose in `constitution/safety-rules.md`
+  and the executor that actually reads/enforces this schema.
+- [ ] **Question economy** enforcement mechanism — currently only a
+  rule (`max_questions: 1`) declared inside `bug-report.sm.yaml`
+  `question_economy` block; no executor enforces it yet.
+- [ ] `sync-entrypoints` design (canonical → per-agent) — not started.
+- [ ] Decide bootstrap language for tooling (proposed: TypeScript for
   portability + Python for the eval harness; do *not* introduce a
-  runtime dependency for end users — tooling is dev-only)
+  runtime dependency for end users — tooling is dev-only) — not
+  decided yet, blocks Phase 2 start.
 
 ## Phase 2 — Core
 - `constitution/` content

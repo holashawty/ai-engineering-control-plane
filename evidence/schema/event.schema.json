@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/event.schema.json",
+  "title": "Event",
+  "description": "A single observed occurrence within a Trace. This is the atomic unit of evidence; Decisions and State Transitions (post-MVP) reference Events, they do not replace them.",
+  "type": "object",
+  "required": ["id", "trace_ref", "ts", "kind", "source"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^event-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "trace_ref": { "type": "string" },
+    "ts": { "type": "string", "format": "date-time" },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "action", "observation", "log_line", "test_result",
+        "user_message", "agent_message", "state_read", "state_write",
+        "network_call", "file_change", "error"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "description": "Kind-specific structured data. No raw secret values (see docs/security-model.md); redact before writing."
+    },
+    "source": { "type": "string", "description": "Component or adapter that emitted this event." }
+  },
+  "additionalProperties": false
+}

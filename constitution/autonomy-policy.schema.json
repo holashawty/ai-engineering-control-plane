@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/constitution/autonomy-policy.schema.json",
+  "title": "Autonomy Policy",
+  "description": "Per-project autonomy configuration (ADR-0014). Written to .aiecp/policy.local.yaml or .aiecp/policy.yaml in the host repo. No workflow may exceed the declared level for a given capability regardless of what the workflow definition requests (docs/security-model.md).",
+  "type": "object",
+  "required": ["autonomy", "allow"],
+  "properties": {
+    "autonomy": {
+      "type": "object",
+      "required": ["default"],
+      "properties": {
+        "default": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "L0 Observe, L1 Suggest, L2 Modify safely, L3 Test + repair autonomously, L4 Multi-step autonomous execution, L5 Autonomous engineering with safety gates."
+        }
+      }
+    },
+    "allow": {
+      "type": "object",
+      "description": "Per-capability grants. Each value is either a fixed grant or 'ask'/'deny'/'scoped'. This is the floor beneath autonomy.default — a capability set to 'deny' here can never be exercised regardless of level.",
+      "properties": {
+        "read_repository": { "$ref": "#/$defs/grant" },
+        "edit_source": { "$ref": "#/$defs/grant" },
+        "run_tests": { "$ref": "#/$defs/grant" },
+        "install_dependencies": { "$ref": "#/$defs/grant" },
+        "database_migration": { "$ref": "#/$defs/grant" },
+        "production_deploy": { "$ref": "#/$defs/grant" },
+        "delete_files": { "$ref": "#/$defs/grant" },
+        "credential_access": { "$ref": "#/$defs/grant" },
+        "force_push": { "$ref": "#/$defs/grant" },
+        "branch_deletion": { "$ref": "#/$defs/grant" },
+        "shell_exec_unlisted": { "$ref": "#/$defs/grant" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/grant" }
+    },
+    "broad_refactor_threshold": {
+      "type": "object",
+      "description": "Defines when a change is classified as 'broad-refactor' and therefore requires the broad-refactor safety gate (docs/security-model.md).",
+      "properties": {
+        "max_files": { "type": "integer", "minimum": 1, "default": 10 },
+        "max_loc": { "type": "integer", "minimum": 1, "default": 300 }
+      }
+    }
+  },
+  "$defs": {
+    "grant": {
+      "oneOf": [
+        { "type": "boolean" },
+        { "type": "string", "enum": ["ask", "deny", "scoped"] }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

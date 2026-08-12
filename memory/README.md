@@ -1,10 +1,16 @@
 # Memory
 
-**Status: Phase 0 scaffold — not yet implemented.**
+**Status: Phase 1 — MVP schemas complete.**
 
-Typed memory taxonomy per docs/memory-model.md. Phase 6.
+Typed memory taxonomy per `docs/memory-model.md`. The 4 types exercised
+by the MVP `bug-report` workflow now have JSON Schemas in `schemas/`:
 
-This directory is part of the proposed repository structure in
-`docs/architecture.md`. Implementation begins in the phase noted in
-`docs/implementation-roadmap.md` and requires an approved ADR in
-`DECISIONS.md` for any structural change.
+- `project.schema.json`
+- `decision.schema.json`
+- `known-failure.schema.json`
+- `environment.schema.json`
+
+The remaining 4 types (architecture, domain, constraint, workflow) are
+introduced once the MVP vertical slice is proven (ADR-0016).
+
+No storage/read-write implementation exists yet — schemas only. Phase 6.

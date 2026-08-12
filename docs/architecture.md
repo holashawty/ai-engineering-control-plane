@@ -93,11 +93,15 @@ Each of SPEC / IMPL / OBS / DIAG / VERIFY has:
 Mixing them in one prompt is a constitution violation and is *testable*
 via the eval harness.
 
-## Known gap (tracked, not yet designed)
+## Project Intelligence (ADR-0015)
 
-A **Project Intelligence** layer — a persistent, machine-readable model
-of "what this repository is" (`project.yaml`, `capabilities.yaml`,
-`conventions.yaml`, etc.) so that discovery is not re-derived from
-scratch on every task. This sits conceptually between layer 2a (Context)
-and layer 5 (Memory) and is planned for Phase 1 finalization. See
-`docs/implementation-roadmap.md`.
+A persistent, machine-readable model of "what this repository is",
+produced once by Discovery and consumed by every subsequent workflow
+instead of being re-derived from scratch each time. Sits conceptually
+between layer 2a (Context) and layer 5 (Memory).
+
+**Status: schema finalized** — see
+`discovery/schema/project-intelligence.schema.json`. Written to
+`.aiecp/project-intelligence.json` in the host repo. Carries a `stale`
+flag flipped by a `discovery-refresh` trigger (detector implementation
+still pending, Phase 3).

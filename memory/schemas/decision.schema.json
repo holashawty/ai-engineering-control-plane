@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/memory/decision.schema.json",
+  "title": "Decision memory",
+  "description": "Past decisions about the HOST project (not this framework's own DECISIONS.md) and their reasons. Append-only, ADR-shaped. See docs/memory-model.md.",
+  "type": "object",
+  "required": ["id", "type", "created_at", "source", "schema_version", "decision", "alternatives", "reason"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^mem-decision-[a-zA-Z0-9_-]+$" },
+    "type": { "type": "string", "const": "decision" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source": { "type": "string" },
+    "decision": { "type": "string" },
+    "alternatives": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1,
+      "description": "Required — a decision memory entry with no alternatives considered is not a decision, it's an assumption."
+    },
+    "reason": { "type": "string" },
+    "tradeoffs": { "type": "string" }
+  },
+  "additionalProperties": false
+}

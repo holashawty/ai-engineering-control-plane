@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/memory/environment.schema.json",
+  "title": "Environment memory",
+  "description": "Environment fingerprints for reproducibility. Refreshed on environment change. See docs/memory-model.md.",
+  "type": "object",
+  "required": ["id", "type", "created_at", "source", "schema_version", "runtime", "versions"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^mem-environment-[a-zA-Z0-9_-]+$" },
+    "type": { "type": "string", "const": "environment" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source": { "type": "string" },
+    "runtime": { "type": "string", "description": "e.g. 'python3.11', 'node20'." },
+    "versions": {
+      "type": "object",
+      "description": "Key dependency versions relevant to reproducibility, e.g. {\"django\": \"5.1.2\"}.",
+      "additionalProperties": { "type": "string" }
+    },
+    "os": { "type": "string" },
+    "arch": { "type": "string" },
+    "fingerprint_hash": {
+      "type": "string",
+      "description": "Stable hash of the above fields, for quick equality checks against evidence/environment_fingerprint entries."
+    }
+  },
+  "additionalProperties": false
+}

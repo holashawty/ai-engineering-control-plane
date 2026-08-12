@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/discovery/project-intelligence.schema.json",
+  "title": "Project Intelligence",
+  "description": "A persistent, machine-readable model of what a host repository is, produced by Discovery and consumed by every subsequent task (ADR-0015). Written to .aiecp/project-intelligence.json in the host repo. This replaces re-deriving 'what is this repository' from scratch on every task.",
+  "type": "object",
+  "required": ["schema_version", "generated_at", "generated_by", "project", "capabilities", "entrypoints"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "generated_by": {
+      "type": "string",
+      "description": "Which discovery detector pipeline version produced this."
+    },
+    "stale": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set true by the discovery-refresh trigger when repository structure has changed since generated_at. Consumers MUST re-run discovery before trusting a stale=true document."
+    },
+
+    "project": {
+      "type": "object",
+      "required": ["stack", "layer"],
+      "properties": {
+        "stack": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Detected languages/runtimes, e.g. ['python', 'typescript']."
+        },
+        "layer": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["backend", "frontend", "mobile", "desktop", "cli", "api", "database", "monorepo"] }
+        },
+        "domain_summary": { "type": "string" },
+        "build_system": { "type": "array", "items": { "type": "string" }, "description": "e.g. ['poetry', 'vite']." },
+        "test_system": { "type": "array", "items": { "type": "string" }, "description": "e.g. ['pytest', 'vitest']." }
+      }
+    },
+
+    "capabilities": {
+      "type": "object",
+      "description": "What discovery confirmed the project actually supports/uses, as opposed to what the framework hopes it supports.",
+      "properties": {
+        "has_test_suite": { "type": "boolean" },
+        "has_ci": { "type": "boolean" },
+        "has_containerization": { "type": "boolean" },
+        "database_detected": { "type": ["array", "null"], "items": { "type": "string" } },
+        "external_integrations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Third-party services/APIs detected in config/dependencies, e.g. ['stripe', 'auth0']."
+        }
+      }
+    },
+
+    "conventions": {
+      "type": "object",
+      "description": "Detected or declared coding conventions. Populated best-effort; empty is valid.",
+      "additionalProperties": true
+    },
+
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["constraint", "source"],
+        "properties": {
+          "constraint": { "type": "string" },
+          "source": { "type": "string", "description": "Where this constraint was detected or declared." },
+          "scope": { "type": "string" }
+        }
+      }
+    },
+
+    "dependencies": {
+      "type": "object",
+      "description": "Top-level dependency manifest summary (not a full lockfile mirror).",
+      "additionalProperties": true
+    },
+
+    "entrypoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "kind"],
+        "properties": {
+          "path": { "type": "string" },
+          "kind": { "type": "string", "enum": ["main", "cli", "api_route", "test_entry", "build_script"] }
+        }
+      }
+    },
+
+    "environments": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Named environments the project supports, e.g. ['local', 'ci', 'staging', 'production'] — used to scope safety gates (docs/security-model.md)."
+    }
+  },
+  "additionalProperties": false
+}

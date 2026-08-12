@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/expected.schema.json",
+  "title": "Expected",
+  "description": "What the system should produce, per spec/contract/invariant. Distinct from Actual — never merge the two, per docs/architecture.md SPEC/OBS separation.",
+  "type": "object",
+  "required": ["id", "predicate", "source_ref"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^expected-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "source_ref": {
+      "type": "string",
+      "description": "Reference to the spec/contract/invariant this Expected was derived from, e.g. 'specs/spec.md#US-3' or 'contract-login-api'."
+    },
+    "predicate": {
+      "type": "string",
+      "description": "Human- and machine-checkable statement of the expected outcome."
+    },
+    "predicate_kind": {
+      "type": "string",
+      "enum": ["exact_value", "invariant", "state_property", "behavioral"],
+      "default": "behavioral"
+    }
+  },
+  "additionalProperties": false
+}

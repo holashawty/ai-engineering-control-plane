@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/trace.schema.json",
+  "title": "Trace",
+  "description": "An ordered sequence of Events observed during one execution (a reproduction run, a workflow run, or a live incident window).",
+  "type": "object",
+  "required": ["id", "started_at", "event_refs"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^trace-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "incident_ref": { "type": ["string", "null"] },
+    "reproduction_ref": {
+      "type": ["string", "null"],
+      "description": "Set if this trace was captured while executing a Reproduction (post-MVP entity)."
+    },
+    "started_at": { "type": "string", "format": "date-time" },
+    "ended_at": { "type": ["string", "null"], "format": "date-time" },
+    "environment_fingerprint_ref": { "type": "string" },
+    "event_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered list of Event ids belonging to this trace. Order is significant."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["agent_adapter", "test_runner", "manual_capture", "ci"],
+      "description": "Which adapter/mechanism produced this trace (docs/portability.md translate_observation)."
+    }
+  },
+  "additionalProperties": false
+}

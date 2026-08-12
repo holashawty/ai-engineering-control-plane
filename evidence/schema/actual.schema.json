@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/actual.schema.json",
+  "title": "Actual",
+  "description": "What the system actually did/produced, as observed. Always paired with an Expected via a Validation; never asserted to be correct on its own.",
+  "type": "object",
+  "required": ["id", "expected_ref", "observed_value", "observation_ref"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^actual-[a-zA-Z0-9_-]+$" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "expected_ref": { "type": "string" },
+    "observed_value": {
+      "description": "The observed outcome. Shape depends on predicate_kind of the referenced Expected."
+    },
+    "observation_ref": {
+      "type": "string",
+      "description": "Event id this observation came from — Actual is never freestanding, it traces back to a concrete Event."
+    },
+    "observed_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

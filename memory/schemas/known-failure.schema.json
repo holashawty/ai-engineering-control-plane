@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/memory/known-failure.schema.json",
+  "title": "Known-failure memory",
+  "description": "Past failures and their root causes. Append-only. MUST reference an Incident in the Evidence Model (docs/memory-model.md validation rules).",
+  "type": "object",
+  "required": ["id", "type", "created_at", "source", "schema_version", "symptom", "root_cause", "fix", "incident_ref"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^mem-known-failure-[a-zA-Z0-9_-]+$" },
+    "type": { "type": "string", "const": "known-failure" },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "source": { "type": "string" },
+    "incident_ref": {
+      "type": "string",
+      "description": "Required. References the evidence/Incident this entry was learned from — no known-failure entry without a backing incident."
+    },
+    "symptom": { "type": "string" },
+    "root_cause": { "type": "string" },
+    "fix": { "type": "string" },
+    "regression_id": {
+      "type": ["string", "null"],
+      "description": "Set if this failure has recurred (references an evidence/Regression entity, post-MVP)."
+    }
+  },
+  "additionalProperties": false
+}
