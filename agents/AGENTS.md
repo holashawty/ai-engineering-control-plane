@@ -1,10 +1,76 @@
-# Canonical Agent Entrypoint
+# AGENTS.md — AI Engineering Control Plane (AIECP)
 
-**Status: Phase 0 scaffold — not yet implemented.**
+This is the canonical, agent-agnostic entrypoint for any AI coding agent
+working in a repository that has AIECP installed. Per ADR-0006, this
+file is the source of truth; `CLAUDE.md`, `GEMINI.md`,
+`.cursor/rules/*.mdc`, `.windsurfrules`, and
+`.github/copilot-instructions.md` are generated from it by
+`sync-entrypoints` (not yet implemented — see `STATUS.md`) and must
+never be hand-edited directly.
 
-The canonical, agent-agnostic entrypoint that per-agent files (CLAUDE.md, GEMINI.md, .cursor/rules/, .windsurfrules, .github/copilot-instructions.md) are generated from via sync-entrypoints (ADR-0006). Phase 2.
+If you are an agent reading this file natively (no generated wrapper
+exists yet, or you're Codex/OpenCode reading `AGENTS.md` directly): this
+**is** your instructions. Follow them as-is.
 
-This directory is part of the proposed repository structure in
-`docs/architecture.md`. Implementation begins in the phase noted in
-`docs/implementation-roadmap.md` and requires an approved ADR in
-`DECISIONS.md` for any structural change.
+## What this repository is
+
+This is the AIECP framework's own repository — not a host project it's
+been installed into. If you were expecting a `.aiecp/` directory with a
+`project-intelligence.json` in a *different* project, you're in the
+wrong place; that only exists in repos where AIECP has been installed
+as a dependency, which this repo is not (it *is* the dependency).
+
+If you are working **in this repo**, you are contributing to the
+framework itself, and everything in `constitution/` applies to you
+directly, not just to a downstream project.
+
+## Before you do anything else
+
+1. Read `STATUS.md`. It tells you what phase this project is in, what's
+   done, and what the next task in sequence is.
+2. Read `DECISIONS.md`. Do not re-decide something that already has an
+   ADR without writing a new ADR that supersedes it (`constitution/
+   change-policy.md`).
+3. Read `constitution/constitution.md`. It is not optional context —
+   it is the governing ruleset for how you work in this repo.
+
+## What you may do without asking
+
+- Read any file in this repository.
+- Add new schemas, skills, docs, or workflow definitions that don't
+  touch the constitution-layer files listed in
+  `constitution/change-policy.md`.
+- Run validation (JSON Schema validation, YAML parsing) against
+  anything you write.
+- Update `STATUS.md` to reflect work you've completed, in the same
+  commit as that work.
+
+## What requires an ADR first (constitution/change-policy.md)
+
+- Any edit to `constitution/*.md`, `constitution/*.schema.json`,
+  `evidence/schema/*`, `memory/schemas/*`, `discovery/schema/*`, or
+  `DECISIONS.md` itself (other than appending).
+
+## What requires explicit human confirmation regardless of autonomy level
+
+Per `docs/security-model.md`: production mutation, irreversible
+migration, credential access, broad refactor (see
+`constitution/autonomy-policy.schema.json` `broad_refactor_threshold`),
+security-sensitive changes, force-push, branch deletion. This repo's
+own autonomy policy (once one is declared for the framework repo
+itself, as opposed to host projects) will live at
+`.aiecp/policy.yaml` — until it exists, treat every one of the above
+classes as requiring confirmation.
+
+## Sequencing — what to work on next
+
+See `STATUS.md` "Sequencing decision" for the current dependency-ordered
+task list. Do not skip ahead to a later step if an earlier one is
+unchecked, unless you have a specific reason — and if so, write that
+reason into `STATUS.md`, don't silently reorder.
+
+## For a downstream project (once AIECP is installed there)
+
+This section is a placeholder for what will be generated into a host
+project's own `AGENTS.md` by `sync-entrypoints` once that tool exists.
+It does not apply to work inside *this* repository.

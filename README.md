@@ -6,11 +6,14 @@ self-correcting, and context-aware — across languages, frameworks, and stacks.
 
 ## Status
 
-Phase 0 (research + architecture) — proposal stage. See `docs/implementation-roadmap.md`.
+**See [`STATUS.md`](STATUS.md) for the current phase, what's done, and
+what's next — the single source of truth for resuming work across
+sessions or handing off to another agent.**
 
-This is not yet an implementation. It is a research and architecture proposal
-that must be approved before Phase 2 (Core) begins. See `docs/research.md` for
-methodology notes and required live-verification steps.
+Phase 0 (research + architecture) and Phase 1 (schemas) are complete.
+Phase 2 (Core) is in progress. See `docs/implementation-roadmap.md` for
+the full phase breakdown and `docs/research.md` for the verification
+methodology.
 
 ## What this is *not*
 

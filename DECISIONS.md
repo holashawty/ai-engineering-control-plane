@@ -179,3 +179,45 @@ Every framework-level decision — especially anything touching
   one; the wide surface can be built once the slice is proven correct.
 - **Tradeoffs:** Slower perceived breadth early on. Accepted — see
   `docs/implementation-roadmap.md` MVP definition.
+
+## ADR-0017 — Tooling language: Node.js/TypeScript for the CLI, Python for the eval harness
+- **Decision:** All dev-facing tooling that a host project installs and
+  runs directly — `sync-entrypoints`, the workflow executor, discovery
+  detectors' orchestration layer, schema validation — is built in
+  Node.js/TypeScript and distributed via `npm`/`npx`. The evaluation
+  harness (Phase 8) is built in Python, following the SWE-bench /
+  OpenHands Eval convention.
+- **Alternatives considered:** Python for everything (matches spec-kit's
+  `specify-cli` and the eval-harness ecosystem); Rust for the CLI
+  (matches `agentsync`'s optional crates.io distribution, fastest
+  runtime); a single language for both CLI and eval harness.
+- **Reason:** Live research (2026-08-11) into the AGENTS.md-sync tooling
+  ecosystem — the closest existing analog to `sync-entrypoints` — found
+  it is overwhelmingly npm/npx-based: `agentsync` (`npm install -g
+  @dallay/agentsync`, also offers a Rust/crates.io build), `@agents-dev/
+  cli` (`npm install -g @agents-dev/cli`), and Vercel's `npx skills`
+  installer all standardize on Node.js distribution via `npx` for
+  zero-install, cross-repo tooling. AGENTS.md itself is now stewarded by
+  the Linux Foundation's Agentic AI Foundation and read natively by 28+
+  tools across 60,000+ repos — none of the sync tools built for it
+  chose Python, because the target repos this tooling runs against are
+  frequently non-Python (Node/TS/Go/Rust/mobile projects) and requiring
+  a Python runtime just to sync an `AGENTS.md` file is friction the
+  ecosystem has already converged on avoiding. `npx` runs with zero
+  install step even in a pure-Python or pure-Go host repo, whereas `uvx`
+  (spec-kit's approach) is a fair alternative but a smaller footprint
+  than `npx` across polyglot repos as of this research pass.
+  Conversely, the evaluation harness (Phase 8) sits firmly in the
+  SWE-bench / OpenHands Eval lineage, which is Python-native throughout
+  the ecosystem we studied in `docs/research.md` — there is no
+  comparable pull toward Node.js there.
+- **Tradeoffs:** Two languages in one repo's tooling surface increases
+  maintenance surface. Mitigated by a hard boundary: the CLI never
+  imports eval-harness code and vice versa; they communicate only
+  through the JSON/YAML artifacts already defined by the Evidence and
+  Workflow schemas (language-neutral by construction, per ADR-0012).
+  Framework *skills* themselves (`SKILL.md` + optional `scripts/`)
+  remain language-agnostic per the Agent Skills standard (ADR-0001) and
+  are unaffected by this decision — a skill's `scripts/` folder may use
+  whatever language fits that skill's stack.
+- **Status:** Decided 2026-08-11. Unblocks Phase 2 (Core).
