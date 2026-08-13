@@ -1,0 +1,26 @@
+{
+  "name": "@aiecp/executor",
+  "version": "0.1.0",
+  "description": "AIECP workflow executor — walks a workflow .sm.yaml state machine, enforces question economy and safety gates, validates and persists Evidence/Memory artifacts. MVP scope: bug-report only (ADR-0016).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "aiecp-run": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node dist/cli.js --self-test"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "ajv": "^8.17.1",
+    "js-yaml": "^4.1.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.1.0"
+  }
+}

@@ -97,6 +97,18 @@ don't silently reorder.
       validation criteria, and happy-path + failure-mode examples.
       `systematic-debugging`'s adaptation from obra/superpowers is
       recorded in `NOTICE`.
+- [x] Workflow executor (`executor/`) — real, tested Node.js/TypeScript
+      engine: state machine, question-economy enforcement, safety-gate
+      enforcement against an autonomy policy, and an evidence/memory
+      store that validates every write against the actual Phase 1
+      schemas. Self-test drives a full scripted `bug-report` run
+      end-to-end (emits a real instance of all 8 evidence entities + 1
+      memory type, all schema-valid) plus 3 negative-test scenarios
+      (question limit, wrong-state question, safety-gate-without-
+      confirmation, invalid transition, invalid evidence). 20/20
+      assertions pass. 2 real bugs found and fixed while building this
+      (missing `ajv-formats` wiring; a test fixture missing a required
+      field) — see `executor/README.md`.
 
 ## In progress
 
@@ -105,22 +117,24 @@ below is the next task to pick up)
 
 ## Not started (in sequence order)
 
-- [ ] Workflow executor (Node.js/TypeScript) — does not exist yet at
-      all. This is the biggest remaining piece: a CLI that walks
-      `workflows/bug-report.sm.yaml`'s state machine, invokes the 4
-      skills above at the right states, reads/writes evidence + memory
-      JSON against the Phase 1 schemas (reusing the ajv validation
-      pattern already proven in `discovery/cli/`), and enforces
-      `question_economy` + `safety_gate` annotations from the workflow
-      definition.
+- [ ] End-to-end run + evidence schema validation against **real**
+      (non-scripted) bug scenarios — the executor's self-test proves
+      the engine works correctly against a realistic *scripted*
+      scenario, but no actual LLM agent has driven it yet. This
+      requires wiring an agent adapter (Claude Code or Codex, next
+      item) to actually call `WorkflowRun` while doing real diagnosis
+      on a real repository.
 - [ ] `sync-entrypoints` implementation — design only so far
-      (`docs/portability.md` adapter contract), no code
-- [ ] 2 stack adapters (Python, TypeScript) — `adapters/stacks/`
-      placeholder only
+      (`docs/portability.md` adapter contract), no code.
 - [ ] 2 agent adapters (Claude Code, Codex) — `adapters/agents/`
-      placeholder only
-- [ ] End-to-end MVP run + evidence schema validation against 3 real
-      bug scenarios
+      placeholder only. This is what would let a real agent drive
+      `executor/`'s `WorkflowRun` instead of the scripted self-test
+      standing in for one.
+- [ ] 2 stack adapters (Python, TypeScript) beyond what `discovery/cli/`
+      already does — `adapters/stacks/` placeholder only. Discovery
+      already produces stack-aware output; a dedicated stack-adapter
+      layer (test-runner invocation helpers, etc.) is separate,
+      smaller remaining work.
 
 ## Known open questions (not blocking, but unresolved)
 
@@ -154,4 +168,5 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-11, end of Phase 1 + ADR-0017 session.*
+*Last updated: 2026-08-12, end of workflow-executor session (discovery
+detectors + 4 MVP skills + workflow executor all complete and tested).*
