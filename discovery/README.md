@@ -1,15 +1,21 @@
 # Project Discovery
 
-**Status: Phase 1 — Project Intelligence schema complete, detectors not yet implemented.**
+**Status: Phase 1/2 — implemented and tested for Python + TypeScript.**
 
-Detector-driven project onboarding pipeline per ADR-0009. The output
-schema (`schema/project-intelligence.schema.json`, ADR-0015) is
-finalized: a persistent `.aiecp/project-intelligence.json` document that
-Discovery produces once and every subsequent workflow consumes, instead
-of re-deriving "what is this repository" from scratch each time.
+Detector-driven project onboarding pipeline per ADR-0009. The real,
+working implementation lives at **`discovery/cli/`** — see
+`discovery/cli/README.md` for usage and verification notes.
 
-**Not yet implemented:** the detectors themselves (`detectors/`). MVP
-scope (ADR-0016) is Python and TypeScript detectors only — see
-`docs/implementation-roadmap.md` Phase 3. A `discovery-refresh` trigger
-that flips `stale: true` on the Project Intelligence document when
-repository structure changes is designed but not yet built.
+The output schema (`schema/project-intelligence.schema.json`,
+ADR-0015) is finalized and validated in code (ajv) on every run.
+
+MVP scope (ADR-0016) is Python and TypeScript detectors only — both
+implemented. Additional stacks (Go, Rust, Java/Kotlin, Swift, C#, C/C++,
+Electron) are future work; adding one means one new file under
+`discovery/cli/src/detectors/` plus one registry line, per the
+detector interface documented in `discovery/cli/src/types.ts`.
+
+**Not yet implemented:** a `discovery-refresh` trigger that flips
+`stale: true` on an existing `.aiecp/project-intelligence.json` when
+repository structure changes (currently, `aiecp-discover` must be
+re-run manually to refresh).

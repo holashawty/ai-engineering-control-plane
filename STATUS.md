@@ -35,9 +35,15 @@ dependency order. This is the order we're following, chosen for maximum
    prose version (currently points to `docs/security-model.md` +
    `autonomy-policy.schema.json` and is explicit about what's pending).
 3. **Discovery detectors** (Python + TypeScript only, per ADR-0016) —
-   🔄 next up. Produces real
-   `discovery/schema/project-intelligence.schema.json`-shaped output;
-   testable in isolation against a toy repo before the executor exists.
+   ✅ done. Real, tested Node.js/TypeScript CLI at `discovery/cli/`.
+   Verified against 3 scenarios (toy Python repo, toy TypeScript repo,
+   toy polyglot repo) — 2 real bugs found and fixed during testing
+   (duplicate entrypoints, dependencies-key collision across
+   detectors). See `discovery/cli/README.md` for details.
+4. **MVP skill content** (`systematic-debugging`, `evidence-engineering`,
+   `behavioral-verification`, `testing` as real `SKILL.md` files) —
+   🔄 next up. Textual; the workflow executor needs these to exist as
+   real files to reference, not placeholders.
 4. **MVP skill content** (`systematic-debugging`, `evidence-engineering`,
    `behavioral-verification`, `testing` as real `SKILL.md` files) —
    ⬜ not started. Textual; the workflow executor needs these to exist
@@ -80,6 +86,10 @@ don't silently reorder.
       `constitution/engineering-principles.md`,
       `constitution/change-policy.md`, canonical `agents/AGENTS.md`
       entrypoint — real content, not placeholders
+- [x] Discovery detectors: working Python + TypeScript CLI
+      (`discovery/cli/`), tested against 3 real scenarios including a
+      polyglot/monorepo case, 2 bugs found and fixed during testing —
+      commit `fa40bb4`
 
 ## In progress
 
@@ -88,10 +98,6 @@ below is the next task to pick up)
 
 ## Not started (in sequence order)
 
-- [ ] Discovery detectors — Python detector, TypeScript detector
-      (`discovery/detectors/`), producing real
-      `.aiecp/project-intelligence.json` output validated against
-      `discovery/schema/project-intelligence.schema.json`
 - [ ] 4 MVP `SKILL.md` files (`skills/systematic-debugging/`,
       `skills/evidence-engineering/`, `skills/behavioral-verification/`,
       `skills/testing/`) — currently only `skills/README.md` and
