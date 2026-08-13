@@ -34,3 +34,15 @@ each entry must additionally record:
   - the confirmed attribution text required by that license
   - for anthropics/skills specifically: the per-folder license, checked
     individually, since it is not repo-wide
+
+## Actual adaptations (as of this pass — update when more occur)
+
+- **`skills/systematic-debugging/SKILL.md`** — the hypothesis-test-
+  minimal-fix-regression procedure structure is adapted from
+  obra/superpowers' systematic-debugging skill (MIT, confirmed
+  2026-08-11). No verbatim text was copied; the procedure was
+  re-expressed against AIECP's own Evidence Model
+  (`docs/evidence-model.md`) and workflow states
+  (`workflows/bug-report.sm.yaml`). Attribution recorded here per MIT
+  license terms and `constitution/constitution.md` §6 (Reuse before
+  reinvent). Exact commit SHA not yet pinned — see open item above.

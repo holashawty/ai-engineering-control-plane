@@ -1,10 +1,12 @@
-# Shared Evidence Schema Reference
+# Shared Evidence Reference
 
-**Status: Phase 0 scaffold — not yet implemented.**
+Any skill that emits Evidence Model artifacts should read
+`skills/evidence-engineering/SKILL.md` first — it is the canonical
+procedure for correctly constructing Incident/Trace/Event/Decision/
+Expected/Actual/Validation/Replay entities with valid reference chains.
 
-Shared reference material for skills that emit Evidence Model artifacts. Phase 5.
-
-This directory is part of the proposed repository structure in
-`docs/architecture.md`. Implementation begins in the phase noted in
-`docs/implementation-roadmap.md` and requires an approved ADR in
-`DECISIONS.md` for any structural change.
+This file exists only as a stable cross-reference point (a short,
+guaranteed-to-exist path other skills can point to) — the actual
+content lives in `evidence-engineering/SKILL.md` and
+`docs/evidence-model.md`; it is not duplicated here to avoid drift
+between two descriptions of the same thing.

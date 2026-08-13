@@ -90,6 +90,13 @@ don't silently reorder.
       (`discovery/cli/`), tested against 3 real scenarios including a
       polyglot/monorepo case, 2 bugs found and fixed during testing —
       commit `fa40bb4`
+- [x] 4 MVP `SKILL.md` files (`systematic-debugging`,
+      `evidence-engineering`, `behavioral-verification`, `testing`) —
+      real procedures cross-referencing the actual Phase 1 schemas and
+      `bug-report.sm.yaml` states, each with tool integration,
+      validation criteria, and happy-path + failure-mode examples.
+      `systematic-debugging`'s adaptation from obra/superpowers is
+      recorded in `NOTICE`.
 
 ## In progress
 
@@ -98,11 +105,14 @@ below is the next task to pick up)
 
 ## Not started (in sequence order)
 
-- [ ] 4 MVP `SKILL.md` files (`skills/systematic-debugging/`,
-      `skills/evidence-engineering/`, `skills/behavioral-verification/`,
-      `skills/testing/`) — currently only `skills/README.md` and
-      `skills/_shared/evidence-schema.md` placeholders exist
-- [ ] Workflow executor (Node.js/TypeScript) — does not exist yet at all
+- [ ] Workflow executor (Node.js/TypeScript) — does not exist yet at
+      all. This is the biggest remaining piece: a CLI that walks
+      `workflows/bug-report.sm.yaml`'s state machine, invokes the 4
+      skills above at the right states, reads/writes evidence + memory
+      JSON against the Phase 1 schemas (reusing the ajv validation
+      pattern already proven in `discovery/cli/`), and enforces
+      `question_economy` + `safety_gate` annotations from the workflow
+      definition.
 - [ ] `sync-entrypoints` implementation — design only so far
       (`docs/portability.md` adapter contract), no code
 - [ ] 2 stack adapters (Python, TypeScript) — `adapters/stacks/`
