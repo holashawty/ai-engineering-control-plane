@@ -1,0 +1,25 @@
+{
+  "name": "@aiecp/discovery",
+  "version": "0.1.0",
+  "description": "AIECP project discovery CLI — detector-driven pipeline that produces .aiecp/project-intelligence.json (ADR-0009, ADR-0015).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "aiecp-discover": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "test": "node dist/cli.js --self-test"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1"
+  }
+}
