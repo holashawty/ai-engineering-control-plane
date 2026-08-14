@@ -1,6 +1,6 @@
 # Workflow Router
 
-**Status: Phase 1 draft — MVP-scoped.**
+**Status: Phase 1 — two runnable workflows.**
 
 Deterministic mapping from (intent classification, repository state) to a
 workflow. Per docs/workflow-model.md, the user never selects a workflow
@@ -8,16 +8,18 @@ directly; they supply intent in natural language.
 
 ## MVP routing table
 
-Only `bug-report` is implemented as a runnable workflow (see
-`bug-report.sm.yaml`, ADR-0016). The remaining rows describe target
-routing for post-MVP workflows and are not yet backed by an `.sm.yaml`
-file.
+`bug-report` and `feature-request` are both implemented as runnable
+workflows (see `bug-report.sm.yaml` and `feature-request.sm.yaml`).
+`feature-request` is proven end-to-end against the real executor —
+see `executor/examples/e2e-feature-request/`. The remaining rows
+describe target routing for post-MVP workflows and are not yet backed
+by an `.sm.yaml` file.
 
 | Intent signal (heuristic, not exhaustive) | Workflow | Status |
 |---|---|---|
 | "X doesn't work", "X sometimes fails", "error when I...", stack trace pasted | `bug-report` | **MVP — implemented** |
 | No `.aiecp/project-intelligence.json` present in repo | `project-onboarding` | Planned |
-| "add a feature", "I want users to be able to...", new capability request | `feature-request` | Planned |
+| "add a feature", "I want users to be able to...", new capability request | `feature-request` | **MVP — implemented** |
 | "change how X works", modify existing behavior without it being broken | `change-request` | Planned |
 | User reports a UI/API bug filed by someone else against them | `user-complaint` | Planned |
 | A `known-failure` memory entry's symptom recurs | `regression` | Planned |

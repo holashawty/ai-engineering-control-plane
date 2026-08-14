@@ -1,0 +1,205 @@
+workflow: feature-request
+schema_version: "1.0.0"
+description: >
+  Triggered when the user requests a new capability ("add support for
+  exporting to PDF", "let me filter by tag") rather than reporting a
+  bug. Pairs with `bug-report.sm.yaml` as the second workflow in the
+  MVP vertical slice — exercises the same Evidence Model entities
+  (Decision, Expected, Actual, Validation, Trace, Event) but in a
+  constructive direction rather than a diagnostic one. Distinct from
+  `bug-report` because the source of `Expected` is the design produced
+  in-workflow (`design` state), not a pre-existing spec/contract the
+  system was already supposed to honor — the workflow itself has to
+  author the spec before anything can be validated against it. This
+  is why `design` is a first-class state here and has no analog in
+  `bug-report`.
+
+states:
+  - intake
+  - classify
+  - understand-existing-behavior
+  - design
+  - implement
+  - test
+  - verify
+  - document
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: understand-existing-behavior, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_two_questions }
+  - { from: understand-existing-behavior, to: design, on: existing_behavior_mapped }
+  - { from: understand-existing-behavior, to: blocked, on: existing_behavior_unknowable }
+  - { from: design, to: implement, on: design_approved }
+  - { from: design, to: understand-existing-behavior, on: design_needs_more_context }
+  - { from: design, to: blocked, on: design_infeasible }
+  - { from: implement, to: test, on: implementation_complete }
+  - { from: implement, to: design, on: implementation_blocked_by_design }
+  - { from: test, to: verify, on: tests_pass }
+  - { from: test, to: implement, on: tests_fail }
+  - { from: verify, to: document, on: behavior_verified }
+  - { from: verify, to: implement, on: behavior_not_verified }
+  - { from: document, to: report, on: documentation_complete }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's feature request verbatim. Do not ask
+      clarifying questions here — that belongs in `classify` or
+      `design` (per question_economy below). Distinguishing a true
+      feature request from a bug report ("X doesn't work" vs "X
+      should also do Y") happens here, structurally, before the
+      workflow commits to its `feature-request` shape — if the
+      intent is actually a bug, route to `bug-report` instead.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine feature class (new capability, extension of an
+      existing capability, refactor-exposed-as-feature) and rough
+      scope using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the
+      request text. May ask up to ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — the second question, if needed, is reserved
+      for `design`. The `Decision` emitted here is the acceptance
+      decision (proceed / reject / rescope), not a design decision.
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  understand-existing-behavior:
+    purpose: >
+      Before designing the new capability, read the code paths the
+      feature will touch and emit a `Trace` of how they currently
+      behave. A feature request that skips this state designs in a
+      vacuum and produces an `Expected` that conflicts with
+      invariants the codebase already enforces. The `Expected`
+      emitted here describes current behavior — it is the baseline
+      the new feature must not silently break, distinct from the
+      new-behavior `Expected` emitted in `design`.
+    emits_evidence: [trace, event, expected]
+    reads_memory: [project, architecture]
+
+  design:
+    purpose: >
+      Author the `Expected` for the new capability — a behavioral
+      contract, not a code sketch. May ask at most ONE necessary,
+      specific, decision-changing question if the design choice
+      cannot be made from Project Intelligence plus the
+      `understand-existing-behavior` trace. Emits a `Decision`
+      recording the chosen design and the alternatives rejected
+      (with reasons), so the eventual `report` can include a
+      decision trace per `constitution/engineering-principles.md`
+      "Report the decision trace, not just the outcome." Per
+      ADR-0008, design `Decision`s with `validated: false` are
+      proposals, not commitments.
+    emits_evidence: [decision, expected]
+    reads_memory: [project, architecture, constraint]
+
+  implement:
+    purpose: >
+      Apply the approved design. Per the AI-output validation
+      pattern (docs/evidence-model.md), every code change is a
+      `Decision` with `validated: false` until `verify` confirms
+      behavior — implementation is not success, it is a candidate
+      for success. The broad-refactor safety gate fires here, not
+      at `design`, because the actual refactor surface is only
+      knowable once implementation begins; if the gate trips,
+      transition back to `design` rather than pressing on with a
+      refactor that was never approved as a design.
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  test:
+    purpose: >
+      Run the project's own test suite (per Project Intelligence
+      `project.test_system`) plus newly-written tests covering the
+      feature's `Expected`. Per `behavioral-verification`, a
+      passing suite is necessary but not sufficient — tests pass
+      here, the judgment about whether the feature is actually
+      verified belongs to `verify`.
+    emits_evidence: [trace, event]
+    reads_memory: [environment]
+
+  verify:
+    purpose: >
+      Behavioral verification per ADR-0010 and the
+      `behavioral-verification` skill — directly check the
+      implementation against the `Expected` from `design`, not
+      just that the test suite exits 0. Emit a `Validation` with
+      `method` stronger than `unit_test` alone, or `unit_test`
+      plus an explicit contract/invariant check. A green suite
+      with no direct behavioral check does not earn
+      `result: "match"`.
+    emits_evidence: [actual, validation]
+
+  document:
+    purpose: >
+      Update user-facing and developer-facing docs to reflect the
+      new capability. Documentation is part of the feature, not
+      an afterthought — a feature that ships without docs is
+      incomplete per `constitution/engineering-principles.md`.
+      The `Event` emitted here records what docs changed, so
+      `report` can cite them in the decision trace.
+    emits_evidence: [event]
+
+  report:
+    purpose: >
+      Summarize the feature, the design `Decision` and rejected
+      alternatives, the implementation, and the validation evidence
+      chain. Must include the Decision Trace (docs/architecture.md),
+      not just "shipped." Writes a project memory entry recording
+      that this capability now exists, so future workflows do not
+      re-derive it.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Must surface a precise gap (intent
+      ambiguous after two questions, existing behavior unknowable,
+      design infeasible within current architecture, broad-refactor
+      gate tripped and not approved) — never a vague failure, per
+      docs/portability.md failure modes.
+
+skills_required:
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+  # Future skills not yet authored (see skills/README.md "remaining
+  # ~15 skills") will be added here when they exist:
+  #   - specification  (for the `design` state)
+  #   - implementation (for the `implement` state)
+  #   - documentation (for the `document` state)
+  # Until then, the workflow runs with the three skills above and the
+  # agent fills the gaps directly — flagged in STATUS.md as a known
+  # shortcut, not a permanent design choice.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: implement
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, design]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and `design`
+    (up to 1), totaling 2 across the workflow. Each must be
+    necessary, specific, and decision-changing — see
+    docs/workflow-model.md "Question economy." The budget is higher
+    than `bug-report`'s 1 because feature requests are inherently
+    more open-ended; it is still bounded, not unlimited. Questions
+    about implementation details ("how should I name this function?")
+    are never permitted under this budget — they are not
+    decision-changing at the workflow level.

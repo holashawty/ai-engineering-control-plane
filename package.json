@@ -15,6 +15,8 @@
     "test": "npm test --workspace=discovery/cli && npm test --workspace=executor && npm test --workspace=adapters/agents",
     "bootstrap": "npm run install:all && npm run build && npm run test",
     "e2e:membership-demo": "node executor/examples/e2e-membership-bug/drive-run.mjs",
+    "e2e:feature-request-demo": "node executor/examples/e2e-feature-request/drive-run.mjs",
+    "validate:feature-request": "node scripts/validate-feature-request.mjs",
     "sync-entrypoints": "node adapters/agents/dist/bin/write-entrypoints.js . ."
   }
 }

@@ -160,6 +160,45 @@ don't silently reorder.
       but it is one driver script assembling real captured data, not a
       live multi-turn agent session issuing one tool call per turn
       through an actual agent adapter. That remains open — see below.
+- [x] ADR-0018: permissively-licensed upstream code (MIT/Apache/BSD)
+      may be reused verbatim with attribution. Supersedes the
+      paraphrase-by-default reading of `constitution.md` §6 for those
+      sources specifically. `constitution.md` §6 updated with the new
+      rule, `README.md` lists upstream source URLs so any future
+      public-release comparison is straightforward rather than a
+      surprise — commit `2b2a74e`.
+- [x] A1 — `systematic-debugging` skill deepened in place: concrete
+      shell-level evidence-gathering commands, multi-component boundary
+      instrumentation pattern, condition-based-waiting (waitFor not
+      sleep), backward call-chain tracing with stack-capture snippet,
+      find-polluter bisection pattern, three-failure rule (escalate
+      to architectural question after 3 rejected candidates),
+      defense-in-depth paragraph (guards at every layer data passes
+      through), and a third worked example. Adapted from
+      `obra/superpowers@b36e0829` (MIT), re-expressed against the
+      AIECP Evidence Model — see `NOTICE` for section-by-section
+      attribution. Controller-approved after verbatim-copy review
+      and SHA/file-existence verification. Merged to main as
+      `feature/a1-systematic-debugging-deepen` (branch preserved).
+- [x] B1 — `feature-request.sm.yaml` workflow authored and proven
+      end-to-end. 10 states, 15 transitions, terminal states
+      `report` + `blocked`, `broad-refactor` safety gate at
+      `implement`, `question_economy` (max_questions: 2,
+      allowed_states: [classify, design]). Proof driver
+      `executor/examples/e2e-feature-request/drive-run.mjs` exercises
+      every state through the real `WorkflowRun` API, emits
+      schema-valid evidence at every emitting state, confirms the
+      safety gate blocks un-confirmed advance out of `implement`,
+      confirms question economy rejects a third question in the
+      wrong state, and writes a project memory entry at `report`.
+      23/23 assertions pass. Structural validator script
+      `scripts/validate-feature-request.mjs` confirms the YAML is
+      sound independently (no dead ends, all states reachable).
+      Run via `npm run e2e:feature-request-demo` or
+      `npm run validate:feature-request`. This is the second e2e
+      proof point — proves the executor is workflow-agnostic (the
+      same engine runs `bug-report` and `feature-request` with no
+      per-workflow code).
 
 ## In progress
 
@@ -184,21 +223,46 @@ below is the next task to pick up)
       not the ≥5-scenario-per-skill / ≥3-scenario-per-workflow bar
       `docs/evaluations/evaluation-strategy.md` sets as the actual
       minimum.
-- [ ] Remaining workflows (13 of 14), remaining skills (~15 of ~19),
-      remaining stack adapters (9 of 11), remaining agent adapters (7
-      of 9) — all explicitly long-term scope per ADR-0016, not MVP.
+- [ ] Remaining workflows (12 of 14: `code-review`, `refactor`, and
+      10 others from `_router.md`'s planned table). `feature-request`
+      was the second of three priority workflows in TASKS.md (B1)
+      intended to prove the executor's workflow-agnosticism; that
+      proof is now in. `code-review` and `refactor` would extend
+      coverage to two more structurally different shapes (read-mostly
+      and behavior-preserving respectively) but are no longer
+      blocking on the executor question.
+- [ ] Remaining skills (~15 of ~19, per ADR-0016 long-term scope).
+      `specification`, `implementation`, `documentation` are the
+      three currently-faked-within-`feature-request.sm.yaml`'s
+      `design` / `implement` / `document` states; authoring them
+      would let `feature-request` cite real skills the way
+      `bug-report` cites real ones.
+- [ ] Remaining stack adapters (9 of 11) and agent adapters (7 of 9)
+      — long-term scope per ADR-0016.
 
 ## Known open questions (not blocking, but unresolved)
 
 - Exact commit SHAs for vendored/referenced upstream repos were never
   captured (no `git clone`/`gh api` access during verification) — see
-  `NOTICE`. Only matters once something is actually vendored, not yet.
+  `NOTICE`. A1's deepening pass did pin one SHA
+  (`obra/superpowers@b36e0829`); the pattern is now established for
+  future vendoring. The general open question (other repos) remains.
 - `vercel-labs/skills` license still unverified — flagged in
   `docs/research.md` and `NOTICE`, must be checked before any reuse.
 - Whether `discovery-refresh` (the trigger that flips
   `project-intelligence.json`'s `stale` flag) is itself a Phase 3
   detector responsibility or a separate watcher process — not decided,
   will get decided when discovery detectors are actually built.
+- ADR-0018 permits verbatim reuse of permissively-licensed code, but
+  no actual vendoring of code (only prose adaptation so far) has
+  happened yet. When the first real vendoring happens (likely A2:
+  spec-kit template adaptation, or A3: anthropics/skills structure
+  inspection), the `NOTICE` "Actual adaptations" table will gain its
+  first verbatim-copy row, and a small policy question will need
+  answering: does verbatim-copied code live under `vendor/<repo>/`
+  with upstream license header preserved, or interleaved into the
+  project's own structure with attribution in `NOTICE` only? Not
+  decided; not blocking until first vendoring actually occurs.
 
 ## How to resume this project in a new session
 
@@ -220,6 +284,9 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, end of real end-to-end MVP validation session
-(discovery + skills + executor + agent adapters + a genuine, non-
-scripted bug-report run all complete and proven to work together).*
+*Last updated: 2026-08-14, B1 (feature-request workflow) end-to-end
+proof added on top of A1 (systematic-debugging deepening) and ADR-0018
+(permissive-license verbatim reuse policy). Two workflows now runnable
+end-to-end through the same workflow-agnostic executor. Next priority
+per TASKS.md: A2 (spec-kit template adaptation), then B2 (skills for
+the new workflow's faked states).*

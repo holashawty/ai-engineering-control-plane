@@ -2,11 +2,20 @@
 
 State-machine workflow definitions per `docs/workflow-model.md`.
 
-**Status:** `bug-report.sm.yaml` is complete and is the MVP vertical
-slice (ADR-0016) — the one workflow that must run correctly end-to-end
-before any other workflow is built out. `_router.md` routes intent to it
-and documents the full target routing table for post-MVP workflows.
+**Status:** Two workflows are complete and runnable end-to-end
+through the executor:
 
-No workflow *executor* (the runtime that actually walks the state
-machine) exists yet — that is Phase 2 (Core) in
-`docs/implementation-roadmap.md`.
+- `bug-report.sm.yaml` — the MVP vertical slice (ADR-0016). Proven
+  end-to-end against a real (non-scripted) bug in
+  `executor/examples/e2e-membership-bug/`.
+- `feature-request.sm.yaml` — the second workflow. Proven
+  end-to-end against the executor in
+  `executor/examples/e2e-feature-request/` (23/23 assertions pass,
+  safety gate and question economy both enforced).
+
+Both run through the same `WorkflowRun` engine (`executor/src/run.ts`)
+with no per-workflow code in the executor — the engine is
+workflow-agnostic, reading the `.sm.yaml` declaration at runtime.
+`_router.md` documents the full target routing table for post-MVP
+workflows not yet backed by an `.sm.yaml` file.
+

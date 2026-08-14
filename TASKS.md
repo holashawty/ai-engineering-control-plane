@@ -1,11 +1,66 @@
 # AIECP — Sıradaki Faz Görev Listesi
-**Oluşturulma tarihi:** 2026-08-14 (revize: aynı gün, iş bölümü düzeltmesi)
+**Oluşturulma tarihi:** 2026-08-14 (revize: 2026-08-14, A1 + B1 tamamlandı)
 **Repo:** holashawty/ai-engineering-control-plane (private)
-**Son commit:** eed6869
+**Son commit:** (B1 commit'i bu dokümanla birlikte geliyor — bkz. aşağıda)
 
 Bu liste, kullanıcının Z.ai'yi (chat + cloud agent) yönlendirmesi ve
 Claude'un (bu asistan) **kod/proje kontrolcüsü ve planlayıcı** olarak
 çalışması için hazırlanmıştır.
+
+---
+
+## 2026-08-14 güncellemesi — tamamlananlar
+
+- **ADR-0018** (kontrolcü tarafından): MIT/Apache/BSD lisanslı upstream
+  kod için verbatim kopyalama + attribution artık serbest. Eski
+  "asla verbatim kopyalama" kuralı superpowers/MIT gibi izin verici
+  lisanslar için geçersiz; sadece kısıtlı/doğrulanmamış lisanslar
+  (anthropics/skills'in docx/pdf/pptx/xlsx'i, vercel-labs/skills)
+  için paraphrase-only kuralı duruyor. `constitution.md` §6 ve
+  `README.md`'deki upstream link listesi güncellendi. Commit `2b2a74e`.
+- **A1** (Z.ai Agent tarafından, kontrolcü tarafından onaylanıp merge
+  edildi): `systematic-debugging` skill'inin derinleştirilmesi.
+  Superpowers'tan öğrenilen teknikler (shell-level evidence toplama,
+  backward call-chain tracing, find-polluter bisection,
+  condition-based-waiting, three-failure rule, defense-in-depth)
+  AIECP Evidence Model dilinde yeniden ifade edildi. Branch
+  `feature/a1-systematic-debugging-deepen` `--no-ff` ile main'e
+  merge edildi, NOTICE'te pinned SHA `obra/superpowers@b36e0829` ile
+  section-by-section attribution var.
+- **B1** (Z.ai Agent tarafından, kontrolcü validation'ından geçti):
+  `workflows/feature-request.sm.yaml` yazıldı ve gerçek executor'dan
+  uçtan uca geçirildi. 10 state, 15 transition, `implement` state'inde
+  `broad-refactor` safety gate, `question_economy` (max=2,
+  allowed=[classify,design]). 23/23 assertion geçen proof driver
+  `executor/examples/e2e-feature-request/drive-run.mjs` altında;
+  structural validator `scripts/validate-feature-request.mjs` altında.
+  Bu, executor'ın workflow-agnostic olduğunu kanıtlayan ikinci
+  proof point (ilki `bug-report` ile membership off-by-one idi).
+
+Bu üç madde STATUS.md'in "Done" bölümünde işaretli. Aşağıdaki listede
+A1 ve B1'in yanına ✅ eklendi; bir sonraki öncelik A2.
+
+---
+
+## İş bölümü (düzeltilmiş)
+
+| Araç | Yetenek | Bu listede kullanılacağı yer |
+|---|---|---|
+| **Z.ai Agent** (siteki agent bölümü, kendi bulut bilgisayarı) | Repo klonlama, dosya okuma/yazma, kod çalıştırma, test, commit/push — tam bir geliştirme ortamı | Grup A (gerçek upstream entegrasyonu) + Grup B (içerik üretimi) + kod yazma gerektiren her şey |
+| **Z.ai Chat** (deep research / max thinking mode) | Web araştırması, derin analiz, karşılaştırma | Grup B'deki saf araştırma alt-görevleri (B3, B4) |
+| **Claude (ben)** | Kod/proje denetimi, mimari tutarlılık kontrolü, plan güncelleme | **Kontrolcü + planlayıcı.** Z.ai'nin çıktısını denetler: doğru mu, eksik mi, DECISIONS.md/şemalarla tutarlı mı, güvenlik açığı var mı. Gerekirse düzeltme talimatı yazar. Yeni görev tanımlar. |
+
+**Önceki hata:** Bir önceki TASKS.md sürümünde Grup A'yı ("gerçek repo
+klonlama gerektiren işler") yanlışlıkla sadece Claude'a atamıştım,
+Z.ai'nin chat modunun repo erişimi olmadığını Z.ai'nin *hiçbir*
+modunun repo erişimi olmadığı şeklinde genellemiştim. Bu yanlıştı —
+Z.ai Agent (bulut bilgisayar) tam donanımlı bir geliştirme ortamı.
+Düzeltildi.
+
+**Claude'un yeni rolü net olsun diye:** Aşağıdaki görevlerin hiçbirini
+"ben yapayım" diye üstlenmeyeceğim. Z.ai Agent'a görev olarak
+verilecekler, ben sonucu inceleyip onaylayacağım/reddedeceğim/
+düzeltme isteyeceğim.
 
 ---
 
@@ -33,37 +88,18 @@ düzeltme isteyeceğim.
 
 ## GRUP A — Gerçek Upstream Entegrasyonu (Z.ai Agent yapacak, Claude denetler)
 
-### A1. superpowers'ı gerçekten klonla ve systematic-debugging'i zenginleştir
-- **Ne:** `obra/superpowers` reposunu gerçekten clone et, `systematic-debugging`
-  skill'inin (ve varsa `code-review`, `planning` gibi ilgili skill'lerin)
-  gerçek `SKILL.md` içeriğini oku. Şu an bizim skill'imiz sadece
-  *prosedür yapısını* adapte etmişti (kelime kelime kopya yok). Kaçırılan
-  pratik detayları (örnek komutlar, hata senaryoları, kenar durumlar)
-  bul ve bizim `evidence-engineering` ile uyumlu şekilde entegre et.
-- **Z.ai Agent'a verilecek prompt:**
-  ```
-  GÖREV: obra/superpowers reposunu klonla, systematic-debugging skill'ini
-  incele, bizim skills/systematic-debugging/SKILL.md dosyamızı zenginleştir.
-
-  1. git clone https://github.com/obra/superpowers
-  2. systematic-debugging (ve varsa code-review, planning) skill
-     dosyalarını oku.
-  3. Bizim repomuzu (holashawty/ai-engineering-control-plane) clone et,
-     skills/systematic-debugging/SKILL.md dosyasını oku — mevcut yapıyı
-     KORU (frontmatter, bölüm başlıkları aynı kalsın).
-  4. superpowers'tan öğrendiğin pratik detayları (somut komut örnekleri,
-     kenar durum senaryoları, hata yakalama teknikleri) bizim dosyaya
-     KENDİ CÜMLELERİNLE ekle — asla verbatim kopyalama, MIT lisansı
-     attribution gerektiriyor ama yine de yeniden yazılmalı.
-  5. NOTICE dosyasındaki "Actual adaptations" bölümünü güncelle: hangi
-     ek bölümün superpowers'tan hangi commit SHA'sından geldiğini yaz.
-  6. Değişikliği commit et, ama PUSH ETME — Claude'un denetlemesi için
-     bir branch'te (örn. feature/a1-systematic-debugging-deepen) bırak
-     ve bana diff'i göster.
-  ```
-- **Kabul kriteri (Claude denetler):** Verbatim kopya yok (metni
-  karşılaştırıp kontrol edeceğim), NOTICE doğru güncellenmiş, gerçek
-  commit SHA'sı var, mevcut frontmatter/format bozulmamış.
+### A1. ✅ superpowers'ı gerçekten klonla ve systematic-debugging'i zenginleştir
+- **Durum:** TAMAMLANDI (2026-08-14). Branch `feature/a1-systematic-debugging-deepen`
+  `--no-ff` ile main'e merge edildi, kontrolcü tarafından doğrulandı
+  (pinned SHA `obra/superpowers@b36e0829` GitHub'da teyit edildi,
+  gerçek dosyaların varlığı doğrulandı, frontmatter YAML geçerli,
+  verbatim-copy review yapıldı).
+- **ADRs notu:** ADR-0018 sonrası "asla verbatim" kuralı MIT için
+  kalktı; bu görevde paraphrase tercih edilmişti ama bu bir kural
+  değil, tercihti. Gelecekteki benzer entegrasyonlarda verbatim +
+  attribution da tercih edilebilir (her durumda NOTICE'e yazılır).
+- **Kabul kriteri:** Sağlandı (NOTICE güncel, SHA pinned, format
+  korunmuş, kontrolcü tarafından teyit edildi).
 
 ### A2. spec-kit'in gerçek `specs/` şablonlarını incele ve uyarlamayı derinleştir
 - **Ne:** `github/spec-kit` reposunu clone et, gerçek
@@ -102,17 +138,18 @@ düzeltme isteyeceğim.
 
 ## GRUP B — Z.ai (Agent veya Chat/deep research) İçerik Üretimi
 
-### B1. Kalan 13 workflow için `.sm.yaml` taslakları
-- **Ne:** `workflows/_router.md`'de "Planned" işaretli 13 workflow için
-  `workflows/bug-report.sm.yaml` formatında taslak yaz.
-- **Nerede:** Z.ai Agent (repoyu görüp format tutarlılığını kendi
-  kontrol edebilir) tercih edilir, ama Chat modunda da (referans
-  dosya yapıştırılarak) yapılabilir.
-- **Öncelik sırası:** `feature-request`, `code-review`, `refactor` ilk
-  3 (executor'ın workflow-agnostik olduğunu kanıtlamak için).
-- **Kabul kriteri:** YAML geçerli, state/transition tutarlı (dead-end
-  yok), Claude gerçek executor'dan (`node dist/cli.js`) geçirip
-  doğrular.
+### B1. ✅ Kalan workflow'lar için `.sm.yaml` taslakları (ilk öncelik: feature-request)
+- **Durum:** KISMEN TAMAMLANDI (2026-08-14). `feature-request.sm.yaml`
+  yazıldı, gerçek executor'dan uçtan uça geçirildi (23/23 assertion),
+  `_router.md` "implemented" olarak işaretlendi, `package.json`'a
+  `npm run e2e:feature-request-demo` ve `npm run validate:feature-request`
+  script'leri eklendi. Bu, executor'ın workflow-agnostic olduğunu
+  kanıtlayan ikinci proof pointtir.
+- **Kalan:** `code-review` ve `refactor` (TASKS.md öncelik sırasındaki
+  diğer ikisi) artık bloklu değil — executor sorusu çözüldü. Bu iki
+  workflow, yapısal olarak farklı şekiller (read-mostly ve
+  behavior-preserving) eklemek için hâlâ değerli, ancak acil
+  değiller. Bir sonraki sprit'a bırakılabilir veya paralel verilebilir.
 
 ### B2. Kalan ~15 skill için `SKILL.md` taslakları
 - **Ne:** B1'deki yeni workflow'larla eşleşen skill'ler öncelikli.
@@ -159,16 +196,25 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
 
 ---
 
-## Öncelik sırası (önerilen)
+## Öncelik sırası (önerilen, 2026-08-14 güncellemesi)
 
-1. **A1** (superpowers derinleştirme) — Z.ai Agent'a ilk verilecek görev.
-2. **B1** (feature-request, code-review, refactor workflow taslakları)
-   — executor'ın workflow-agnostik olduğunu kanıtlamak için kritik.
-3. **C1** (B1 çıktılarını gerçek executor'la test etme) — Claude,
-   B1 biter bitmez.
-4. **A2** (spec-kit şablonları).
-5. **B2** (B1'deki workflow'larla eşleşen skill'ler).
-6. **A3, A4, B3, B4** — arka planda.
+1. ✅ **A1** (superpowers derinleştirme) — TAMAMLANDI.
+2. ✅ **B1** (feature-request workflow taslağı) — TAMAMLANDI.
+   `code-review` ve `refactor` workflow'ları da artık bloklanmıyor;
+   istenirse paralel verilebilir.
+3. ✅ **ADR-0018** (izin verici lisanslar için verbatim kopyalama
+   politikası) — kontrolcü tarafından TAMAMLANDI.
+4. **A2** (spec-kit şablonları) — SONRAKİ ÖNCELİK. spec-kit MIT
+   lisanslı, ADR-0018 sayesinde artık gerçek şablon içerikleri
+   verbatim + attribution ile alınabilir (paraphrase zorunluluğu
+   yok). `specs/*.template.md` dosyalarını doldur.
+5. **B2** (B1'deki workflow'larla eşleşen skill'ler) — özellikle
+   `specification`, `implementation`, `documentation` skill'leri.
+   `feature-request.sm.yaml` şu an bu üç skill'i `skills_required`
+   comment'inde "henüz yazılmadı" olarak işaretliyor; gerçek
+   SKILL.md dosyaları yazılınca comment'ler kaldırılıp `skills_required`
+   listesine eklenebilir.
+6. **A3, A4, B3, B4** — arka planda, öncelik sırasıyla.
 
 ## Bu listenin kullanımı
 
@@ -180,3 +226,28 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
    ve kararını açıkça söyler (onay / red / düzeltme talebi).
 5. Onaylanırsa Claude ana branch'e merge eder / kendi committer
    erişimiyle push eder ve STATUS.md + bu dosyayı günceller.
+
+---
+
+## 2026-08-14 handoff notu (Z.ai Agent → sonraki agent / kontrolcü)
+
+Bu commit (B1 + A1-in-STATUS + tüm dokümantasyon güncellemeleri)
+tek bir mantıksal birim olarak main'e push edilecek. Sonra:
+
+- **Sonraki Z.ai Agent görevi:** A2 (spec-kit şablonları). ADR-0018
+  sayesinde artık paraphrase yerine verbatim + attribution
+  tercih edilebilir — spec-kit MIT'li, Notice'e satır satır yazmak
+  yeterli. Prompt A2'nin altında hazır.
+- **Kontrolcüye not:** A1 merge commit'i `--no-ff` ile yapıldı, branch
+  history korundu. B1 tek commit olarak main'e gidiyor (workflow +
+  proof + router + status + tasks bir arada, çünkü proof script
+  workflow'süz anlamsız). Ayrı ayrı split etmeye gerek yok.
+- **Bekleyen açık sorular:** (1) `vercel-labs/skills` lisansı hâlâ
+  doğrulanmadı — B3 araştırması sırasında kapatılmalı. (2) ADR-0018
+  "vendor/ altına mı yoksa interleaved mı" sorusu açık — ilk gerçek
+  vendoring (A2 olabilir) sırasında cevaplanacak.
+- **Token/Güvenlik:** Push için kullanılan GitHub PAT hiçbir dosyaya,
+  commit mesajına, veya STATUS/TASKS'a yazılmadı (ilk draft'ta yanlışlıkla
+  prefix yazılmıştı, bu commit'te kaldırıldı). Bash output'larında URL
+  redaksiyonu yapıldı (`sed -E 's|//[^@]*@|//***@|g'`). Token iş bitince
+  patron tarafından revoke edilecek.
