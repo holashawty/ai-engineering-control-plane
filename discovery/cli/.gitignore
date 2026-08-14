@@ -1,3 +1,9 @@
 node_modules/
-dist/
+# dist/ is NOT ignored here — see root .gitignore's ADR-0021 exception.
+# discovery/cli/dist/ is committed to the repo so chat-sandbox agents
+# (ChatGPT Code Interpreter, Claude code execution — per ADR-0020)
+# without network access can run `node discovery/cli/dist/cli.js`
+# without `npm install`. Use `git add -f discovery/cli/dist/` after
+# a rebuild. scripts/check-discovery-freshness.mjs verifies the
+# committed dist/ matches the current source.
 *.log

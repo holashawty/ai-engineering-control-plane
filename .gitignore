@@ -3,6 +3,18 @@ node_modules/
 dist/
 *.log
 
+# EXCEPTION (per ADR-0021): discovery/cli/dist/ IS committed to the
+# repo, despite the global `dist/` ignore above. This is because
+# chat-sandbox agents (ChatGPT Code Interpreter, Claude code
+# execution — per ADR-0020) often lack network access for
+# `npm install`, and without the committed dist/ they cannot run
+# `discovery/cli` at all. The committed dist/ is a build artifact
+# that should be regenerated whenever discovery/cli/src/*.ts changes
+# — see scripts/check-discovery-freshness.mjs (also per ADR-0021)
+# which verifies the committed dist/ matches the current source.
+# Use `git add -f discovery/cli/dist/` to force-add after a rebuild.
+!discovery/cli/dist/
+
 # local, potentially sensitive pre-authorized automation policy
 .aiecp/policy.local.yaml
 

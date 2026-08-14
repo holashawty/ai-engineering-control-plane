@@ -155,6 +155,43 @@ It does not apply to work inside *this* repository.
 - **testing** (`skills/testing/SKILL.md`) — Use whenever a workflow needs to run, write, or interpret tests — always via the project's own detected test runner (Project Intelligence project.test_system), never a framework-imposed toolchain. Supports reproduce, verify, and regression-protect states.
 - **tool-use-discipline** (`skills/tool-use-discipline/SKILL.md`) — Use at every workflow state — forces the agent to invoke its available tools before answering from memory. The agent's own parametric knowledge is treated as a hypothesis to be verified, never as ground truth. Triggered specifically when the agent is about to assert a fact, write code, or propose a fix. Operationalizes forthcoming constitution §8 ('Tool use is mandatory, not optional'). Distinct from `evidence-engineering` (which is about emitting evidence correctly); this skill is about gathering evidence via tools before any conclusion is reached.
 
+## Discovery: two paths (per ADR-0021 — CRITICAL for offline sandboxes)
+
+When you reach `project-onboarding`'s `run-discovery` state, you
+have TWO paths to produce `.aiecp/project-intelligence.json`:
+
+### Path 1 (PRIMARY): run the canonical discovery/cli tool
+
+```bash
+node discovery/cli/dist/cli.js .
+```
+
+The `dist/` directory is committed to the repo (per ADR-0021), so
+this works **without `npm install`** — even in an offline sandbox.
+This is the preferred path because it uses the canonical detector
+pipeline. Transition on `discovery_complete`.
+
+### Path 2 (FALLBACK): follow the text discovery procedure
+
+If Path 1 fails (no Node.js runtime in your sandbox, or `dist/`
+is missing/stale — check via
+`node scripts/check-discovery-freshness.mjs`), follow the procedure
+in `skills/project-onboarding/discovery-fallback.md`. This produces
+a schema-valid `.aiecp/project-intelligence.json` by reading marker
+files directly (no Node.js subprocess needed). Transition on
+`discovery_complete_via_fallback`.
+
+The fallback procedure sets `discovery_method:
+"chat-sandbox-fallback-procedure"` in the produced JSON so the
+audit trail distinguishes it from canonical-CLI-produced Project
+Intelligence.
+
+### If neither path works
+
+Transition to `blocked` with `on: discovery_failed` and tell
+the user precisely what failed (which path was tried, what error
+occurred).
+
 ## Evidence protocol
 
 Emit evidence as fenced code blocks:
@@ -197,8 +234,9 @@ data:
 - Write files in the sandbox. The workflow's `apply-fix` /
   `implement` / `migrate` states can proceed — you write the
   fix to a file in the sandbox, then run the test suite against it.
-- Run project-onboarding. `discovery/cli` can be invoked via
-  shell_exec in the sandbox; the resulting
+- Run project-onboarding. Both discovery paths (canonical CLI via
+  `node discovery/cli/dist/cli.js`, OR the fallback procedure)
+  work in your sandbox — the resulting
   `.aiecp/project-intelligence.json` lives in the sandbox.
 
 ## What you must NOT do
@@ -214,6 +252,9 @@ data:
   exempt you from this — running `python -c "import datetime;
   print(datetime.date.today())"` in the sandbox gives you today's
   date in the sandbox's timezone, which may differ from the user's.
+- Skip the `.aiecp/project-intelligence.json` check (router rule 1).
+  If the file doesn't exist, you MUST run `project-onboarding`
+  first — never jump directly to `bug-report` or any other workflow.
 
 See the hand-authored `CHAT-ENTRYPOINT.md` at repo root for the
 full orientation, including worked examples and stuck-pattern style

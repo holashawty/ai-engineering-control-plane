@@ -1,0 +1,90 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { existsSync } from "node:fs";
+export const typescriptDetector = {
+    id: "typescript",
+    matches(ctx) {
+        return ctx.rootEntries.includes("package.json");
+    },
+    async detect(ctx) {
+        const buildSystem = [];
+        const testSystem = [];
+        const entrypoints = [];
+        const dependencies = {};
+        let hasTestSuite = false;
+        const externalIntegrations = [];
+        const pkgRaw = await readFile(join(ctx.rootPath, "package.json"), "utf-8");
+        const pkg = JSON.parse(pkgRaw);
+        const allDeps = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+        dependencies.manifest = "package.json";
+        dependencies.packages = Object.keys(allDeps).length;
+        const isTS = ctx.rootEntries.includes("tsconfig.json") || "typescript" in allDeps;
+        const stack = isTS ? ["typescript"] : ["javascript"];
+        // Package manager.
+        if (ctx.rootEntries.includes("pnpm-lock.yaml"))
+            buildSystem.push("pnpm");
+        else if (ctx.rootEntries.includes("yarn.lock"))
+            buildSystem.push("yarn");
+        else if (ctx.rootEntries.includes("bun.lockb") || ctx.rootEntries.includes("bun.lock"))
+            buildSystem.push("bun");
+        else if (ctx.rootEntries.includes("package-lock.json"))
+            buildSystem.push("npm");
+        else
+            buildSystem.push("npm");
+        // Test runner, via devDependencies + script hints.
+        for (const [dep, name] of [
+            ["vitest", "vitest"],
+            ["jest", "jest"],
+            ["mocha", "mocha"],
+            ["@playwright/test", "playwright"],
+        ]) {
+            if (dep in allDeps) {
+                testSystem.push(name);
+                hasTestSuite = true;
+            }
+        }
+        if (!hasTestSuite && pkg.scripts?.test && !/no test specified/.test(pkg.scripts.test)) {
+            hasTestSuite = true;
+            testSystem.push("npm-script:test");
+        }
+        // Framework signals, for external_integrations / layer.
+        const layer = [];
+        if ("next" in allDeps) {
+            layer.push("frontend");
+            externalIntegrations.push("next.js");
+        }
+        if ("react" in allDeps && !layer.includes("frontend"))
+            layer.push("frontend");
+        if ("vue" in allDeps && !layer.includes("frontend"))
+            layer.push("frontend");
+        if ("express" in allDeps || "fastify" in allDeps || "koa" in allDeps)
+            layer.push("backend");
+        if ("electron" in allDeps)
+            layer.push("desktop");
+        if (layer.length === 0)
+            layer.push("backend");
+        // Common entrypoints.
+        if (pkg.main)
+            entrypoints.push({ path: pkg.main, kind: "main" });
+        for (const [file, kind] of [
+            ["src/index.ts", "main"],
+            ["src/index.js", "main"],
+            ["index.ts", "main"],
+            ["index.js", "main"],
+            ["src/cli.ts", "cli"],
+        ]) {
+            if (existsSync(join(ctx.rootPath, file)))
+                entrypoints.push({ path: file, kind });
+        }
+        return {
+            detector: "typescript",
+            stack,
+            layer,
+            buildSystem,
+            testSystem,
+            entrypoints,
+            dependencies,
+            capabilities: { has_test_suite: hasTestSuite, external_integrations: externalIntegrations },
+        };
+    },
+};

@@ -34,18 +34,33 @@ true`. If missing/stale → route to `project-onboarding` first."
 
 ### 1. Run discovery (state: `run-discovery`)
 
+**TWO discovery paths (per ADR-0021):** the canonical CLI tool,
+and a text-based fallback procedure for offline-sandbox environments
+where `npm install` is not possible (chat-sandbox agents per
+ADR-0020). Both produce schema-valid
+`.aiecp/project-intelligence.json` documents.
+
+#### Path A (PRIMARY) — canonical `discovery/cli` tool
+
 Invoke `discovery/cli` (ADR-0016's existing Python + TypeScript CLI)
-against the repo being onboarded. From the `discovery/cli/` directory,
-after `npm install && npm run build`:
+against the repo being onboarded. **The `dist/` directory is
+committed to the repo** (per ADR-0021, against Node.js convention)
+so this works without `npm install`:
 
 ```bash
 # Run against the host repo — writes .aiecp/project-intelligence.json
-# to the host repo's .aiecp/ directory
-node dist/cli.js /path/to/host/repo
+# to the host repo's .aiecp/ directory. Works in offline sandboxes
+# because dist/ is committed (per ADR-0021).
+node discovery/cli/dist/cli.js /path/to/host/repo
 
 # Dry run — validate and print, don't write (useful for validate-discovery
 # when you want to inspect the produced document before persisting)
-node dist/cli.js /path/to/host/repo --dry-run
+node discovery/cli/dist/cli.js /path/to/host/repo --dry-run
+
+# If dist/ is missing OR you've modified discovery/cli/src/*.ts:
+npm run build --workspace=discovery/cli
+node scripts/check-discovery-freshness.mjs --update
+git add -f discovery/cli/dist/   # only if you're committing the rebuild
 ```
 
 The CLI runs ADR-0009's detector pipeline: language, framework, build,
@@ -72,29 +87,64 @@ Wrap these `Event`s in a single `Trace`
 the detector sequence is citable as a unit and the eventual `report`
 state can include the discovery trail in the decision trace.
 
-The CLI writes `.aiecp/project-intelligence.json` itself (when not in
-`--dry-run` mode) — this state emits the *evidence trail* of what
-each detector found, not the Project Intelligence document (which
-lives on disk in `.aiecp/`). The persisted document is consumed
-directly by `validate-discovery` and by every subsequent workflow
-run.
+Transition to `validate-discovery` on `discovery_complete` after
+this path.
+
+#### Path B (FALLBACK) — text discovery procedure (per ADR-0021)
+
+**Use this path when Path A fails or is unavailable:**
+- The sandbox has no Node.js runtime (e.g., a Python-only ChatGPT
+  Code Interpreter sandbox).
+- `discovery/cli/dist/` is missing or stale (verify via
+  `node scripts/check-discovery-freshness.mjs`).
+- `node discovery/cli/dist/cli.js` errored for any reason.
+
+Follow the procedure in
+[`discovery-fallback.md`](discovery-fallback.md) — a sibling file in
+this skill's directory. The procedure has 8 steps:
+
+1. Identify the language(s) via marker files (`package.json` →
+   Node.js/TypeScript, `pyproject.toml` → Python, `Cargo.toml` →
+   Rust, etc.).
+2. Identify the framework(s) via framework markers in
+   `package.json`/`pyproject.toml`/etc.
+3. Identify the build system.
+4. Identify the test system.
+5. Identify the layer(s) (backend, frontend, mobile, etc.).
+6. Identify the entrypoint(s).
+7. Probe runtime versions via `python --version`, `node --version`,
+   etc. (or via `platform.*` in a Python-only sandbox).
+8. Write `.aiecp/project-intelligence.json` with
+   `discovery_method: "chat-sandbox-fallback-procedure"` for
+   audit-trail distinction.
+
+For each step of the fallback procedure, emit one `Event` with:
+- `kind: "action"`
+- `source: "discovery-fallback:step-N"` (e.g.,
+  `discovery-fallback:step-1-language-markers`)
+- `payload.finding` describing what was detected
+
+Transition to `validate-discovery` on
+`discovery_complete_via_fallback` after this path.
+
+#### Failure handling
+
+If neither path succeeds (Path A errored AND Path B cannot complete
+because essential marker files are missing), transition to
+`blocked` with `on: discovery_failed` and a precise gap statement
+— never a vague "discovery didn't work." The blocked report should
+name which path was tried, what error occurred, and what essential
+information is missing.
 
 **Per `skills/tool-use-discipline/SKILL.md`**: discovery is a
 tool-driven activity. Do not guess at the stack from memory of "similar
-repos" — invoke the CLI and let its detectors tell you. Per
+repos" — invoke the CLI (Path A) or follow the procedure (Path B)
+and let the detectors/markers tell you. Per
 `skills/recency-verification/SKILL.md` step 2, the version probes the
 CLI runs (`python --version`, `node --version`,
 language-appropriate equivalents) are time-sensitive claims about the
 current environment — let the tool produce them, do not assert them
 from memory.
-
-**Failure handling:** if the CLI errors (non-zero exit, schema
-validation failure on the produced document, no language detected,
-or no entrypoint identifiable), transition to `blocked` with `on:
-discovery_failed` and a precise gap statement — never a vague
-"discovery didn't work." The blocked report should name which
-detector errored, what it expected to find, and what the CLI's stderr
-said.
 
 ### 2. Validate discovery (state: `validate-discovery`)
 

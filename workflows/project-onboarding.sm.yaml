@@ -38,6 +38,7 @@ transitions:
   - { from: classify, to: run-discovery, on: class_known }
   - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
   - { from: run-discovery, to: validate-discovery, on: discovery_complete }
+  - { from: run-discovery, to: validate-discovery, on: discovery_complete_via_fallback }
   - { from: run-discovery, to: blocked, on: discovery_failed }
   - { from: validate-discovery, to: write-project-memory, on: discovery_valid }
   - { from: validate-discovery, to: run-discovery, on: discovery_invalid_needs_rerun }
@@ -102,14 +103,56 @@ state_detail:
       unit. The CLI writes `.aiecp/project-intelligence.json` itself;
       this state emits the *evidence trail* of what each detector
       found, not the Project Intelligence document (which lives on
-      disk in `.aiecp/`). If the CLI errors, no language is detected,
-      or no entrypoint can be identified, transition to `blocked` with
-      `on: discovery_failed` — a precise gap, not a vague failure.
+      disk in `.aiecp/`).
+
+
+      **TWO discovery paths (per ADR-0021):**
+
+
+      1. **PRIMARY PATH — `discovery/cli` canonical tool:** Try
+         `node discovery/cli/dist/cli.js <repo-path>`. The `dist/`
+         directory is committed to the repo (per ADR-0021), so this
+         works without `npm install`. This is the preferred path
+         because it uses the canonical detector pipeline. Transition
+         to `validate-discovery` on `discovery_complete`.
+
+
+      2. **FALLBACK PATH — text procedure (per ADR-0021 +
+         `skills/project-onboarding/discovery-fallback.md`):** If
+         the primary path fails (no Node.js runtime, or the
+         sandbox is Python-only, or `discovery/cli/dist/` is stale),
+         follow the discovery-fallback procedure. This produces a
+         schema-valid `.aiecp/project-intelligence.json` by reading
+         marker files directly (no Node.js subprocess needed).
+         Transition to `validate-discovery` on
+         `discovery_complete_via_fallback`. The produced document's
+         `discovery_method` field is set to
+         `"chat-sandbox-fallback-procedure"` so the audit trail
+         distinguishes it from canonical-CLI-produced Project
+         Intelligence.
+
+
+      If neither path succeeds (no Node.js AND the fallback
+      procedure cannot complete because essential marker files are
+      missing), transition to `blocked` with `on: discovery_failed`
+      — a precise gap, not a vague failure.
+
+
+      This state emits evidence per the path taken:
+      - PRIMARY PATH: one `Event` per detector (per ADR-0009's
+        pipeline).
+      - FALLBACK PATH: one `Event` per step of the discovery-fallback
+        procedure (8 steps: language markers, framework markers,
+        build system, test system, layer, entrypoint, version probes,
+        JSON write).
     emits_evidence: [trace, event]
     # `discovery/cli` reads the repo (filesystem_read) and writes
     # `.aiecp/project-intelligence.json` (filesystem_write to .aiecp/).
     # It also shells out to language-specific probes (python --version,
-    # node --version) via shell_exec.
+    # node --version) via shell_exec. The fallback procedure uses the
+    # same capabilities (filesystem_read for marker files,
+    # filesystem_write for the JSON, shell_exec for version probes)
+    # but does NOT require Node.js runtime.
 
   validate-discovery:
     purpose: >

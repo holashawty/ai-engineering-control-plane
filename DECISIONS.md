@@ -380,3 +380,87 @@ Every framework-level decision — especially anything touching
   to `AgentCapabilities`. Adds `chat-sandbox` adapter alongside
   the existing `chat` adapter. Updates `CHAT-ENTRYPOINT.md` with
   self-identification guidance.
+
+## ADR-0021 — Discovery is a procedure, not a tool: offline-sandbox portability via committed dist/ + text fallback procedure
+- **Decision:** Two complementary fixes for the offline-sandbox
+  portability gap found by a real ChatGPT session (2026-08-14):
+  the chat-sandbox adapter (ADR-0020) correctly declared
+  `filesystem_write=true`, but the `project-onboarding` workflow's
+  `run-discovery` state required running `discovery/cli` as a
+  Node.js subprocess — and `discovery/cli/dist/` was .gitignored,
+  so it didn't exist in the repo zip the chat LLM received. The
+  chat LLM tried `npm install` but timed out (sandbox has no
+  network access). Result: `project-onboarding` blocked at
+  `discovery_failed`, even though the chat-sandbox adapter had
+  the right capabilities.
+
+  Fix 1 (complementary): **commit `discovery/cli/dist/` to the
+  repo** (against Node.js convention of not committing build
+  output) so chat-sandbox agents can run
+  `node discovery/cli/dist/cli.js <repo-path>` without `npm install`.
+
+  Fix 2 (primary, conceptual): **encode discovery as a text
+  procedure** in `skills/project-onboarding/discovery-fallback.md`.
+  This procedure allows a chat-sandbox agent (or any agent with
+  `filesystem_read` + `filesystem_write` but no Node.js runtime)
+  to produce a schema-valid `.aiecp/project-intelligence.json` by
+  reading marker files directly. The procedure is consistent with
+  the framework's broader philosophy: chat LLMs follow procedures
+  encoded as text (`CHAT-ENTRYPOINT.md`, `aiecp:*` blocks), they
+  don't call subprocesses.
+
+  The `project-onboarding` workflow's `run-discovery` state now
+  documents TWO paths: (1) PRIMARY — run `discovery/cli`
+  canonical tool; (2) FALLBACK — follow the discovery-fallback
+  procedure. Both produce documents that validate against the same
+  schema (`discovery/schema/project-intelligence.schema.json`);
+  the fallback-produced document sets `discovery_method:
+  "chat-sandbox-fallback-procedure"` for audit-trail distinction.
+
+- **Reason:** The framework's router (`workflows/_router.md` rule
+  1) correctly routes chat-sandbox agents to `project-onboarding`
+  first — but `project-onboarding` then required a Node.js
+  subprocess that wasn't available in the offline sandbox. This
+  created a catch-22: the router was right, the chat-sandbox
+  adapter was right, but the `project-onboarding` workflow had an
+  implicit Node.js dependency that wasn't declared anywhere.
+
+  The framework's broader philosophy resolves this: discovery is
+  a *procedure* (read marker files, probe versions, write JSON),
+  not a *tool*. The canonical `discovery/cli` is one
+  implementation of that procedure; the fallback procedure in
+  `skills/project-onboarding/discovery-fallback.md` is another.
+  Both produce schema-valid output. The procedure-as-text encoding
+  is the same pattern the framework uses for evidence (`aiecp:*`
+  blocks), for entrypoints (`CHAT-ENTRYPOINT.md`), and for
+  workflow transitions (`aiecp:advance` blocks).
+
+- **What does NOT change:**
+  - The canonical `discovery/cli` remains the preferred path —
+    if `node discovery/cli/dist/cli.js` runs successfully, use
+    that output, not the fallback. The canonical CLI may detect
+    more (linters, CI/CD configs) than the fallback procedure.
+  - CLI agents (Claude Code, Codex) are unaffected — they have
+    `npm install` access and can rebuild dist/ if needed.
+  - The schema is unchanged — both paths produce documents
+    validatable against `discovery/schema/project-intelligence.
+    schema.json`.
+
+- **Tradeoffs:**
+  - Committing `discovery/cli/dist/` bloats the repo slightly
+    (~32KB as of this ADR). Mitigated by
+    `scripts/check-discovery-freshness.mjs` which verifies the
+    committed dist/ matches the current source — drift is caught
+    in CI.
+  - The fallback procedure may produce less-detailed Project
+    Intelligence than the canonical CLI (no linter detection, no
+    CI/CD parsing). Mitigated by the `discovery_method` field in
+    the produced JSON, so downstream agents know the grade of
+    discovery they're working with.
+
+- **Status:** Decided 2026-08-14. Adds committed
+  `discovery/cli/dist/` (with `.gitignore` exception per
+  ADR-0021). Adds `skills/project-onboarding/discovery-fallback.md`.
+  Updates `workflows/project-onboarding.sm.yaml`'s `run-discovery`
+  state with two-path documentation + `discovery_complete_via_fallback`
+  transition. Adds `scripts/check-discovery-freshness.mjs`.
