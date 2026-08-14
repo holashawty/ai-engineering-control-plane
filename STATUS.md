@@ -3,9 +3,17 @@
 **Purpose:** This file is the single source of truth for "where are we
 right now." Any agent (Claude in a new session, Z.ai, a human) picking
 up this project should read this file before touching anything else.
-Update it at the end of every work session — check off what's done, add
-what's newly discovered, never delete history (append a dated note
-instead of silently rewriting).
+
+**For the detailed, prioritized task list for the current phase
+(post-MVP: real upstream integration + expanding beyond bug-report),
+see [`TASKS.md`](TASKS.md).** That file also documents which tasks
+Z.ai can actually execute (research, content drafting) versus which
+require Claude (real repo cloning, code, schema/architecture
+decisions) — Z.ai has no GitHub API/clone access, only web search.
+
+Update this file at the end of every work session — check off what's
+done, add what's newly discovered, never delete history (append a
+dated note instead of silently rewriting).
 
 Do not treat this file as documentation of *how* the system works —
 that's `docs/`. This file only tracks *what's done and what's next*.
