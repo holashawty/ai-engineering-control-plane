@@ -72,6 +72,23 @@ evidence + memory + adapters + evaluation.
 - Security: `docs/security-model.md`
 - Evaluation: `docs/evaluations/evaluation-strategy.md`
 
+## Upstream sources
+
+This project adopts/adapts patterns and, in some cases, verbatim code
+(with attribution, per ADR-0018) from the following upstream projects.
+See `NOTICE` for exactly what was reused from each and under what
+license. Listed here so that if this project is ever made public, a
+side-by-side comparison against these sources is straightforward
+rather than a surprise:
+
+- https://github.com/obra/superpowers (MIT)
+- https://github.com/github/spec-kit (MIT)
+- https://github.com/bmad-code-org/BMAD-METHOD (MIT)
+- https://github.com/OpenHands/OpenHands (MIT)
+- https://github.com/anthropics/skills (mixed license — see `NOTICE`)
+- https://github.com/agentskills/agentskills (Apache-2.0 code / CC-BY-4.0 docs)
+- https://github.com/vercel-labs/skills (license unverified — see `NOTICE`)
+
 ## License
 
 MIT (proposed). See `NOTICE` for upstream attributions.

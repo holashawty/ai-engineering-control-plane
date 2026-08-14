@@ -85,6 +85,15 @@ already-solved problem, for the sole reason that "then it's ours," is
 not permitted without an ADR explaining why adaptation was
 insufficient.
 
+**Verbatim reuse with attribution is fine for permissively-licensed
+sources.** Per ADR-0018: for MIT/Apache-2.0/BSD-licensed upstream code,
+copying it verbatim into this project — with the reused portion
+recorded in `NOTICE` (source, commit SHA, license) and any upstream
+license header preserved — is explicitly permitted and does not need
+paraphrasing. This does not apply to sources with a restrictive or
+unverified license (see `NOTICE`'s per-repo table); those remain
+paraphrase-only.
+
 ## 7. Every claim about the current state of things must be checked
 
 Per the Phase 0 verification pass (`docs/research.md`), training-data

@@ -221,3 +221,43 @@ Every framework-level decision — especially anything touching
   are unaffected by this decision — a skill's `scripts/` folder may use
   whatever language fits that skill's stack.
 - **Status:** Decided 2026-08-11. Unblocks Phase 2 (Core).
+## ADR-0018 — Verbatim reuse of permissively-licensed upstream code is allowed with attribution
+- **Decision:** For upstream sources under a permissive license (MIT,
+  Apache-2.0, BSD), verbatim reuse of code/prose into this project is
+  explicitly permitted, provided the reused portion is recorded in
+  `NOTICE` (source repo, commit SHA, license, what was reused) and any
+  license/copyright header the upstream file carries is preserved.
+  Paraphrasing permissively-licensed code purely to avoid textual
+  similarity is not required and is actively discouraged when it risks
+  altering working logic (e.g. rewriting a correct snippet just to make
+  it "look different" can introduce bugs for no legal benefit).
+- **Alternatives:** The original Phase-0 default (`constitution.md` §6,
+  as first written) required paraphrasing/re-expression of adapted
+  material even when the license permitted verbatim reuse.
+- **Reason:** MIT/Apache/BSD licenses exist specifically to permit this
+  — verbatim vendoring with attribution is standard, legal industry
+  practice (this is what every `node_modules`-style dependency does).
+  Requiring paraphrase on top of a license that doesn't ask for it added
+  process cost with no legal or quality benefit, and in practice
+  produced worse outcomes than the original when applied to working
+  code (ADR text corrected after this was observed in practice on the
+  `systematic-debugging` skill adaptation — see `STATUS.md`/`TASKS.md`
+  history for 2026-08-14).
+- **What does NOT change:** Sources with a restrictive or unverified
+  license are unaffected by this ADR and remain paraphrase-only /
+  reuse-with-caution:
+  - `anthropics/skills`'s bundled document skills (`docx`, `pdf`,
+    `pptx`, `xlsx`) — explicitly "source-available for reference, not
+    open source" per their own `LICENSE.txt` (see `NOTICE`). This is a
+    real license restriction, not a project-invented one.
+  - `vercel-labs/skills` — license unverified as of this ADR; treat as
+    restricted until confirmed.
+  - Anything not yet in `docs/research.md`'s verified-license table.
+- **Tradeoffs:** Slightly higher textual-similarity risk if this
+  project is ever made public and compared side-by-side with upstream
+  — mitigated by `NOTICE` making every reused portion traceable, and by
+  `README.md`/`NOTICE` listing source repo URLs so any future
+  public-release comparison is straightforward rather than a surprise.
+- **Status:** Decided 2026-08-14. Supersedes the paraphrase-by-default
+  reading of `constitution.md` §6 for permissively-licensed sources
+  specifically; §6 ("reuse before reinvent") itself is unchanged.
