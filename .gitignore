@@ -1,3 +1,8 @@
+# root workspaces node_modules (hoisted) + per-package build output
+node_modules/
+dist/
+*.log
+
 # local, potentially sensitive pre-authorized automation policy
 .aiecp/policy.local.yaml
 
@@ -8,9 +13,5 @@ Thumbs.db
 .vscode/
 .idea/
 
-# node / python transient (dev tooling, not yet used)
-node_modules/
-__pycache__/
-*.pyc
 .env
 .env.local

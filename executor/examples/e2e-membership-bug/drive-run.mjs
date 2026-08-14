@@ -10,9 +10,11 @@ import { loadWorkflow } from "../../dist/workflow-loader.js";
 import { WorkflowRun } from "../../dist/run.js";
 import { mkdtemp, rm, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const WORKFLOW_PATH = join(process.cwd(), "..", "..", "..", "workflows", "bug-report.sm.yaml");
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const WORKFLOW_PATH = join(__dirname, "..", "..", "..", "workflows", "bug-report.sm.yaml");
 const runDirParent = await mkdtemp(join(tmpdir(), "aiecp-real-e2e-"));
 const runDir = join(runDirParent, "evidence-and-memory");
 

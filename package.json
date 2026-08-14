@@ -1,0 +1,20 @@
+{
+  "name": "aiecp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Engineering Control Plane — root orchestrator. Ties discovery/cli, executor, and adapters/agents into one install/build/test flow. See STATUS.md for current phase.",
+  "license": "MIT",
+  "workspaces": [
+    "discovery/cli",
+    "executor",
+    "adapters/agents"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "build": "npm run build --workspace=discovery/cli && npm run build --workspace=executor && npm run build --workspace=adapters/agents",
+    "test": "npm test --workspace=discovery/cli && npm test --workspace=executor && npm test --workspace=adapters/agents",
+    "bootstrap": "npm run install:all && npm run build && npm run test",
+    "e2e:membership-demo": "node executor/examples/e2e-membership-bug/drive-run.mjs",
+    "sync-entrypoints": "node adapters/agents/dist/bin/write-entrypoints.js . ."
+  }
+}

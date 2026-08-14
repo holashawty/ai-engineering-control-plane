@@ -39,6 +39,12 @@ directly, not just to a downstream project.
    change-policy.md`).
 3. Read `constitution/constitution.md`. It is not optional context —
    it is the governing ruleset for how you work in this repo.
+4. If you need to actually run the framework's own tooling (discovery,
+   executor, agent adapters), run `npm run bootstrap` once from the
+   repo root first — it installs, builds, and self-tests all 3
+   sub-packages in one command via npm workspaces. Individual
+   sub-package commands (`cd discovery/cli && npm install && ...`) work
+   too but are not necessary.
 
 ## What you may do without asking
 

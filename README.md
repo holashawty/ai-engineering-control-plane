@@ -17,12 +17,25 @@ methodology.
 
 **Root-level `AGENTS.md` / `CLAUDE.md`** in this repo are generated
 files (per ADR-0006) — the canonical, hand-edited source is
-`agents/AGENTS.md`. Regenerate after editing the canonical source or
-any `skills/*/SKILL.md`:
+`agents/AGENTS.md`.
+
+## One-command setup
 
 ```bash
-cd adapters/agents && npm install && npm run build
-node dist/bin/write-entrypoints.js <repo-root> <repo-root>
+npm run bootstrap   # installs + builds + tests all 3 sub-packages
+                     # (discovery/cli, executor, adapters/agents)
+                     # in one command, via npm workspaces
+```
+
+Other root scripts:
+
+```bash
+npm run build              # build all 3 packages without testing
+npm test                   # run all 3 self-test suites
+npm run sync-entrypoints   # regenerate root AGENTS.md/CLAUDE.md from
+                            # agents/AGENTS.md + skills/*/SKILL.md
+npm run e2e:membership-demo # replay the real end-to-end validation run
+                            # (see executor/examples/e2e-membership-bug/)
 ```
 
 ## What this is *not*
