@@ -255,18 +255,86 @@ doğrulayabilir.
 
 ---
 
+## Sprint D + A2 + Chat-harness — süper zeka yokluğunda 2. sprint
+
+### D-sprint: 3 yeni workflow + skill (subagent'lar paralel)
+
+- **Commit:** (bu commit, henüz push edilmedi — aşağıda)
+- **3 paralel subagent (opus):** D1, D2, D3
+
+#### D1: project-onboarding workflow + skill
+- **Dosyalar:**
+  - `workflows/project-onboarding.sm.yaml` (yeni, 8 state, 9 transition, NO safety gate — `.aiecp/`'ye yazıyor, source code'a değil)
+  - `skills/project-onboarding/SKILL.md` (yeni)
+  - `executor/examples/e2e-project-onboarding/drive-run.mjs` (yeni, 36 assertion)
+  - `executor/examples/e2e-project-onboarding/README.md` (yeni)
+- **Kanıt:** 36/36 PASS
+- **Özelliği:** Entry-point workflow — `discovery/cli` çalıştırır, schema-valid Project Intelligence üretir, ilk `project` + `environment` memory entry'leri yazar. Diğer tüm workflow'lar bu memory'leri READ eder; bu workflow WRITE eder.
+
+#### D2: regression workflow + skill
+- **Dosyalar:**
+  - `workflows/regression.sm.yaml` (yeni, 10 state, 14 transition, `broad-refactor` gate at `re-fix`, question_economy max=1)
+  - `skills/regression/SKILL.md` (yeni)
+  - `executor/examples/e2e-regression/drive-run.mjs` (yeni, 43 assertion)
+  - `executor/examples/e2e-regression/README.md` (yeni)
+- **Kanıt:** 43/43 PASS
+- **Özelliği:** Prior-context-aware — `known-failure` memory entry'sini READ eder, `re-diagnose` state'inin `Decision.why` alanı MECLUBURI olarak prior fix'in blind spot'unu cite etmek zorunda. `update-known-failure` state'i varolan memory entry'yi UPDATE eder (`regression_id` null → yeni id).
+
+#### D3: performance-problem workflow + skill
+- **Dosyalar:**
+  - `workflows/performance-problem.sm.yaml` (yeni, 10 state, 15 transition, `broad-refactor` gate at `optimize`, question_economy max=2 [classify, diagnose-bottleneck])
+  - `skills/performance-problem/SKILL.md` (yeni)
+  - `executor/examples/e2e-performance-problem/drive-run.mjs` (yeni, 41 assertion)
+  - `executor/examples/e2e-performance-problem/README.md` (yeni)
+- **Kanıt:** 41/41 PASS
+- **Özelliği:** Cost-shaped — `capture-baseline` state'i `environment_fingerprint_ref`'i MECLUBURI yapar (performance env-sensitive). `verify-improvement` state'i HEM performance check HEM de functional regression check ister (10x speedup ama 3 test bozuyor = improvement değil). `regression-protect` state'i PERFORMANCE regression için `known-failure` memory yazar. Profiler-commands-per-language reference'ı (Node --prof, Python cProfile, Go pprof, Swift Instruments, Rust cargo-flamegraph) skill içinde cite edilmiş.
+
+### A2: spec-kit template vendoring
+
+- **Commit:** (bu commit, henüz push edilmedi)
+- **Dosyalar:**
+  - `specs/spec.template.md` (verbatim from `github/spec-kit@83883a2`, MIT, ADR-0018 attribution)
+  - `specs/plan.template.md` (verbatim from same)
+  - `specs/tasks.template.md` (verbatim from same)
+  - `specs/constitution.template.md` (verbatim from same)
+  - `specs/checklist.template.md` (verbatim from same)
+  - `specs/contracts.template.md` (AIECP-original, ADR-0002)
+  - `specs/invariants.template.md` (AIECP-original, ADR-0002)
+  - `specs/state-machines.template.md` (AIECP-original, ADR-0002)
+  - `specs/README.md` (güncellendi — 8 template'in hepsini açıklar)
+- **ADRs:** ADR-0018 (verbatim reuse permitted) + ADR-0002 (spec-kit family + AIECP extensions)
+- **Patron'un vizyonu:** "bu tarz projelerin en iyi yanlarını çalıp kendi sistemime sokacağız" — spec-kit'in gerçek şablonları ADR-0018 sayesinde verbatim alındı, AIECP-specific contracts/invariants/state-machines extension'ları AIECP-original olarak eklendi.
+
+### Chat-harness: live-session test altyapısı
+
+- **Commit:** (bu commit, henüz push edilmedi)
+- **Dosya:** `scripts/chat-harness.mjs` (yeni)
+- **Amaç:** Patron evinde gerçek ChatGPT/Claude chat ile AIECP'yi test edebilir. Constitution §8 chat LLM'leri tool kullanmaya ZORLUYOR — bu harness, ZORLAMANIN çalıştığını kanıtlamak için.
+- **Çalışma:**
+  1. Chat LLM'e repo zip olarak yüklenir, "CHAT-ENTRYPOINT.md oku sonra [task]" denir
+  2. Chat LLM `aiecp:*` blokları emit eder (evidence, memory, advance, question)
+  3. Patron response'u bir dosyaya kaydeder: `chat-response.md`
+  4. `npm run chat-harness -- bug-report chat-response.md` çalıştırır
+  5. Harness: her bloğu parse eder, schema-valid yapar, gerçek `WorkflowRun` API'sini drive eder, terminal state'e ulaşılıp ulaşılmadığını söyler
+- **Smoke test:** 22-blokluk simüle chat response (bug-report workflow, intake → report) ile test edildi — 22/22 PASS, terminal state YES, verdict PASS
+- **Desteklenen workflow'lar:** bug-report, feature-request, code-review, refactor, change-request, project-onboarding, regression, performance-problem (8 workflow)
+
+
+
 ## Toplam durum (session sonunda)
 
 | Metrik | Başlangıç (session başı) | Şimdi |
 |---|---|---|
-| Runnable workflow | 1 (bug-report) | **5** (bug-report, feature-request, code-review, refactor, change-request) |
-| Skill sayısı | 4 | **13** (4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 1 chat-adapter entry-point) |
+| Runnable workflow | 1 (bug-report) | **8** (+ code-review, refactor, change-request, project-onboarding, regression, performance-problem) |
+| Skill sayısı | 4 | **16** (4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow) |
 | Agent adapter | 2 (claude-code, codex) | **3** (+ chat) |
-| E2E proof driver | 1 (membership-bug) | **6** (+ feature-request, code-review, refactor, change-request, chat-adapter) |
+| E2E proof driver | 1 (membership-bug) | **9** (+ feature-request, code-review, refactor, change-request, chat-adapter, project-onboarding, regression, performance-problem) |
 | Constitution bölümü | 7 (§1-§7) | **8** (+ §8: Tool use mandatory) |
 | ADR sayısı | 18 | **19** (+ ADR-0019) |
-| Toplam assertion (regression) | ~30 | **180+** hepsi PASS |
+| Toplam assertion (regression) | ~30 | **300+** hepsi PASS |
 | README upstream repo listesi | yok | 7 upstream repo link listesi (NOTICE + README) |
+| Spec templates | yok | **8** (5 verbatim from spec-kit + 3 AIECP-original) |
+| Live-session test altyapısı | yok | `scripts/chat-harness.mjs` (8 workflow destekli) |
 
 ## Kalan açık noktalar (kontrolcüye hatırlatma)
 

@@ -298,33 +298,75 @@ don't silently reorder.
         the governance-layer rule, citing ADR-0019 and the three
         operational skills.
       - **3 skills** authored (subagent C3-A, opus):
-        - `skills/tool-use-discipline/SKILL.md` — the mandatory-
-          tool-per-request-class table (web_search for version
-          claims, test_runner for code generation, shell_exec for
-          current date, etc.) with a self-correction loop.
-        - `skills/recency-verification/SKILL.md` — extends
-          constitution §7 with a three-class taxonomy (static /
-          slowly-evolving / time-sensitive) and per-source
-          verification procedure; honest fallback to `blocked`
-          for chat LLMs without web_search.
-        - `skills/quality-gate/SKILL.md` — code-quality checkpoint
-          between `implement` and `verify`. Runs the project's own
-          linters (tsc, eslint, ruff, mypy per project-intelligence)
-          plus a 6-item self-review checklist (empty inputs,
-          concurrent calls, actionable errors, complexity, TODOs,
-          conventions). `result: "mismatch"` → transition back to
-          the code-changing state with `on: quality_gate_failed`.
-      - **CHAT-ENTRYPOINT.md** rewritten with an aggressive
-        tool-use manifesto + zip-upload protocol (chat LLM's first
-        5 actions: verify date via web_search, inventory tools,
-        read constitution, identify workflow, read workflow+skills).
+        `tool-use-discipline`, `recency-verification`, `quality-gate`.
+      - **CHAT-ENTRYPOINT.md** rewritten with aggressive tool-use
+        manifesto + zip-upload protocol.
       - **5 workflow .sm.yaml files** updated to cite the 3 new
-        skills in their `skills_required` lists (code-review cites
-        2 — no quality-gate since it's read-only; the other 4 cite
-        all 3). All 5 workflows still structurally valid; all 6
-        e2e drivers still PASS.
-      - **AGENTS.md + CLAUDE.md** regenerated via sync-entrypoints
-        — now list all 13 skills.
+        skills in `skills_required`.
+      - **AGENTS.md + CLAUDE.md** regenerated — 13 skills listed.
+- [x] D-sprint — 3 more workflows + skills authored and proven
+      end-to-end (subagents D1/D2/D3, opus, in parallel):
+      - **project-onboarding** (entry point for any new repo;
+        runs `discovery/cli`, writes initial `project` +
+        `environment` memory entries; no safety gate — writes only
+        to `.aiecp/`, never source code) — 36/36 assertions via
+        `executor/examples/e2e-project-onboarding/drive-run.mjs`.
+      - **regression** (prior-context-aware; `re-diagnose`
+        `Decision.why` MUST cite the prior fix's blind spot;
+        `update-known-failure` UPDATES an existing memory entry,
+        setting `regression_id` from null to a new id) — 43/43
+        assertions via `executor/examples/e2e-regression/drive-
+        run.mjs`.
+      - **performance-problem** (cost-shaped; requires
+        `environment_fingerprint_ref` at baseline; `verify-
+        improvement` requires BOTH perf check AND functional
+        regression check; writes a `known-failure` memory entry
+        for a PERFORMANCE regression) — 41/41 assertions via
+        `executor/examples/e2e-performance-problem/drive-run.mjs`.
+      Together with the prior 5, the framework now has **8
+      runnable workflows** covering reactive / constructive /
+      behavior-preserving / behavior-modifying / gatekeeping /
+      onboarding / regression / performance shapes — all driven
+      by the same workflow-agnostic executor. Catalog now 16
+      skills.
+- [x] A2 (spec-kit template vendoring) — 5 spec-kit templates
+      copied verbatim with attribution into `specs/` per ADR-0018
+      (MIT, commit `83883a2ebad7e7de667fd00381b100d597faf846`):
+      `spec.template.md`, `plan.template.md`, `tasks.template.md`,
+      `constitution.template.md`, `checklist.template.md`. Each
+      file has an HTML comment at the top recording the upstream
+      source commit and license.
+- [x] A2 extensions (AIECP-original) — 3 AIECP-original spec
+      templates authored per ADR-0002 (no upstream equivalent
+      found): `contracts.template.md` (parties, input/output
+      schema, invariants, failure modes — derives from
+      `docs/evidence-model.md`'s "Contract" entity),
+      `invariants.template.md` (scope, predicate, validation
+      method, failure mode — derives from "Invariant" entity),
+      `state-machines.template.md` (YAML or Markdown, same shape
+      as AIECP's own workflow `.sm.yaml` files — derives from
+      "State Transition" entity). Each becomes an `Expected`
+      entity when referenced by `skills/specification/SKILL.md`.
+- [x] Live-session test infrastructure — `scripts/chat-harness.mjs`
+      authored. Drives an AIECP workflow interactively with a
+      real chat LLM's text response (file path or stdin),
+      validates every `aiecp:*` block against the Phase 1 schemas,
+      walks the real `WorkflowRun` state machine, and reports
+      whether the chat LLM's response drove the workflow from
+      initial state to a terminal state. Designed for the user
+      (patron) to test real chat LLM sessions at home without
+      writing code. Smoke-tested with a simulated 22-block chat
+      LLM response (bug-report workflow, full intake → report
+      walk) — 22/22 blocks OK, terminal state reached, verdict
+      PASS. Run via `npm run chat-harness -- <workflow-name>
+      <response-file>` or `cat response.md | npm run chat-harness
+      -- <workflow-name>`.
+- [x] `workflows/_router.md`, `workflows/README.md`,
+      `skills/README.md`, `package.json` updated to reflect 8
+      runnable workflows + 16 skills. `package.json` now has
+      9 e2e-demo scripts + 2 validators + chat-harness.
+- [x] AGENTS.md + CLAUDE.md regenerated via sync-entrypoints —
+      now list all 16 skills.
 
 ## In progress
 
@@ -353,21 +395,20 @@ below is the next task to pick up)
       not the ≥5-scenario-per-skill / ≥3-scenario-per-workflow bar
       `docs/evaluations/evaluation-strategy.md` sets as the actual
       minimum.
-- [ ] Remaining workflows (9 of 14: `user-complaint`, `regression`,
-      `performance-problem`, `security-problem`, `release`,
-      `incident`, `project-onboarding`, `unknown-failure`, plus any
-      added since). Five of fourteen target workflows are now done
-      (`bug-report`, `feature-request`, `code-review`, `refactor`,
-      `change-request`) — covering the four primary shapes of
-      engineering work plus gatekeeping. The remaining nine are
-      long-tail (specialized domains: performance, security,
-      release engineering, incident response) and lower priority
-      than the eval harness and live-session tests.
-- [ ] Remaining skills (~6 of ~19, per ADR-0016 long-term scope).
-      13 of ~19 are now authored. The remaining ~6 are
-      domain-specific (database, frontend, backend, mobile, security,
-      performance, release, incident-response — pick the most
-      relevant 6 to the project's actual needs).
+- [ ] Remaining workflows (6 of 14: `user-complaint`,
+      `security-problem`, `release`, `incident`,
+      `unknown-failure`, plus any added since). Eight of fourteen
+      target workflows are now done (`bug-report`, `feature-request`,
+      `code-review`, `refactor`, `change-request`,
+      `project-onboarding`, `regression`, `performance-problem`) —
+      covering the primary shapes of engineering work. The remaining
+      six are specialized domains (security, release engineering,
+      incident response) and lower priority than the eval harness
+      and live-session tests.
+- [ ] Remaining skills (~3 of ~19, per ADR-0016 long-term scope).
+      16 of ~19 are now authored. The remaining ~3 are
+      domain-specific (database, frontend, backend — pick the
+      most relevant to the project's actual needs).
 - [ ] Remaining stack adapters (9 of 11) and agent adapters (6 of 9
       — chat adapter is now the 3rd, alongside claude-code and codex).
       Long-term scope per ADR-0016.
@@ -416,12 +457,13 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, C3 sprint complete (ADR-0019 + constitution
-§8 + 3 tool-use discipline skills + CHAT-ENTRYPOINT manifesto + 5
-workflow skills_required updates). The framework now constitutionally
-forces tool use before any time-sensitive claim or code generation —
-directly addressing the user's vision of preventing LLM halüsinasyon
-and tool-skip patterns. 13 skills, 5 workflows, 3 adapters, 6 e2e
-drivers, 180+ assertions all PASS. Next priority per TASKS.md: live
-multi-turn session test (CLI agent or chat LLM), then A2 (spec-kit
-templates), then eval harness.*
+*Last updated: 2026-08-14, D-sprint + A2 + chat-harness complete.
+8 runnable workflows (was 5), 16 skills (was 13), 9 e2e proof
+drivers (was 6), 300+ assertions all PASS. spec-kit templates
+vendored verbatim with attribution (ADR-0018). AIECP-original
+contracts/invariants/state-machines templates added per ADR-0002.
+scripts/chat-harness.mjs closes the live-session-test infrastructure
+gap — patron can now test real chat LLM sessions at home via
+`npm run chat-harness -- <workflow> <response.md>`. Next priority
+per TASKS.md: actual live session test with a real ChatGPT/Claude
+chat, then eval harness.*

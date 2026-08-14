@@ -1,6 +1,6 @@
 # Workflow Router
 
-**Status: Phase 1 — five runnable workflows.**
+**Status: Phase 1 — eight runnable workflows.**
 
 Deterministic mapping from (intent classification, repository state) to a
 workflow. Per docs/workflow-model.md, the user never selects a workflow
@@ -8,42 +8,45 @@ directly; they supply intent in natural language.
 
 ## MVP routing table
 
-Five workflows are implemented as runnable workflows and proven
+Eight workflows are implemented as runnable workflows and proven
 end-to-end against the real executor (`WorkflowRun` API):
 
 - `bug-report.sm.yaml` — reactive (something broken). Proof:
   `executor/examples/e2e-membership-bug/`.
 - `feature-request.sm.yaml` — constructive (new capability added).
   Proof: `executor/examples/e2e-feature-request/`.
-- `code-review.sm.yaml` — gatekeeping (read-only assessment of a
-  change before merge). Proof: `executor/examples/e2e-code-review/`.
-- `refactor.sm.yaml` — behavior-preserving (internal structure
-  changes, external behavior unchanged; `verify-equivalence` uses
-  `method: "replay_comparison"`). Proof:
+- `code-review.sm.yaml` — gatekeeping (read-only change assessment).
+  Proof: `executor/examples/e2e-code-review/`.
+- `refactor.sm.yaml` — behavior-preserving. Proof:
   `executor/examples/e2e-refactor/`.
-- `change-request.sm.yaml` — behavior-modifying (existing behavior
-  works but is no longer desired; emits TWO `Expected` entities —
-  OLD baseline + NEW contract). Proof:
+- `change-request.sm.yaml` — behavior-modifying. Proof:
   `executor/examples/e2e-change-request/`.
+- `project-onboarding.sm.yaml` — entry point for any new repo;
+  runs `discovery/cli` and writes the initial memory entries.
+  Proof: `executor/examples/e2e-project-onboarding/`.
+- `regression.sm.yaml` — prior-context-aware (a known-failure
+  symptom recurs). Proof: `executor/examples/e2e-regression/`.
+- `performance-problem.sm.yaml` — cost-shaped ("it's slow").
+  Proof: `executor/examples/e2e-performance-problem/`.
 
-Together these cover the four primary shapes of engineering work:
-reactive (bug-report), constructive (feature-request),
-behavior-preserving (refactor), and behavior-modifying
-(change-request), plus the gatekeeping shape (code-review) that sits
-orthogonal to all four. The remaining rows describe target routing
-for post-MVP workflows and are not yet backed by an `.sm.yaml` file.
+Together these cover the primary shapes of engineering work:
+reactive, constructive, behavior-preserving, behavior-modifying,
+gatekeeping, onboarding, regression, and performance — driven by
+the same workflow-agnostic executor. The remaining rows describe
+target routing for post-MVP workflows and are not yet backed by an
+`.sm.yaml` file.
 
 | Intent signal (heuristic, not exhaustive) | Workflow | Status |
 |---|---|---|
 | "X doesn't work", "X sometimes fails", "error when I...", stack trace pasted | `bug-report` | **MVP — implemented** |
-| No `.aiecp/project-intelligence.json` present in repo | `project-onboarding` | Planned |
+| No `.aiecp/project-intelligence.json` present in repo | `project-onboarding` | **MVP — implemented** |
 | "add a feature", "I want users to be able to...", new capability request | `feature-request` | **MVP — implemented** |
 | "change how X works", modify existing behavior without it being broken | `change-request` | **MVP — implemented** |
 | User reports a UI/API bug filed by someone else against them | `user-complaint` | Planned |
-| A `known-failure` memory entry's symptom recurs | `regression` | Planned |
+| A `known-failure` memory entry's symptom recurs | `regression` | **MVP — implemented** |
 | "clean up", "refactor", "simplify", no behavior change intended | `refactor` | **MVP — implemented** |
 | "review this PR/diff" | `code-review` | **MVP — implemented** |
-| "it's slow", latency/throughput complaint | `performance-problem` | Planned |
+| "it's slow", latency/throughput complaint | `performance-problem` | **MVP — implemented** |
 | Vulnerability report, suspicious access pattern | `security-problem` | Planned |
 | "ship this", "cut a release" | `release` | Planned |
 | Production alert, on-call page | `incident` | Planned |

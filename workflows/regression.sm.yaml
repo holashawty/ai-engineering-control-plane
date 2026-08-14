@@ -1,0 +1,289 @@
+workflow: regression
+schema_version: "1.0.0"
+description: >
+  Triggered when a `known-failure` memory entry's symptom recurs — the
+  bug that was previously fixed (and recorded in known-failure memory)
+  has come back. Distinct from `bug-report` (which is for new bugs with
+  no prior context): regression has prior context — the original
+  Incident, the original fix Decision, and the known-failure memory
+  entry. The workflow's job is to (a) confirm the symptom matches the
+  prior known-failure, (b) identify what changed that reintroduced it,
+  (c) re-fix with awareness of the prior fix so the new fix does not
+  repeat the same blind spot. Pairs with `bug-report.sm.yaml` as its
+  mirror image in the reactive direction: where `bug-report` writes a
+  `known-failure` memory entry in its `regression-protect` state,
+  `regression` reads one in its `match-known-failure` state — the only
+  workflow in the catalog whose first memory operation is a READ of
+  prior `known-failure` rather than a WRITE of new memory at the end.
+  Its `re-diagnose` state's `Decision.why` field MUST cite the prior
+  fix's blind spot ("the prior fix at <commit> addressed <symptom>
+  via <approach>, but did not account for <edge case>; the
+  reintroduction at <commit> re-exposed the edge case because
+  <reason>") — the entire reason this workflow exists separately from
+  `bug-report` is to force that citation, so the re-fix is structurally
+  aware of what its predecessor missed.
+
+states:
+  - intake
+  - classify
+  - match-known-failure
+  - identify-reintroduction
+  - re-diagnose
+  - re-fix
+  - verify
+  - update-known-failure
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: match-known-failure, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: match-known-failure, to: identify-reintroduction, on: known_failure_matched }
+  - { from: match-known-failure, to: blocked, on: no_matching_known_failure }
+  - { from: identify-reintroduction, to: re-diagnose, on: reintroduction_identified }
+  - { from: identify-reintroduction, to: blocked, on: reintroduction_unidentifiable }
+  - { from: re-diagnose, to: re-fix, on: root_cause_found }
+  - { from: re-diagnose, to: identify-reintroduction, on: root_cause_invalid }
+  - { from: re-fix, to: verify, on: fix_applied }
+  - { from: verify, to: update-known-failure, on: behavior_verified }
+  - { from: verify, to: re-fix, on: behavior_not_verified }
+  - { from: update-known-failure, to: report, on: known_failure_updated }
+  - { from: update-known-failure, to: blocked, on: known_failure_update_failed }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's regression report verbatim. Do not ask
+      clarifying questions here — that belongs in `classify` (per
+      question_economy below). Structurally, the most important
+      classification made here is: is this *actually* a regression
+      (symptom matches a prior known-failure memory entry), or is it
+      a new bug that looks similar? If the symptom is genuinely new
+      (no prior known-failure matches), route to `bug-report.sm.yaml`
+      instead — `regression` against a non-existent prior known-failure
+      is just `bug-report` with extra ceremony. The acid test: does
+      `.aiecp/memory/known-failure/` contain an entry whose `symptom`
+      field describes the same observable behavior the user is now
+      reporting? If yes, this is a regression. If no, this is a
+      bug-report misrouted as a regression.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Confirm regression class and severity using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the
+      report text. May ask at most ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — the one question that matters for regression
+      specifically is "is this the same symptom as the prior incident,
+      or a similar-looking new one?" (the answer routes either
+      forward to `match-known-failure` or out to `bug-report`).
+      The `Decision` emitted here is the acceptance decision (proceed
+      as regression / reject and reroute to bug-report), not a
+      root-cause decision.
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  match-known-failure:
+    purpose: >
+      Query `.aiecp/memory/known-failure/` (or ask the user to paste
+      the prior entry if no in-repo store exists) for an entry whose
+      `symptom` matches the currently-reported symptom. Emit an
+      `expected` (the prior known-failure's symptom, retrieved from
+      memory), an `actual` (the current symptom, observed), and a
+      `validation` (did they match? `method: "manual_review"` for a
+      human-judged symptom comparison, or `"contract_validation"` if
+      the symptom is encoded as a checkable contract). This state is
+      the structural inverse of `bug-report`'s `regression-protect`:
+      that state WRITES a known-failure entry, this state READS one.
+      If no matching known-failure exists (the symptom is actually
+      new), transition to `blocked` with `no_matching_known_failure`
+      and recommend `bug-report` instead — proceeding without prior
+      context collapses `regression` into `bug-report` while losing
+      the routing discipline.
+    emits_evidence: [expected, actual, validation]
+    reads_memory: [known-failure]
+
+  identify-reintroduction:
+    purpose: >
+      Identify what changed in the repo that reintroduced the symptom.
+      The prior known-failure entry records the original fix; the
+      reintroduction is whatever removed, bypassed, or contradicted
+      that fix since. Emit a `trace` of `event`s with `kind:
+      "observation"` for each recent commit since the prior fix
+      (captured via `git log --oneline --since=<prior-fix-commit>`),
+      each `event`'s `payload.finding` describing what that commit
+      changed. Emit a `decision` recording which commit reintroduced
+      the regression, with `evidence_refs` pointing at the specific
+      `event`s that justify the attribution. This is the state that
+      distinguishes regression from bug-report most sharply: in
+      bug-report, the diagnosis walks the codebase for the first
+      time; in regression, the diagnosis walks the diff between
+      "fixed-then" and "broken-now" — a much smaller search space,
+      because the prior known-failure has already localized the
+      original root cause.
+    emits_evidence: [trace, event, decision]
+    reads_memory: [known-failure, environment]
+
+  re-diagnose:
+    purpose: >
+      Walk the debugging chain per `systematic-debugging` Phase 3
+      (hypothesis → test → minimal fix), but with one structural
+      addition that is the entire reason this workflow exists: the
+      `Decision.why` field MUST cite the prior fix's blind spot. The
+      shape is: "the prior fix at <commit> addressed <symptom> via
+      <approach>, but did not account for <edge case>; the
+      reintroduction at <commit> re-exposed the edge case because
+      <reason>." A re-diagnosis `Decision` whose `why` does not cite
+      the prior fix's blind spot is a process violation of this
+      workflow — without that citation, the re-fix is just bug-report
+      with a memory read at the start, which defeats the purpose of
+      separating the workflows. The root-cause candidate starts
+      `validated: false` (per the AI-output validation pattern) and
+      is flipped to `validated: true` only after `verify` confirms
+      behavior.
+    emits_evidence: [decision]
+    reads_memory: [known-failure]
+
+  re-fix:
+    purpose: >
+      Apply a re-fix that explicitly addresses the prior fix's blind
+      spot — not a re-application of the same fix (that would just
+      regress again the next time the same reintroduction pattern
+      occurs). Per the AI-output validation pattern
+      (`docs/evidence-model.md`), every code change is a `Decision`
+      with `validated: false` until `verify` confirms behavior. The
+      `broad-refactor` safety gate fires here, not at `re-diagnose`,
+      because the actual refactor surface is only knowable once
+      implementation begins; if the gate trips, transition back to
+      `re-diagnose` (not `re-fix`) so the design can be re-scoped,
+      rather than pressing on with a refactor that was never approved
+      as a design.
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  verify:
+    purpose: >
+      Behavioral verification per ADR-0010 and the
+      `behavioral-verification` skill — directly check the re-fix
+      against the `Expected` (the prior known-failure's symptom, now
+      confirmed non-recurring), not just that the test suite exits
+      0. Emit a `Validation` with `method` stronger than `unit_test`
+      alone (`"app_validation"` for a direct behavioral re-check, or
+      `"replay_comparison"` if re-running the original reproduction
+      against the re-fixed code to confirm divergence is gone). A
+      green suite with no direct behavioral check does not earn
+      `result: "match"` — same bar as `bug-report`'s `verify`.
+    emits_evidence: [actual, validation]
+
+  update-known-failure:
+    purpose: >
+      Update the prior `known-failure` memory entry by setting its
+      `regression_id` field (previously `null` for first-time fixes)
+      to a new id that references this regression occurrence. Per
+      `memory/schemas/known-failure.schema.json`'s description
+      ("Append-only"), the entry is updated in place rather than
+      replaced — the `regression_id` field exists in the schema for
+      exactly this case. Note: the `Regression` evidence entity is
+      listed in `docs/evidence-model.md`'s core entities table
+      (id, incident_ref, original_fix_ref, current_evidence_ref) but
+      `evidence/schema/` does not yet have a `regression.schema.json`
+      file (post-MVP). For this workflow, emit a `Decision` with
+      `what: "regression_recorded"` that references the prior
+      `incident_ref` and the new evidence (`evidence_refs` pointing
+      at the re-diagnose Decision and verify Validation), as the
+      post-MVP stand-in for the Regression entity. The
+      `regression_id` field on the updated known-failure entry is
+      set to a new `regression-<slug>` id (matching the evidence id
+      pattern, even though no Regression schema file exists yet to
+      enforce it). If the memory update cannot be persisted (no
+      writeable memory store, schema rejects the update),
+      transition to `blocked` with `known_failure_update_failed`
+      — a regression that is not recorded in memory is one a future
+      run will not know about, defeating the purpose of this
+      workflow's existence.
+    emits_evidence: [decision]
+    writes_memory: [known-failure]
+
+  report:
+    purpose: >
+      Summarize the regression: the original incident (via the prior
+      known-failure's `incident_ref`), the prior fix and its blind
+      spot, the reintroduction commit, the re-diagnosis, the re-fix,
+      and the validation evidence chain. Must include the Decision
+      Trace (docs/architecture.md), not just "re-fixed." The report
+      should make explicit WHY the prior fix's blind spot existed
+      and how the re-fix avoids repeating it — this is the
+      institutional learning that makes the second fix different in
+      kind from the first. Writes a `project` memory entry recording
+      that this regression occurred and was re-resolved, so a future
+      workflow run does not re-derive the prior-fix-context chain.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous after
+      one question (`classify`), no matching known-failure found
+      (`match-known-failure` — recommend rerouting to `bug-report`),
+      reintroduction unidentifiable (`identify-reintroduction` — the
+      diff between fixed-then and broken-now is too large or noisy to
+      attribute), or known-failure memory update failed
+      (`update-known-failure` — schema rejection or no writeable
+      store). Must surface a precise gap, never a vague failure, per
+      docs/portability.md failure modes. The
+      `no_matching_known_failure` case is especially important: a
+      regression with no prior known-failure is, by definition, not a
+      regression — the user should rerun as `bug-report`, and the
+      blocked state's report should say so explicitly rather than
+      silently proceeding as if prior context existed.
+
+skills_required:
+  - evidence-engineering
+  - systematic-debugging  # drives re-diagnose (Phase 3 hypothesis → test → minimal fix)
+  - behavioral-verification  # drives verify (ADR-0010 — green suite alone is not verification)
+  - testing  # may run the project's test suite as part of identify-reintroduction and verify
+  - tool-use-discipline  # ADR-0019 — mandatory before code-reading or fix proposal; the prior fix must be READ from disk, not recalled from memory
+  - recency-verification  # ADR-0019 — the reintroduction commit may have changed a library API; the re-fix must account for the current API, not the API as of the prior fix
+  - quality-gate  # ADR-0019 — runs after re-fix, before verify
+  # The regression skill itself (skills/regression/SKILL.md) drives
+  # the match-known-failure, identify-reintroduction, re-diagnose,
+  # re-fix, verify, and update-known-failure states. It is the
+  # dedicated skill authored alongside this workflow, analogous to
+  # how systematic-debugging drives bug-report's diagnose state and
+  # IS listed here — the convention is that skills_required names
+  # skills whose existence is independent of this workflow. The
+  # regression skill is listed indirectly via this comment block to
+  # preserve that convention while still making the dependency
+  # explicit; the workflow's state_detail.<state>.purpose fields
+  # cite the regression skill by name where its procedure governs.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: re-fix
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if Project
+    Intelligence + the prior known-failure memory entry cannot
+    resolve whether the symptom is genuinely the same as the prior
+    incident. Regression should be confirmable from the known-failure
+    memory + repo inspection; one clarifying question max (e.g. "is
+    this the same symptom as the prior incident, or a similar-looking
+    new one?"). See docs/workflow-model.md "Question economy." Same
+    budget as `bug-report`'s 1 (regression IS bug-report with prior
+    context — the prior known-failure entry is the prior context
+    that reduces the question budget from `feature-request`'s 2 to
+    `bug-report`'s 1, and it reduces equally for regression).

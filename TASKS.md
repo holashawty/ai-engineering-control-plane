@@ -196,7 +196,7 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
 
 ---
 
-## Öncelik sırası (önerilen, 2026-08-14 güncellemesi #3)
+## Öncelik sırası (önerilen, 2026-08-14 güncellemesi #4)
 
 1. ✅ **A1** (superpowers derinleştirme) — TAMAMLANDI.
 2. ✅ **B1** (feature-request workflow taslağı) — TAMAMLANDI.
@@ -205,30 +205,41 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
 4. ✅ **C2** (3 workflow + 5 skill + 2 meta-skill + chat adapter)
    — TAMAMLANDI.
 5. ✅ **C3** (ADR-0019 + constitution §8 + 3 tool-use discipline skill
-   + CHAT-ENTRYPOINT manifesto + 5 workflow skills_required update)
-   — TAMAMLANDI (bu commit). Patron'un "tool kullanımını üst düzeye
-   çıkartmak" vizyonu constitution düzeyinde enforce edildi.
-6. **Live session test** — SONRAKİ ÖNCELİK. İki versiyon:
-   (a) CLI agent (Claude Code veya Codex) ile gerçek çok-turlu
-   oturum, her turda bir tool call.
-   (b) Chat LLM (ChatGPT / Claude chat / Gemini chat / GLM chat)
-   ile gerçek çok-turlu oturum; LLM CHAT-ENTRYPOINT.md'yi okuyup
-   aiecp:* blokları emit ediyor mu, validator doğruluyor mu?
-   Şu an constitution §8 chat LLM'leri tool kullanmaya ZORLUYOR —
-   bu live test, ZORLAMANIN çalıştığını kanıtlayacak.
-7. **A2** (spec-kit şablonları) — ADR-0018 sayesinde verbatim +
-   attribution ile. spec-kit MIT'li, NOTICE'e satır satır yazmak
-   yeterli. specs/*.template.md dosyalarını doldur.
-8. **Eval harness** (Phase 8, Python) — her skill için ≥5 senaryo,
-   her workflow için ≥3 senaryo. Şu an 6 proof-of-concept e2e
-   driver var ama hiçbürü formal eval değil.
-9. **Kalan 9 workflow + ~6 skill** — uzun kuyruk, düşük öncelik.
-10. **"Son vurucu darbe"** — patron'un vizyonu: "hazır çalışan çok
+   + CHAT-ENTRYPOINT manifesto) — TAMAMLANDI.
+6. ✅ **D-sprint** (3 yeni workflow + skill: project-onboarding,
+   regression, performance-problem) — TAMAMLANDI (bu commit).
+   Subagent'lar D1/D2/D3 paralel çalıştı, 36+43+41 = 120 yeni
+   assertion PASS. Toplam 8 runnable workflow, 16 skill.
+7. ✅ **A2** (spec-kit şablonları) — TAMAMLANDI (bu commit). 5
+   spec-kit şablonu verbatim + attribution ile `specs/`'e
+   vendored (ADR-0018, MIT, commit `83883a2`). 3 AIECP-original
+   extension şablonu (contracts/invariants/state-machines)
+   ADR-0002'ye göre yazıldı.
+8. ✅ **Chat-harness** (live-session test altyapısı) — TAMAMLANDI
+   (bu commit). `scripts/chat-harness.mjs` — patron evinde
+   ChatGPT/Claude chat ile test yapabilir: chat LLM'in response'u
+   file veya stdin, harness workflow'u drive eder, schema-valid
+   yapar, terminal state'e ulaşıp ulaşmadığını söyler. Smoke
+   test: 22/22 blok PASS, bug-report workflow intake → report.
+9. **Actual live session test** — SONRAKİ ÖNCELİK. Patron evinde
+   gerçek ChatGPT/Claude chat ile bir task versin, LLM CHAT-ENTRYPOINT.md
+   okuyup `aiecp:*` blokları emit etsin, patron
+   `npm run chat-harness -- <workflow> <response.md>` çalıştırıp
+   sonucu görsün. Bu "structural proof → canlı kanıt" gap'ini
+   kapatır. Constitution §8 chat LLM'leri tool kullanmaya ZORLUYOR —
+   bu test, ZORLAMANIN çalıştığını kanıtlayacak.
+10. **Eval harness** (Phase 8, Python) — her skill için ≥5 senaryo,
+    her workflow için ≥3 senaryo. Şu an 9 proof-of-concept e2e
+    driver var ama hiçbürü formal eval değil.
+11. **Kalan 6 workflow + ~3 skill** — uzun kuyruk, düşük öncelik.
+    (user-complaint, security-problem, release, incident,
+    unknown-failure fallback; database/frontend/backend skill'leri.)
+12. **"Son vurucu darbe"** — patron'un vizyonu: "hazır çalışan çok
     zeki hazır proje ve sistemleri de kusursuz entegre edip diğer
-    projelerin çok çok üstünde bir yapıya sahip olmak." Bu, A2-A4
-    görevleri (spec-kit, OpenHands, BMAD, anthropics/skills
-    incelemeleri) tamamlandıkça gerçekleşecek. README'deki upstream
-    repo listesi bu entegrasyonların öncül hazırlığı.
+    projelerin çok çok üstünde bir yapıya sahip olmak." A2 spec-kit
+    tamamlandı; A3 (anthropics/skills), A4 (OpenHands) geri kalan.
+    README'deki upstream repo listesi bu entegrasyonların öncül
+    hazırlığı.
 
 ## Bu listenin kullanımı
 

@@ -186,3 +186,106 @@ each entry must additionally record:
   paths); the self-review checklist items are standard software-
   engineering practice, no upstream attribution required. No
   upstream code or prose was adapted or copied.
+
+- **`workflows/regression.sm.yaml` + `skills/regression/SKILL.md`**
+  — novel to AIECP. The regression workflow is bug-report with prior
+  context: it reads the prior `known-failure` memory entry
+  (memory/schemas/known-failure.schema.json), confirms the current
+  symptom matches, identifies the reintroduction commit, and re-fixes
+  with explicit awareness of the prior fix's blind spot (the new
+  fix's Decision.why must cite what the prior fix missed and why).
+  No upstream equivalent found in `docs/research.md`'s verified-
+  license table. No upstream code or prose was adapted or copied.
+
+- **`workflows/project-onboarding.sm.yaml` + `skills/project-onboarding/SKILL.md`**
+  — novel to AIECP. project-onboarding is the entry-point workflow
+  for any new repository: it runs `discovery/cli` (ADR-0009's
+  detector pipeline), validates the output against
+  `discovery/schema/project-intelligence.schema.json`, and writes
+  the initial `project` and `environment` memory entries that every
+  other workflow depends on. No upstream equivalent found in
+  `docs/research.md`'s verified-license table. No upstream code or
+  prose was adapted or copied.
+
+- **`workflows/performance-problem.sm.yaml` + `skills/performance-problem/SKILL.md`**
+  — novel to AIECP. performance-problem is the workflow for
+  "it's slow" / latency / throughput complaints — distinct from
+  bug-report (functional failure) because the code produces correct
+  output, just too slowly. Unique structural features: (1) requires
+  an `environment_fingerprint_ref` at the baseline stage (performance
+  is environment-sensitive — same code, different hardware,
+  different result); (2) the `verify-improvement` state requires
+  BOTH a performance check AND a functional regression check (a
+  speedup that breaks tests is not an improvement); (3) the
+  `regression-protect` state writes a `known-failure` memory entry
+  for a PERFORMANCE regression (not a functional one), so future
+  code that reintroduces the slow pattern fires the `regression`
+  workflow. The profiler-commands-per-language reference (Node
+  --prof, Python cProfile, Go pprof, Swift Instruments) is curated
+  from general performance-engineering practice, no single upstream
+  source. No upstream code or prose was adapted or copied.
+
+- **`specs/spec.template.md` + `specs/plan.template.md` +
+  `specs/tasks.template.md` + `specs/constitution.template.md` +
+  `specs/checklist.template.md`** — verbatim copies from
+  `github/spec-kit` (MIT) at commit
+  `83883a2ebad7e7de667fd00381b100d597faf846` (cloned 2026-08-14).
+  Per ADR-0018 (permissive-license verbatim reuse permitted with
+  attribution), each file's source commit and license are recorded
+  in an HTML comment at the top of the file. Per ADR-0002 (spec-kit
+  document family adoption), these 5 templates are the upstream's
+  spec/plan/tasks/constitution/checklist shapes, preserved as-is.
+
+- **`specs/contracts.template.md` + `specs/invariants.template.md` +
+  `specs/state-machines.template.md`** — novel to AIECP. spec-kit
+  does not include contracts/invariants/state-machines templates;
+  these are AIECP-original extensions per ADR-0002. The entity
+  shapes are derived from `docs/evidence-model.md`'s "Contract",
+  "Invariant", and "State Transition" definitions, and are used by
+  `skills/specification/SKILL.md` step 4 to emit `Expected` entities
+  with `predicate_kind: "behavioral"`, `"invariant"`, or
+  `"state_property"`. No upstream code or prose was adapted or
+  copied.
+
+- **`workflows/project-onboarding.sm.yaml` +
+  `skills/project-onboarding/SKILL.md`** — novel to AIECP.
+  project-onboarding is the entry-point workflow for any new
+  repository: it runs `discovery/cli` (ADR-0009's detector pipeline),
+  validates the output against
+  `discovery/schema/project-intelligence.schema.json`, and writes
+  the initial `project` and `environment` memory entries that every
+  other workflow depends on. No upstream equivalent found in
+  `docs/research.md`'s verified-license table.
+
+- **`workflows/regression.sm.yaml` + `skills/regression/SKILL.md`**
+  — novel to AIECP. The regression workflow is bug-report with prior
+  context: it reads the prior `known-failure` memory entry
+  (`memory/schemas/known-failure.schema.json`), confirms the current
+  symptom matches, identifies the reintroduction commit, and re-fixes
+  with explicit awareness of the prior fix's blind spot (the new
+  fix's `Decision.why` must cite what the prior fix missed and why).
+  No upstream equivalent found.
+
+- **`workflows/performance-problem.sm.yaml` +
+  `skills/performance-problem/SKILL.md`** — novel to AIECP.
+  performance-problem is the workflow for "it's slow" / latency /
+  throughput complaints. Unique structural features: (1) requires an
+  `environment_fingerprint_ref` at the baseline stage (performance
+  is environment-sensitive); (2) the `verify-improvement` state
+  requires BOTH a performance check AND a functional regression
+  check; (3) the `regression-protect` state writes a `known-failure`
+  memory entry for a PERFORMANCE regression. The profiler-commands-
+  per-language reference (Node `--prof`, Python `cProfile`, Go
+  `pprof`, Swift Instruments, Rust `cargo-flamegraph`) is curated
+  from general performance-engineering practice.
+
+- **`scripts/chat-harness.mjs`** — novel to AIECP. Live-session test
+  infrastructure: drives an AIECP workflow interactively with a
+  real chat LLM's text response (pasted into a file or piped via
+  stdin), validates every `aiecp:*` block against the Phase 1
+  schemas, walks the real `WorkflowRun` state machine, and reports
+  whether the chat LLM's response drove the workflow from initial
+  state to a terminal state. Designed for the user (patron) to test
+  real chat LLM sessions at home without writing code. Run via
+  `npm run chat-harness -- <workflow-name> <response-file>` or
+  `cat response.md | npm run chat-harness -- <workflow-name>`.

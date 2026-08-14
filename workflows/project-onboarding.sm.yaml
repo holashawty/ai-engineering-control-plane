@@ -1,0 +1,261 @@
+workflow: project-onboarding
+schema_version: "1.0.0"
+description: >
+  Triggered (per `workflows/_router.md`'s classification method step 1)
+  when no `.aiecp/project-intelligence.json` is present in the repo —
+  i.e., this is the FIRST workflow that runs against any new repository.
+  Distinct from every other workflow in the catalog because all other
+  workflows READ existing memory entries (`project`, `environment`,
+  `known-failure`, etc.) that this workflow is responsible for WRITING
+  in the first place. Its job is to run `discovery/cli` (ADR-0009's
+  detector pipeline), validate the produced Project Intelligence
+  against `discovery/schema/project-intelligence.schema.json`, and
+  persist the initial `project` and `environment` memory entries that
+  every subsequent workflow depends on (per `skills/testing/SKILL.md`
+  step 1, `skills/systematic-debugging/SKILL.md` step 1.4, etc.). This
+  is also why its question economy (max_questions=2) is higher than
+  `bug-report`'s 1: a fresh repo is inherently more ambiguous (no prior
+  context), and the two legitimate clarifying questions are "is this a
+  monorepo?" (classify) and "is the detected test runner correct?"
+  (validate-discovery) — both decision-changing, neither answerable by
+  inspection alone when the detectors disagree.
+
+states:
+  - intake
+  - classify
+  - run-discovery
+  - validate-discovery
+  - write-project-memory
+  - write-environment-memory
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: run-discovery, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: run-discovery, to: validate-discovery, on: discovery_complete }
+  - { from: run-discovery, to: blocked, on: discovery_failed }
+  - { from: validate-discovery, to: write-project-memory, on: discovery_valid }
+  - { from: validate-discovery, to: run-discovery, on: discovery_invalid_needs_rerun }
+  - { from: write-project-memory, to: write-environment-memory, on: project_memory_written }
+  - { from: write-environment-memory, to: report, on: environment_memory_written }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's onboarding request verbatim. Do not ask
+      clarifying questions here — the two allowed questions belong to
+      `classify` and `validate-discovery` (per question_economy below).
+      Structurally, the most important classification made here is: is
+      this *actually* a fresh repo, or has `.aiecp/project-intelligence.
+      json` simply been deleted / is stale? If the latter, route to a
+      future `discovery-refresh` workflow (per ADR-0015, planned) rather
+      than re-running the full onboarding — onboarding is for the
+      no-prior-memory case specifically, and conflating the two cases
+      produces a different memory-entry shape (a fresh `project` entry
+      vs. an `updated_at` bump on an existing one).
+    emits_evidence: []
+    # No `reads_memory` declared — this is the only workflow that has
+    # no prior memory to read (the project is new). All other workflows
+    # declare `reads_memory: [project]` or similar in their `intake`
+    # state detail; project-onboarding's `intake` reads nothing because
+    # nothing has been written yet. This is the structural feature that
+    # makes project-onboarding the entry point of the workflow catalog.
+
+  classify:
+    purpose: >
+      Determine onboarding class (single-language greenfield, polyglot
+      monorepo, single-language legacy, sub-package of a larger
+      workspace) and rough scope. Unlike other workflows' `classify`
+      states, there is no Project Intelligence to consult yet (it has
+      not been produced — that is `run-discovery`'s job), so
+      classification here relies on filesystem inspection only: does
+      the repo have one top-level `package.json`/`pyproject.toml`, or
+      multiple? Is there a `packages/` or `apps/` directory? May ask at
+      most ONE necessary, specific, decision-changing question if the
+      class cannot be determined from inspection — typically "is this a
+      monorepo?" when filesystem layout is ambiguous (e.g., two
+      top-level `package.json`s could be a monorepo OR two unrelated
+      tools that happen to coexist). The `Decision` emitted here is
+      the acceptance decision (proceed with onboarding / rescope if
+      polyglot / reject if the directory isn't actually a repo).
+    emits_evidence: [decision]
+    # No `reads_memory` declared — there is no prior `project` memory
+    # entry to read (this workflow is what writes it).
+
+  run-discovery:
+    purpose: >
+      Invoke `discovery/cli` (the existing Python + TypeScript CLI per
+      ADR-0016, runnable as `node dist/cli.js <repo-path>` from
+      `discovery/cli/`) to produce a `.aiecp/project-intelligence.json`
+      document conforming to `discovery/schema/project-intelligence.
+      schema.json` (ADR-0015). Per ADR-0009, the CLI runs a detector
+      pipeline (language, framework, build, test, entrypoint, layer,
+      integration, cicd) — emit one `Event` per detector that ran,
+      with `kind: "action"`, `source: "discovery/cli:<detector_name>"`,
+      and `payload.finding` describing what was detected. Wrap these
+      in a single `Trace` so the detector sequence is citable as a
+      unit. The CLI writes `.aiecp/project-intelligence.json` itself;
+      this state emits the *evidence trail* of what each detector
+      found, not the Project Intelligence document (which lives on
+      disk in `.aiecp/`). If the CLI errors, no language is detected,
+      or no entrypoint can be identified, transition to `blocked` with
+      `on: discovery_failed` — a precise gap, not a vague failure.
+    emits_evidence: [trace, event]
+    # `discovery/cli` reads the repo (filesystem_read) and writes
+    # `.aiecp/project-intelligence.json` (filesystem_write to .aiecp/).
+    # It also shells out to language-specific probes (python --version,
+    # node --version) via shell_exec.
+
+  validate-discovery:
+    purpose: >
+      Validate the produced Project Intelligence against the schema and
+      against expectations. Per ADR-0009, each detector's output is a
+      fragment of Project Intelligence that must validate against
+      `discovery/schema/project-intelligence.schema.json`. Emit an
+      `Expected` describing what a schema-valid Project Intelligence
+      document for this repo's class should contain (per the classify
+      decision: e.g., for a single-language Python repo, `project.
+      stack == ["python"]`, `project.test_system` is non-empty if a
+      test suite exists, `entrypoints` is non-empty), an `Actual`
+      describing what `discovery/cli` actually produced, and a
+      `Validation` with `method: "contract_validation"` (this is a
+      schema/contract check, not a behavioral check — `app_validation`
+      is for behavior; `unit_test` is for a test suite; this state is
+      checking the produced document against a JSON Schema contract,
+      which is exactly the `contract_validation` use case per
+      `evidence/schema/validation.schema.json`). May ask at most ONE
+      necessary, specific, decision-changing question if the produced
+      Project Intelligence is ambiguous in a way the schema cannot
+      adjudicate — typically "is the detected test runner correct?"
+      when the language detector found both `pytest` and `unittest`
+      and the schema accepts both. If the document fails schema
+      validation OR a detector picked up the wrong tool (e.g.,
+      detected `unittest` when the project actually uses `pytest`),
+      transition back to `run-discovery` with `on:
+      discovery_invalid_needs_rerun`.
+    emits_evidence: [expected, actual, validation]
+
+  write-project-memory:
+    purpose: >
+      Write the initial `project` memory entry
+      (`memory/schemas/project.schema.json` shape: `id`, `type:
+      "project"`, `schema_version`, `created_at`, `source`, `stack`,
+      `layer`, `domain`). This is the FIRST `project` memory entry for
+      this repo; every future workflow that declares `reads_memory:
+      [project]` in its `intake` state is depending on this entry
+      existing. The `stack` and `layer` fields are copied from the
+      validated Project Intelligence (`project.stack`, `project.layer`);
+      the `domain` field is a one-line description derived from the
+      repo's structure (e.g., "Express API service with /items
+      endpoint"). Do NOT yet write the `environment` entry — that is
+      the next state's job, kept separate because `project` records
+      what the repo IS (structural, slow-changing) while `environment`
+      records HOW it was built this run (versions, runtime — fast-
+      changing, refreshed on environment change).
+    emits_evidence: []
+    writes_memory: [project]
+
+  write-environment-memory:
+    purpose: >
+      Write the initial `environment` memory entry
+      (`memory/schemas/environment.schema.json` shape: `id`, `type:
+      "environment"`, `schema_version`, `created_at`, `source`,
+      `runtime`, `versions`). The `runtime` (e.g., "python3.11",
+      "node20") and `versions` (e.g., `{"pytest": "8.1.2", "express":
+      "4.19.2"}`) are captured from the `discovery/cli` output and
+      from direct `shell_exec` probes (`python --version`, `node
+      --version`, language-appropriate version queries per
+      `skills/recency-verification/SKILL.md` step 2). REDACT any
+      secret-shaped env var before writing — the `environment` schema
+      does not have an `env_vars` field, but if version probes would
+      capture secret values (e.g., via `printenv`), redact them
+      before emitting. This entry captures the fingerprint for future
+      replay per `docs/memory-model.md` ("refreshed on env change").
+    emits_evidence: []
+    writes_memory: [environment]
+
+  report:
+    purpose: >
+      Summarize the onboarding outcome: what was discovered (stack,
+      layer, build/test systems, entrypoints), what was written
+      (`.aiecp/project-intelligence.json` + the two memory entries),
+      and what the next workflow to run against this repo would be
+      (per `workflows/_router.md`'s classification method — now that
+      `.aiecp/project-intelligence.json` exists, the router can route
+      intent). Must include the Decision Trace (docs/architecture.md),
+      not just "onboarded." Unlike other workflows' `report` states
+      that write a `project` memory entry recording the run's
+      outcome, project-onboarding's `report` writes NO new memory —
+      the `project` and `environment` entries were already written
+      by the preceding two states. Writing a third here would
+      duplicate the `project` entry this run just created.
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous after
+      one question (`classify` — the repo is too ambiguous to
+      onboard without more context than the budget allows), discovery
+      failed (`run-discovery` — `discovery/cli` errored, no language
+      detected, no entrypoint identifiable), or discovery invalid
+      after a rerun (`validate-discovery` — the produced Project
+      Intelligence still doesn't validate against the schema, or the
+      detected tooling is wrong but the user cannot clarify within
+      the budget). Must surface a precise gap, never a vague failure,
+      per docs/portability.md failure modes.
+
+skills_required:
+  - evidence-engineering
+  - tool-use-discipline  # ADR-0019 — mandatory before reading the repo or asserting what was detected
+  - recency-verification  # ADR-0019 — version probes (python --version, node --version) are time-sensitive
+  # The procedure for the run-discovery / validate-discovery /
+  # write-project-memory / write-environment-memory states is encoded
+  # in skills/project-onboarding/SKILL.md (the dedicated skill authored
+  # alongside this workflow). The skill is not duplicated in
+  # skills_required here because it is the skill that drives THIS
+  # workflow's states specifically — the convention (see
+  # code-review.sm.yaml) is that skills_required names skills whose
+  # existence is independent of this workflow. Future: when a
+  # `discovery` skill exists that documents `discovery/cli` usage
+  # generically, add it here; until then the procedure lives in
+  # skills/project-onboarding/SKILL.md directly.
+
+capabilities_required:
+  - filesystem_read   # read the repo being onboarded
+  - filesystem_write  # write .aiecp/project-intelligence.json + memory entries
+  - shell_exec        # run discovery/cli + version probes (python --version, etc.)
+
+# No safety_gates declared. project-onboarding writes only to
+# `.aiecp/` (the AIECP memory directory), never to source code. The
+# `broad-refactor` gate is not appropriate — discovery doesn't refactor
+# anything; it reads the repo and writes a sibling metadata file. The
+# `edit_source` gate is not appropriate — no source files are edited.
+# This is the same "no gates because no source mutation" property that
+# `code-review.sm.yaml` declares (see its `safety_gates` comment block);
+# project-onboarding shares it for a different reason (discovery is
+# read-only at the source-code layer; the only writes are to `.aiecp/`).
+# The e2e driver at executor/examples/e2e-project-onboarding/drive-run.mjs
+# asserts this by checking the run log has zero "gate-check" entries
+# (same pattern as the code-review e2e driver).
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, validate-discovery]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and
+    `validate-discovery` (up to 1), totaling 2 across the workflow.
+    Each must be necessary, specific, and decision-changing — see
+    docs/workflow-model.md "Question economy." The budget is higher
+    than `bug-report`'s 1 because onboarding is inherently more
+    ambiguous: a fresh repo has no prior memory to consult, and the
+    two legitimate questions ("is this a monorepo?" at classify;
+    "is the detected test runner correct?" at validate-discovery)
+    genuinely cannot be answered by inspection alone when the
+    detectors disagree. The budget is bounded, not unlimited —
+    questions about implementation details ("should I cache the
+    discovery output?") are never permitted under this budget; they
+    are not decision-changing at the workflow level.

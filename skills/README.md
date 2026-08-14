@@ -1,6 +1,6 @@
 # Skills (Agent Skills format)
 
-**Status: 10 skills authored — 4 MVP + 6 post-MVP.**
+**Status: 16 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem).**
 
 All skills are written as real, procedural Agent Skills
 (`SKILL.md` + YAML frontmatter, per ADR-0001), not placeholders.
@@ -60,6 +60,39 @@ All skills are written as real, procedural Agent Skills
   when stuck, breaking out of cognitive loops. Triggers after 3+
   rejected hypotheses (per `systematic-debugging`'s three-failure
   rule) or after 10+ minutes without verifiable progress.
+- [`tool-use-discipline/`](tool-use-discipline/SKILL.md) — the
+  mandatory-tool-per-request-class table. Operationalizes
+  constitution §8 ("Tool use is mandatory, not optional"). Skipping
+  a mandatory tool emits a `Decision` with
+  `what: "tool_use_skipped"`, `validated: false`, `result: "rejected"`.
+- [`recency-verification/`](recency-verification/SKILL.md) —
+  extends constitution §7 with a three-class taxonomy (static /
+  slowly-evolving / time-sensitive) for time-sensitive claims
+  specifically. Honest fallback to `blocked` for chat LLMs without
+  `web_search`.
+- [`quality-gate/`](quality-gate/SKILL.md) — code-quality checkpoint
+  between `implement` and `verify`. Runs the project's own linters
+  plus a 6-item self-review checklist. `result: "mismatch"` →
+  transition back to the code-changing state.
+
+## New-workflow skills (D-sprint)
+
+- [`project-onboarding/`](project-onboarding/SKILL.md) — drives the
+  `project-onboarding` workflow's `run-discovery`,
+  `validate-discovery`, `write-project-memory`,
+  `write-environment-memory` states. The only workflow that WRITES
+  initial memory entries (all others READ existing memory).
+- [`regression/`](regression/SKILL.md) — drives the `regression`
+  workflow's `match-known-failure`, `identify-reintroduction`,
+  `re-diagnose`, `re-fix`, `verify`, `update-known-failure` states.
+  The only workflow whose `re-diagnose` `Decision.why` field MUST
+  cite the prior fix's blind spot.
+- [`performance-problem/`](performance-problem/SKILL.md) — drives
+  the `performance-problem` workflow's `capture-baseline`,
+  `profile`, `diagnose-bottleneck`, `optimize`, `verify-
+  improvement`, `regression-protect` states. Cites profiler-
+  commands-per-language reference (Node `--prof`, Python `cProfile`,
+  Go `pprof`, Swift Instruments, Rust `cargo-flamegraph`).
 
 Each ships with a concrete procedure, tool integration section,
 validation criteria, and both a happy-path and a failure-mode
@@ -74,7 +107,8 @@ is not the same as "an agent following it produces the claimed
 behavior." See `docs/evaluations/evaluation-strategy.md`'s core
 principle.
 
-The remaining ~9 skills (database, frontend, backend, mobile,
-security, performance, release, incident-response, etc.) are
-long-term scope (ADR-0016) and are not started.
+The remaining ~3 skills (database, frontend, backend, mobile,
+security, release, incident-response — pick the most relevant to
+the project's actual needs) are long-term scope (ADR-0016) and
+are not started.
 

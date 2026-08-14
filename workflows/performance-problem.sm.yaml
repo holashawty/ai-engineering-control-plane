@@ -1,0 +1,383 @@
+workflow: performance-problem
+schema_version: "1.0.0"
+description: >
+  Triggered when the user reports a latency, throughput, memory, or
+  resource-cost complaint ("it's slow", "this endpoint times out
+  under load", "the batch job takes 4 hours and used to take 20
+  minutes", "memory keeps climbing during the long-running
+  worker"). This is the workflow that sits alongside
+  `bug-report.sm.yaml` (functional failure: code produces wrong
+  output) and `refactor.sm.yaml` (behavior-preserving internal
+  restructure) but is structurally distinct from both: the code
+  produces CORRECT output, just too slowly or with too much memory
+  or under too small a load. The diagnosis is not "find the line
+  that produces the wrong value" (that is `bug-report`) — it is
+  "find the operation whose cost is too high." That single
+  difference reshapes the workflow: it requires a `capture-baseline`
+  state that measures the current cost under the reported load (a
+  `Trace` of `test_result` `Event`s with `payload.metrics`), a
+  `profile` state that runs a real profiler (Node `--prof`, Python
+  `cProfile`, Go `pprof`, Swift `Instruments`) to identify the hot
+  path, a `diagnose-bottleneck` state that names the specific
+  operation whose cost dominates, an `optimize` state (gated by
+  `broad-refactor` because performance optimizations are notorious
+  for touching many files — introduce a cache → touch every callsite;
+  add an index → touch the schema and every query), and a
+  `verify-improvement` state that requires BOTH a performance check
+  (timing/memory improved) AND a functional regression check (the
+  existing test suite still passes) — a 10x speedup that breaks 3
+  tests is NOT an improvement. Finally, `regression-protect` writes
+  a `known-failure` memory entry for a PERFORMANCE regression (not
+  a functional one): future code that reintroduces the same slow
+  pattern (e.g., an N+1 query) should fire the `regression`
+  workflow. Unique structural features: (1) requires an
+  `environment_fingerprint_ref` at the baseline stage (per
+  `evidence/schema/incident.schema.json`'s
+  `environment_fingerprint_ref` field — performance is environment-
+  sensitive: same code, different hardware, different result); (2)
+  the `verify-improvement` state emits a `Validation` that must
+  confirm BOTH the performance gain AND the absence of functional
+  regression; (3) `regression-protect` writes a `known-failure`
+  memory entry whose `symptom` is a performance symptom (latency,
+  throughput, memory) and whose `fix` is the optimization, so future
+  regressions of this performance issue fire the `regression`
+  workflow.
+
+states:
+  - intake
+  - classify
+  - capture-baseline
+  - profile
+  - diagnose-bottleneck
+  - optimize
+  - verify-improvement
+  - regression-protect
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: capture-baseline, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_two_questions }
+  - { from: capture-baseline, to: profile, on: baseline_captured }
+  - { from: capture-baseline, to: blocked, on: baseline_uncapturable }
+  - { from: profile, to: diagnose-bottleneck, on: profile_complete }
+  - { from: profile, to: capture-baseline, on: profile_needs_different_load }
+  - { from: diagnose-bottleneck, to: optimize, on: bottleneck_identified }
+  - { from: diagnose-bottleneck, to: blocked, on: bottleneck_unidentifiable }
+  - { from: optimize, to: verify-improvement, on: optimization_applied }
+  - { from: optimize, to: diagnose-bottleneck, on: optimization_needs_redesign }
+  - { from: verify-improvement, to: regression-protect, on: improvement_verified }
+  - { from: verify-improvement, to: optimize, on: improvement_insufficient }
+  - { from: verify-improvement, to: blocked, on: improvement_unverifiable }
+  - { from: regression-protect, to: report, on: regression_added }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's performance complaint verbatim. Do not ask
+      clarifying questions here — performance complaints are
+      inherently ambiguous ("slow" needs context: slow how? slow
+      under what load? slow compared to what baseline?), and that
+      context-gathering belongs in `classify` (per question_economy
+      below), where it is bounded. Structurally, the most important
+      classification made here is: is this ACTUALLY a performance
+      problem, or is it a `bug-report` misfiled? If the slowness is
+      caused by an error loop, a retry storm, or a malformed input
+      triggering a pathological code path, the underlying issue is a
+      functional bug (the code is producing wrong output — wrong
+      timing IS wrong output, but only when the timing diverges
+      from what the code is supposed to do; if the code is slow
+      because it is doing the wrong thing, route to `bug-report`).
+      The acid test: would a faster implementation of the SAME
+      behavior fix the complaint? If yes, this is
+      `performance-problem`. If the behavior itself is wrong (and
+      fixing it would also fix the slowness), it is `bug-report`.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine the performance class (latency, throughput, memory,
+      startup-time, steady-state-resource-cost) and rough scope
+      using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the
+      complaint text. May ask up to ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — the second question, if needed, is reserved
+      for `diagnose-bottleneck` (the target metric). The `Decision`
+      emitted here is the acceptance decision (proceed / reject /
+      rescope); "rescope" is a valid outcome and means "this is
+      actually a `bug-report` — the slowness is a symptom of a
+      functional failure, route there instead." Performance
+      complaints are inherently more ambiguous than functional bug
+      reports ("slow" means different things under different
+      loads), which is why this workflow's question budget (2) is
+      higher than `bug-report`'s (1).
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  capture-baseline:
+    purpose: >
+      Run the current code under the reported load (or a faithful
+      reproduction of it) and capture timing/memory metrics as the
+      baseline the optimization must improve on. CRITICAL: this
+      state is the ONLY workflow state in the catalog that
+      REQUIRES an `environment_fingerprint_ref` on the emitted
+      `Trace` — performance is environment-sensitive in a way
+      functional behavior is not. Same code, different hardware
+      (different CPU, different disk, different memory bandwidth),
+      different result: a baseline captured on a developer's M2
+      MacBook is not comparable to a baseline captured in a
+      memory-constrained container. Without an
+      `environment_fingerprint_ref` anchoring the baseline to the
+      environment it was measured in, the eventual
+      `verify-improvement` comparison is unverifiable — a 2x
+      speedup observed on different hardware than the baseline may
+      be a 2x hardware difference, not a 2x optimization. Per
+      `evidence/schema/trace.schema.json`, `environment_fingerprint_ref`
+      is a non-required string field on `Trace` — this workflow's
+      procedure makes it mandatory anyway, enforced by the
+      `skills/performance-problem/SKILL.md` procedure rather than
+      the schema. Emit the baseline run as a `Trace` of
+      `test_result` `Event`s (per `evidence/schema/event.schema.json`)
+      with `payload.metrics` containing concrete timing/memory
+      numbers (p50/p99 latency, throughput in RPS, peak RSS, GC
+      pause count — whatever the performance class demands), and
+      author an `Expected` recording the performance contract
+      being violated (e.g., "endpoint responds in <200ms at p99
+      under 100 RPS"). If the reported load cannot be reproduced
+      locally (production-only traffic patterns, missing test
+      fixtures, no load generator), transition to `blocked` with
+      `baseline_uncapturable` and a precise gap — a baseline
+      captured under a different load than reported is not a
+      baseline, it is a guess.
+    emits_evidence: [trace, event, expected]
+    reads_memory: [environment]
+
+  profile:
+    purpose: >
+      Run a profiler against the code path the baseline identified
+      as the hot path. The profiler output IS the evidence that
+      `diagnose-bottleneck` reasons from — without it, the
+      bottleneck identification is a guess. Profiler commands per
+      language (curated reference, see `skills/performance-problem/
+      SKILL.md` for the per-language procedure): Node `--prof
+      <script>` then `--prof-process` for the human-readable
+      report; Python `cProfile` (`python -m cProfile -o profile.out
+      <script>` then `pstats.Stats` to read); Go `pprof`
+      (`go test -cpuprofile cpu.prof -bench .` then `go tool pprof`);
+      Swift `Instruments` (Xcode GUI or `xcrun xctrace record`).
+      Emit the profiler output as a `Trace` of `observation`
+      `Event`s, each `Event` recording one function's hot-path
+      contribution (function name, call count, total time, percent
+      of wall time). If the profiler reveals the baseline was
+      captured under the wrong load (e.g., the hot path under 10
+      RPS is different from the hot path under 1000 RPS, and the
+      user's complaint was about 1000 RPS), transition back to
+      `capture-baseline` with `profile_needs_different_load`
+      rather than diagnosing against the wrong load — a bottleneck
+      identified under the wrong load is the wrong bottleneck.
+    emits_evidence: [trace, event]
+    reads_memory: [environment]
+
+  diagnose-bottleneck:
+    purpose: >
+      From the profiler output, identify the specific operation
+      whose cost dominates the baseline — not "the code is slow,"
+      but "function X called N times, total T ms, accounting for
+      P% of wall time, and P is large enough that fixing X is
+      worth the optimization effort." Emit the identified
+      bottleneck as a `decision` with `validated: false`
+      initially (it is a candidate until `verify-improvement`
+      confirms the optimization actually addressed it),
+      `evidence_refs` pointing at the profiler `event`s from
+      `profile`, and an `expected` describing the post-optimization
+      target (e.g., "function X total time should drop below
+      T_target ms after optimization"). May ask up to ONE
+      necessary, specific, decision-changing question if the
+      acceptable target cannot be inferred from Project
+      Intelligence, the baseline, or the project's existing
+      performance contracts — "what is the acceptable target
+      latency?" is decision-changing because without a target,
+      "improvement" is unmeasurable (a 50% speedup might still be
+      too slow for the user's actual need; a 10% speedup might be
+      more than enough). If the profiler shows no clear hot path
+      (cost is distributed across many functions, no single one
+      dominating), transition to `blocked` with
+      `bottleneck_unidentifiable` and a recommendation for
+      architectural review — a distributed cost is not a local
+      optimization problem, it is a design problem, and pressing
+      through with a speculative optimization against no clear
+      target is the failure mode this state exists to prevent.
+    emits_evidence: [decision, expected]
+    reads_memory: [known-failure]
+
+  optimize:
+    purpose: >
+      Apply the optimization targeting the identified bottleneck.
+      Per the AI-output validation pattern
+      (`docs/evidence-model.md`), every code change is a `Decision`
+      with `validated: false` until `verify-improvement` confirms
+      the improvement was real AND did not introduce a functional
+      regression — implementation is not success, it is a
+      candidate for success. The `broad-refactor` safety gate
+      fires here, not at `diagnose-bottleneck`, because the actual
+      optimization surface is only knowable once implementation
+      begins: introducing a cache touches every callsite that
+      reads the cached value; adding a database index touches the
+      schema and every query plan; rewriting a hot loop may touch
+      the function's signature and therefore every caller. This
+      gate matters MORE for performance optimizations than for
+      `feature-request`'s typical `implement` surface, because
+      performance optimizations are structurally invasive by
+      nature — the "minimal change" intuition that works for
+      features does not work for caches or indexes. If the gate
+      trips, transition back to `diagnose-bottleneck` with
+      `optimization_needs_redesign` rather than pressing through
+      with an invasive optimization that was never approved as a
+      design — a 10-file cache introduction is a design decision,
+      not an implementation detail, and deserves the
+      bottleneck-redesign pass.
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  verify-improvement:
+    purpose: >
+      Re-run the baseline (the SAME load, the SAME
+      `environment_fingerprint_ref` as `capture-baseline`) against
+      the optimized code and confirm BOTH (1) the performance
+      metric improved (timing dropped, throughput rose, memory
+      fell — whatever the performance class demands) AND (2) the
+      existing test suite still passes (no functional regression
+      introduced by the optimization). Per ADR-0010 and the
+      `behavioral-verification` skill, a passing test suite alone
+      is NOT sufficient — but for `performance-problem`
+      specifically, a passing test suite is NECESSARY in addition
+      to the performance check: a 10x speedup that breaks 3 tests
+      is NOT an improvement, it is a faster way to produce wrong
+      output. The `Validation` emitted here must record BOTH axes:
+      `method: "app_validation"` if the performance check was an
+      application-level measurement (replayed load against the
+      optimized endpoint), or `method: "replay_comparison"` if
+      the comparison was against the captured baseline (re-run the
+      SAME load against the SAME hardware, observe the timing
+      delta). `evidence_refs` MUST include both the baseline
+      `event`s from `capture-baseline` AND the post-optimization
+      `event`s from this state's re-run — a `Validation` with only
+      post-optimization evidence has no baseline to compare
+      against. If the performance improved BUT the suite broke,
+      transition to `optimize` with `improvement_insufficient`
+      (the optimization is wrong, even if it is fast); if the
+      performance did not improve, also `improvement_insufficient`
+      (the diagnosis was wrong, the bottleneck identified was not
+      the real one); if the performance cannot be re-measured at
+      all (environment drift, baseline unreplayable), transition
+      to `blocked` with `improvement_unverifiable` — an
+      unverifiable improvement is, by ADR-0010, not verified,
+      even if the suite happens to be green.
+    emits_evidence: [actual, validation]
+
+  regression-protect:
+    purpose: >
+      Write a `known-failure` memory entry recording the
+      performance regression of the optimized function: the
+      `symptom` is the performance symptom (latency at p99, peak
+      memory, throughput ceiling), the `root_cause` is the
+      bottleneck identified in `diagnose-bottleneck`, the `fix`
+      is the optimization applied in `optimize`, and the
+      `incident_ref` references the design-trace `Decision`
+      (since `performance-problem` emits no `Incident` entity —
+      same semantic stretch as `change-request`'s `report` state
+      memory write; future schema revision should generalize
+      `incident_ref` to "source-of-failure-knowledge_ref"). This
+      is the ONLY workflow in the catalog that writes a
+      `known-failure` memory entry for a PERFORMANCE regression
+      rather than a functional one — the regression-of-knowledge
+      being recorded is "if you reintroduce the N+1 query (or the
+      O(n²) loop, or the synchronous call where an async batch
+      would do), the system will be slow again." Future code that
+      accidentally reintroduces the slow pattern should fire the
+      `regression` workflow, with this `known-failure` entry as
+      the prior incident being regressed.
+    emits_evidence: []
+    writes_memory: [known-failure]
+
+  report:
+    purpose: >
+      Summarize the performance problem, the bottleneck identified,
+      the optimization applied, and the validation evidence chain
+      (both the performance gain AND the functional regression
+      check). Must include the Decision Trace
+      (`docs/architecture.md`), not just "made it faster." Writes a
+      `project` memory entry recording the performance contract
+      now in force (e.g., "endpoint /items now responds in <50ms
+      at p99 under 1000 RPS, achieved by replacing the N+1 query
+      with a JOIN — future modifications to /items must not
+      silently reintroduce the per-item query"), so future
+      workflows do not re-derive the contract or re-diagnose the
+      same bottleneck when the code is touched again.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Must surface a precise gap: intent
+      ambiguous after two questions, baseline uncapturable
+      (production-only load, no load generator available),
+      bottleneck unidentifiable (profiler shows distributed cost,
+      no clear hot path), or improvement unverifiable (environment
+      drift between baseline and verify). Never a vague failure —
+      per `docs/portability.md` failure modes, a precise gap is
+      recoverable; a silent wrong optimization is not. The
+      `bottleneck_unidentifiable` case is especially important:
+      it is the signal that the performance problem is
+      architectural, not local, and pressing through with a
+      speculative optimization against no clear target would
+      produce the failure mode this state exists to prevent.
+
+skills_required:
+  - evidence-engineering
+  - systematic-debugging  # Phase 1 evidence-gathering applies to performance too — profiler output IS evidence
+  - behavioral-verification
+  - testing
+  - tool-use-discipline  # ADR-0019 — mandatory before any profiler invocation or code change
+  - recency-verification  # ADR-0019 — profiler tooling evolves; current profiler flags may differ from training data
+  - quality-gate  # ADR-0019 — runs after optimize, before verify-improvement
+  # Future: a dedicated `performance-engineering` skill that documents
+  # profiler usage per language in depth. Until then, the procedure is
+  # encoded directly in `skills/performance-problem/SKILL.md`.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: optimize
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, diagnose-bottleneck]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and
+    `diagnose-bottleneck` (up to 1), totaling 2 across the workflow.
+    Each must be necessary, specific, and decision-changing — see
+    `docs/workflow-model.md` "Question economy." The budget is
+    higher than `bug-report`'s 1 (and matches `feature-request`'s and
+    `change-request`'s 2) because performance complaints are
+    inherently more ambiguous than functional bug reports: "slow"
+    needs context (slow how? slow under what load? slow compared to
+    what baseline? what is the acceptable target?), and not all of
+    that context is inferrable from the code. The two allowed
+    questions are reserved for the two genuinely user-dependent
+    decisions: the performance class in `classify` (latency vs.
+    throughput — different optimizations) and the acceptable target
+    in `diagnose-bottleneck` (without a target, "improvement" is
+    unmeasurable). Questions about implementation details ("should
+    I use a HashMap or a TreeMap?") are never permitted under this
+    budget — they are not decision-changing at the workflow level.
