@@ -49,6 +49,10 @@ transitions:
   - { from: re-diagnose, to: re-fix, on: root_cause_found }
   - { from: re-diagnose, to: identify-reintroduction, on: root_cause_invalid }
   - { from: re-fix, to: verify, on: fix_applied }
+  # Chat-LLM capability transition: re-fix writes source code; chat
+  # LLMs without filesystem_write cannot proceed. Per constitution
+  # §3 + §8, transitions to blocked.
+  - { from: re-fix, to: blocked, on: requires_filesystem_write_capability }
   - { from: verify, to: update-known-failure, on: behavior_verified }
   - { from: verify, to: re-fix, on: behavior_not_verified }
   - { from: update-known-failure, to: report, on: known_failure_updated }

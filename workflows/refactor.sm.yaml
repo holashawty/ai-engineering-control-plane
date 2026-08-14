@@ -46,6 +46,10 @@ transitions:
   - { from: design-refactor, to: blocked, on: refactor_infeasible }
   - { from: implement, to: verify-equivalence, on: implementation_complete }
   - { from: implement, to: design-refactor, on: implementation_blocked_by_design }
+  # Chat-LLM capability transition: refactor's `implement` state writes
+  # source code; chat LLMs without filesystem_write cannot proceed.
+  # Per constitution §3 + §8, transitions to blocked.
+  - { from: implement, to: blocked, on: requires_filesystem_write_capability }
   - { from: verify-equivalence, to: document, on: equivalence_verified }
   - { from: verify-equivalence, to: implement, on: equivalence_violated }
   - { from: verify-equivalence, to: blocked, on: equivalence_unverifiable }

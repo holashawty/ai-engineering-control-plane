@@ -70,6 +70,10 @@ transitions:
   - { from: diagnose-bottleneck, to: blocked, on: bottleneck_unidentifiable }
   - { from: optimize, to: verify-improvement, on: optimization_applied }
   - { from: optimize, to: diagnose-bottleneck, on: optimization_needs_redesign }
+  # Chat-LLM capability transition: performance optimization writes
+  # source code; chat LLMs without filesystem_write cannot proceed.
+  # Per constitution §3 + §8, transitions to blocked.
+  - { from: optimize, to: blocked, on: requires_filesystem_write_capability }
   - { from: verify-improvement, to: regression-protect, on: improvement_verified }
   - { from: verify-improvement, to: optimize, on: improvement_insufficient }
   - { from: verify-improvement, to: blocked, on: improvement_unverifiable }

@@ -52,6 +52,10 @@ transitions:
   - { from: design-change, to: blocked, on: change_infeasible }
   - { from: migrate, to: verify, on: migration_complete }
   - { from: migrate, to: design-change, on: migration_blocked_by_design }
+  # Chat-LLM capability transition: an agent without filesystem_write
+  # cannot apply the migration. Per constitution §3 + §8, transitions
+  # to blocked rather than fabricating the migration.
+  - { from: migrate, to: blocked, on: requires_filesystem_write_capability }
   - { from: verify, to: document, on: behavior_verified }
   - { from: verify, to: migrate, on: behavior_not_verified }
   - { from: document, to: report, on: documentation_complete }

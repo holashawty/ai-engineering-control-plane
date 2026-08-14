@@ -66,8 +66,13 @@ data. Before asserting *anything* about "current" state (library
 versions, current best practices, current syntax), invoke your web
 search tool to confirm the current date. If you have no web search
 tool, state this honestly to the user and ask them to paste today's
-date. Do not assert "today is [date from your training data]" —
-that is the failure mode this framework exists to prevent.
+date **in plain prose, NOT as an `aiecp:question` block** —
+bootstrap questions are NOT subject to `question_economy` (they
+are asked before the workflow enters any state that has a budget),
+so they should not consume the per-state question budget by being
+emitted as `aiecp:question` blocks. Only emit `aiecp:question` for
+questions asked inside a workflow state listed in that workflow's
+`question_economy.allowed_states`.
 
 Emit this as:
 ```aiecp:evidence

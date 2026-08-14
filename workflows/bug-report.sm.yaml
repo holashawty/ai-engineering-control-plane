@@ -35,6 +35,12 @@ transitions:
   - { from: diagnose, to: locate-evidence, on: root_cause_invalid }
   - { from: propose-fix, to: apply-fix, on: fix_approved }
   - { from: apply-fix, to: verify, on: fix_applied }
+  # Chat-LLM capability transition: an agent without filesystem_write
+  # (e.g. chat LLMs following CHAT-ENTRYPOINT.md) cannot apply fixes.
+  # Per constitution §3 ("autonomy is bounded, not implicit") and §8
+  # (tool use mandatory, honest fallback to blocked), such an agent
+  # transitions to blocked rather than pretending to apply the fix.
+  - { from: apply-fix, to: blocked, on: requires_filesystem_write_capability }
   - { from: verify, to: regression-protect, on: behavior_verified }
   - { from: verify, to: diagnose, on: behavior_not_verified }
   - { from: regression-protect, to: replay, on: regression_added }
@@ -130,8 +136,14 @@ state_detail:
     purpose: >
       Terminal failure state. Must surface a precise gap (missing
       capability, unreproducible incident, unresolved ambiguity after one
-      question) — never a vague failure, per docs/portability.md failure
-      modes.
+      question, OR `requires_filesystem_write_capability` for chat LLMs
+      that cannot apply fixes) — never a vague failure, per
+      docs/portability.md failure modes. The
+      `requires_filesystem_write_capability` case is especially
+      important for chat LLMs following CHAT-ENTRYPOINT.md: they
+      cannot apply source edits, so they emit this transition and
+      hand the fix back to the user (or to a tool-using agent that
+      later picks up the run).
 
 skills_required:
   - systematic-debugging

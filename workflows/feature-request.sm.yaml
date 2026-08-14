@@ -40,6 +40,11 @@ transitions:
   - { from: design, to: blocked, on: design_infeasible }
   - { from: implement, to: test, on: implementation_complete }
   - { from: implement, to: design, on: implementation_blocked_by_design }
+  # Chat-LLM capability transition: an agent without filesystem_write
+  # (e.g. chat LLMs following CHAT-ENTRYPOINT.md) cannot apply the
+  # implementation. Per constitution §3 + §8, transitions to blocked
+  # rather than fabricating the implementation.
+  - { from: implement, to: blocked, on: requires_filesystem_write_capability }
   - { from: test, to: verify, on: tests_pass }
   - { from: test, to: implement, on: tests_fail }
   - { from: verify, to: document, on: behavior_verified }
