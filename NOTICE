@@ -45,4 +45,70 @@ each entry must additionally record:
   (`docs/evidence-model.md`) and workflow states
   (`workflows/bug-report.sm.yaml`). Attribution recorded here per MIT
   license terms and `constitution/constitution.md` §6 (Reuse before
-  reinvent). Exact commit SHA not yet pinned — see open item above.
+  reinvent).
+
+  **Deepening pass (2026-08-14).** The skill was enriched in place on
+  branch `feature/a1-systematic-debugging-deepen` with practical
+  detail re-expressed (not copied verbatim) from the same upstream
+  skill. Source commit pinned for attribution:
+  `obra/superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797`
+  (HEAD of `main` at clone time; the last commit touching the
+  `skills/systematic-debugging/` directory was
+  `c8921b5156562b61af253150a4d1d01a71705be8`). The frontmatter and
+  section headings of the skill file were preserved; the following
+  additions were made by re-expressing upstream techniques in AIECP's
+  own vocabulary (Evidence Model entities, workflow states):
+
+  - **"When to use this skill"** — added a paragraph on
+    pressure-resistance (why this skill matters most under time
+    pressure, not least) and a list of internal anti-pattern moves that
+    should trigger a return to Phase 1. Adapted from the upstream
+    skill's "Red Flags" and "Common Rationalizations" sections; no
+    sentence was copied.
+  - **"1. Locate evidence"** — added concrete shell-level
+    evidence-gathering commands (`git log`, `git diff`, `gh run view`,
+    `git status`) and a multi-component boundary-instrumentation
+    pattern with a 4-layer shell probe example. Re-expressed from the
+    upstream skill's multi-layer diagnostic example, retargeted to
+    emit AIECP `Event`/`Trace` artifacts rather than free-form logs.
+  - **"2. Reproduce"** — added the deterministic-vs-probabilistic
+    reproduction distinction and the condition-based-waiting technique
+    (`waitFor(predicate)` with bounded timeout rather than fixed
+    `sleep`). Adapted from the upstream skill's
+    `condition-based-waiting.md` reference; re-expressed against the
+    AIECP `Replay` requirement that a reproduction be replayable
+    bit-for-bit.
+  - **"3. Diagnose"** — added a backward-tracing-through-the-call-chain
+    procedure with an instrumentation snippet for capturing
+    `new Error().stack` before a failing operation, a "find polluter"
+    bisection pattern for cross-test state pollution, and a
+    three-failure rule that escalates from local hypotheses to
+    architectural questioning after three rejected candidates.
+    Adapted from the upstream skill's `root-cause-tracing.md`,
+    `find-polluter.sh`, and the "Question Architecture" rule in Phase
+    4 of the upstream procedure; all re-expressed against AIECP's
+    `Decision`/`Validation`/`expected` entity model.
+  - **"Tool integration"** — extended each tool's bullet with the
+    concrete usage now expected of it (scriptable one-shot commands
+    for `shell_exec`, prior-artifact reading for `filesystem_read`,
+    bisect loop via `shell_exec` because `test_runner` does not
+    naturally express per-file side-effect inspection).
+  - **"Validation"** — added a "Defense in depth, not single-point fix"
+    paragraph: when the root cause was invalid data propagation,
+    guards must be added at every layer the value passes through (entry
+    / business / environment / debug), each recorded as its own
+    `Decision`. Adapted from the upstream skill's
+    `defense-in-depth.md` reference; re-expressed against AIECP's
+    `regression-protect` requirement that the deepest layer refuse bad
+    input.
+  - **"Examples"** — added a third worked example ("three-failure
+    architectural case") demonstrating the three-failure rule firing
+    and producing an architectural `Decision` rather than a fourth
+    speculative patch.
+
+  No file from the upstream repository was vendored; no script from
+  `skills/systematic-debugging/` in the upstream repo
+  (e.g. `find-polluter.sh`, `condition-based-waiting-example.ts`) was
+  copied. The bisection pattern is described in prose and emitted as a
+  one-line `for` loop in the skill body, written from scratch for this
+  skill's AIECP-targeted narrative.
