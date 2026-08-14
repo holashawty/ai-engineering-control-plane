@@ -1,44 +1,43 @@
 #!/usr/bin/env node
 // check-discovery-freshness.mjs — verifies that the committed
-// discovery/cli/dist/ matches the current discovery/cli/src/*.ts.
+// discovery/cli/dist/ matches the current discovery/cli/src/*.ts
+// AND that it actually runs without npm-installed dependencies.
 //
-// Per ADR-0021, discovery/cli/dist/ is committed to the repo
-// (despite Node.js convention) so chat-sandbox agents without
-// network access can run discovery without `npm install`. But
-// this means the committed dist/ can drift from source if someone
-// edits discovery/cli/src/*.ts and forgets to rebuild + re-commit
-// dist/. This script catches that drift.
+// Per ADR-0021 + ADR-0022, discovery/cli/dist/ is committed to the
+// repo so chat-sandbox agents without network access can run
+// discovery without `npm install`. But this means two things can
+// drift:
+//   1. Source changed since last build (stale dist/).
+//   2. dist/ has a runtime dependency that requires node_modules
+//      (the bug found by the controller's verification on
+//      2026-08-14 — ajv was imported at the top of cli.ts, making
+//      `node dist/cli.js` fail with ERR_MODULE_NOT_FOUND in a
+//      fresh clone without node_modules). Fixed by ADR-0022
+//      (removed ajv from discovery/cli runtime deps).
 //
-// How it works:
-//   1. Lists all .ts files in discovery/cli/src/ recursively.
-//   2. For each, computes SHA-256 of the file's contents.
-//   3. Computes a "source hash" by hashing the sorted concatenation
-//      of all per-file hashes. This is the canonical "current source
-//      state" fingerprint.
-//   4. Compares against the "last-built source hash" stored in
-//      discovery/cli/dist/.source-hash (a file written by this
-//      script's --update mode, OR by `npm run build` if the build
-//      script is updated to write it — for now, this script's
-//      --update mode is the only writer).
-//   5. If the hashes match: PASS (committed dist/ is fresh).
-//      If they differ: FAIL (source changed since last build;
-//      run `npm run build --workspace=discovery/cli` then
-//      `node scripts/check-discovery-freshness.mjs --update` then
-//      `git add -f discovery/cli/dist/`).
+// This script checks BOTH:
+//   1. Hash check: committed dist/ matches current source.
+//   2. Executability check: `node discovery/cli/dist/cli.js
+//      --self-test` runs successfully in a temporary directory
+//      with NO node_modules (simulating a fresh offline clone).
 //
 // Usage:
-//   node scripts/check-discovery-freshness.mjs           # check
-//   node scripts/check-discovery-freshness.mjs --update  # update the hash file after a rebuild
+//   node scripts/check-discovery-freshness.mjs           # check both hash + executability
+//   node scripts/check-discovery-freshness.mjs --update   # update the hash file after a rebuild
+//   node scripts/check-discovery-freshness.mjs --no-run   # skip the executability check (hash only — faster, but less safe)
 //
 // Exit codes:
-//   0  fresh (or --update succeeded)
+//   0  fresh AND executable (or --update succeeded)
 //   1  stale (source changed since last build)
 //   2  no dist/ committed yet (first-time setup needed)
+//   3  dist/ exists and is fresh, but NOT executable (runtime dependency missing) — THIS IS THE BUG ADR-0022 FIXED
 
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, writeFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, existsSync, renameSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, "..");
@@ -79,6 +78,7 @@ function computeSourceHash() {
 }
 
 const isUpdateMode = process.argv.includes("--update");
+const skipRunCheck = process.argv.includes("--no-run");
 
 if (!existsSync(DIST_DIR)) {
   console.error("FAIL: discovery/cli/dist/ does not exist. Run `npm run build --workspace=discovery/cli` first.");
@@ -108,11 +108,7 @@ const storedHash = readFileSync(HASH_FILE, "utf-8").trim();
 console.log(`Stored source hash:   ${storedHash}`);
 console.log("");
 
-if (currentHash === storedHash) {
-  console.log("PASS: discovery/cli/dist/ is fresh (matches current source).");
-  console.log("chat-sandbox agents can run `node discovery/cli/dist/cli.js` without rebuild.");
-  process.exit(0);
-} else {
+if (currentHash !== storedHash) {
   console.error("FAIL: discovery/cli/dist/ is STALE (source changed since last build).");
   console.error("");
   console.error("The committed dist/ does not match the current discovery/cli/src/*.ts.");
@@ -125,4 +121,84 @@ if (currentHash === storedHash) {
   console.error("  git add -f discovery/cli/dist/");
   console.error("  git commit -m 'rebuild discovery/cli/dist/ after source change'");
   process.exit(1);
+}
+
+console.log("PASS (1/2): discovery/cli/dist/ hash matches current source.");
+
+if (skipRunCheck) {
+  console.log("SKIP (2/2): executability check skipped (--no-run flag).");
+  console.log("WARNING: this means we did NOT verify `node discovery/cli/dist/cli.js`");
+  console.log("actually runs without npm-installed dependencies. Use this flag only");
+  console.log("for fast CI pre-checks; always run the full check before committing.");
+  process.exit(0);
+}
+
+// EXECUTABILITY CHECK (per ADR-0022): simulate a fresh offline clone
+// by running `node discovery/cli/dist/cli.js --self-test` in a temp
+// directory with NO node_modules. This catches the bug where dist/
+// imports a runtime dependency (like ajv) that requires npm install.
+console.log("");
+console.log("Executability check: running `node discovery/cli/dist/cli.js --self-test`");
+console.log("in a temp dir with NO node_modules (simulating offline clone)...");
+
+// Temporarily move node_modules aside so the check is honest.
+const nodeModulesPath = join(REPO_ROOT, "node_modules");
+const nodeModulesBackup = join(tmpdir(), `aiecp-node-modules-backup-${Date.now()}`);
+let nodeModulesMoved = false;
+try {
+  if (existsSync(nodeModulesPath)) {
+    renameSync(nodeModulesPath, nodeModulesBackup);
+    nodeModulesMoved = true;
+    console.log(`(Temporarily moved node_modules to ${nodeModulesBackup} for honest check.)`);
+  }
+
+  let runExitCode = 0;
+  let runStdout = "";
+  let runStderr = "";
+  try {
+    runStdout = execFileSync("node", [join(DIST_DIR, "cli.js"), "--self-test"], {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 30000,
+    });
+  } catch (e) {
+    runExitCode = e.status ?? 1;
+    runStdout = (e.stdout ?? "").toString();
+    runStderr = (e.stderr ?? "").toString();
+  }
+
+  if (runExitCode !== 0) {
+    console.error("FAIL (2/2): discovery/cli/dist/cli.js --self-test FAILED without node_modules.");
+    console.error("This means dist/ has a runtime dependency that requires npm install.");
+    console.error("This is the bug ADR-0022 fixed (ajv was imported at runtime).");
+    console.error("");
+    console.error("stdout:", runStdout);
+    console.error("stderr:", runStderr);
+    console.error("");
+    console.error("Fix: check discovery/cli/src/cli.ts for runtime imports of npm packages.");
+    console.error("Per ADR-0022, discovery/cli must have ZERO runtime npm dependencies.");
+    console.error("Schema validation belongs in validate-discovery, not in the discovery CLI.");
+    process.exit(3);
+  }
+
+  if (!runStdout.includes("SELF-TEST PASSED")) {
+    console.error("FAIL (2/2): discovery/cli/dist/cli.js --self-test ran but did not pass.");
+    console.error("stdout:", runStdout);
+    console.error("stderr:", runStderr);
+    process.exit(3);
+  }
+
+  console.log("PASS (2/2): discovery/cli/dist/cli.js --self-test passes WITHOUT node_modules.");
+  console.log("chat-sandbox agents can run `node discovery/cli/dist/cli.js` offline — verified, not just claimed.");
+  console.log("");
+  console.log("=== Both checks PASS: discovery/cli/dist/ is fresh AND executable. ===");
+  process.exit(0);
+} finally {
+  // Always restore node_modules, even if the check failed.
+  if (nodeModulesMoved) {
+    if (existsSync(nodeModulesBackup)) {
+      renameSync(nodeModulesBackup, nodeModulesPath);
+      console.log("(node_modules restored.)");
+    }
+  }
 }

@@ -464,3 +464,78 @@ Every framework-level decision — especially anything touching
   Updates `workflows/project-onboarding.sm.yaml`'s `run-discovery`
   state with two-path documentation + `discovery_complete_via_fallback`
   transition. Adds `scripts/check-discovery-freshness.mjs`.
+
+## ADR-0022 — discovery/cli has ZERO runtime npm dependencies (ajv moved out)
+- **Decision:** `discovery/cli/src/cli.ts` no longer imports `ajv`
+  or `ajv-formats` at runtime. The schema validation that previously
+  happened in `discovery/cli` (via `loadValidator()` using ajv) is
+  removed — the CLI now does only a STRUCTURAL check (required fields
+  present, types correct, enum values valid) without ajv. Full
+  schema validation is the responsibility of the `validate-discovery`
+  state of the `project-onboarding` workflow, which has access to ajv
+  via the executor's `evidence-store.ts`, OR via the chat-sandbox LLM
+  following the `discovery-fallback.md` procedure.
+- **Reason:** ADR-0021's Fix 1 (commit `discovery/cli/dist/` so
+  chat-sandbox agents can run it offline) was found BROKEN by the
+  controller's verification on 2026-08-14: `node discovery/cli/dist/
+  cli.js --self-test` in a fresh clone without `node_modules` fails
+  with `ERR_MODULE_NOT_FOUND: Cannot find package 'ajv'`. The
+  compiled `dist/cli.js` imports `ajv/dist/2020.js` and `ajv-formats`
+  at the top of the file — runtime dependencies that require
+  `npm install`. ADR-0021's claim that "chat-sandbox agents can run
+  `node discovery/cli/dist/cli.js` without `npm install`" was wrong
+  because of this.
+- **The fix:** Remove ajv from `discovery/cli`'s runtime entirely:
+  - `discovery/cli/src/cli.ts`: removed `import Ajv2020` and `import
+    addFormats`. Removed `loadValidator()` function. `runAgainst()`
+    now calls a new `structuralCheck()` that verifies required fields
+    without ajv — sufficient to catch regressions in the detector
+    pipeline. The self-test message now says "structurally-valid"
+    instead of "schema-valid" to be honest about what was checked.
+  - `discovery/cli/package.json`: removed `ajv` and `ajv-formats`
+    from BOTH `dependencies` and `devDependencies`. The CLI now has
+    ZERO runtime npm dependencies (only `typescript` and `@types/node`
+    as devDependencies for the build step, which doesn't run in the
+    chat-sandbox environment anyway).
+  - `scripts/check-discovery-freshness.mjs`: extended to do TWO
+    checks instead of one. (1) Hash check (committed dist/ matches
+    current source) — same as before. (2) NEW: executability check
+    — runs `node discovery/cli/dist/cli.js --self-test` in a temp
+    dir with `node_modules` moved aside, simulating a fresh offline
+    clone. If the CLI fails (e.g., ERR_MODULE_NOT_FOUND for any
+    npm package), the check fails with exit code 3 and a clear
+    message. This check would have caught the original ADR-0021
+    bug if it had existed then.
+- **What does NOT change:**
+  - Schema validation still happens — just not in the discovery CLI.
+    The `validate-discovery` state of `project-onboarding.sm.yaml`
+    is where it belongs, and it has access to ajv via the executor's
+    `evidence-store.ts` (for tool-using agents) or via the chat-sandbox
+    LLM's structural reasoning (for chat agents).
+  - The `discovery-fallback.md` text procedure (per ADR-0021 Fix 2)
+    is unaffected — it never depended on ajv; it produces JSON via
+    marker-file reading + text encoding.
+  - CLI agents (Claude Code, Codex) are unaffected — they have
+    `npm install` access and can use the full ajv-validated path
+    if needed (via the executor).
+- **Tradeoffs:**
+  - The discovery CLI's self-test is now less rigorous (structural
+    check only, not full schema validation). Mitigated by: (a) the
+    structural check catches the most common regressions (missing
+    required fields, wrong enum values); (b) full schema validation
+    happens in `validate-discovery`, which is the right place for it
+    per separation of concerns; (c) the `e2e-project-onboarding`
+    driver still exercises the full pipeline including schema
+    validation via the executor's evidence-store.
+  - The `discovery/cli/package.json` no longer declares ajv as a
+    dependency, which means `npm install` at the workspace root no
+    longer installs ajv for discovery/cli. But ajv is still needed
+    by `executor/` (for `evidence-store.ts`), so it remains in the
+    root `package-lock.json` — no change to the install behavior.
+- **Status:** Decided 2026-08-14. Removes ajv from `discovery/cli`
+  runtime. Updates `discovery/cli/src/cli.ts` (structural check
+  replaces ajv validation). Updates `discovery/cli/package.json`
+  (zero runtime deps). Extends `scripts/check-discovery-freshness.mjs`
+  with executability check. Corrects ADR-0021's "npm install gerekmez"
+  claim where it was previously wrong — now it's actually true
+  because the runtime dependency is gone.
