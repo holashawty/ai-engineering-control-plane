@@ -234,6 +234,9 @@ skills_required:
   - specification
   - implementation
   - documentation
+  - tool-use-discipline  # ADR-0019 — mandatory before any code change
+  - recency-verification  # ADR-0019 — the new behavior may use a different API than the old
+  - quality-gate  # ADR-0019 — runs after migrate, before verify
 
 capabilities_required:
   - filesystem_read

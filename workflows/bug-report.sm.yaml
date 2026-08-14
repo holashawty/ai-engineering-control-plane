@@ -138,6 +138,9 @@ skills_required:
   - evidence-engineering
   - behavioral-verification
   - testing
+  - tool-use-discipline  # ADR-0019 — mandatory before any code-reading or fix proposal
+  - recency-verification  # ADR-0019 — if a library version or API behavior is implicated
+  - quality-gate  # ADR-0019 — runs after apply-fix, before verify
 
 capabilities_required:
   - filesystem_read

@@ -261,3 +261,65 @@ Every framework-level decision — especially anything touching
 - **Status:** Decided 2026-08-14. Supersedes the paraphrase-by-default
   reading of `constitution.md` §6 for permissively-licensed sources
   specifically; §6 ("reuse before reinvent") itself is unchanged.
+
+## ADR-0019 — Tool use is mandatory, not optional
+- **Decision:** An agent operating under this framework MUST invoke
+  its available tools before asserting any time-sensitive fact,
+  generating any code, or proposing any fix. The agent's own
+  parametric knowledge is treated as a *hypothesis* to be verified,
+  never as ground truth. Skipping a mandatory tool (per
+  `skills/tool-use-discipline/SKILL.md`'s request-class table) is a
+  process violation that emits a `Decision` with `what:
+  "tool_use_skipped"`, `validated: false`, `result: "rejected"` —
+  the agent must then either invoke the tool or transition to
+  `blocked` with `on: tool_unavailable`. This rule is added to
+  `constitution.md` as §8.
+- **Alternatives:**
+  - *Tool use is recommended but not enforced* (the pre-ADR-0019
+    default, where skills like `behavioral-verification` strongly
+    implied tool use but no rule made skipping a tool a process
+    violation). Rejected: in practice, "recommended" tool use is
+    skipped tool use — LLMs default to answering from memory unless
+    forced.
+  - *Tool use enforced only for chat LLMs* (the segment most prone
+    to skipping). Rejected: CLI agents (Claude Code, Codex) skip
+    tools too, just less often; the rule applies uniformly.
+- **Reason:** The most common failure mode of LLMs — including
+  capable ones — is conflating "I have seen this pattern in training
+  data" with "I know this is currently true." For static facts this
+  is harmless; for time-sensitive facts (library versions, API
+  behaviors, current best practices, current date, current syntax)
+  it produces authoritative-looking hallucinations. The cost of
+  mandatory tool use is one extra tool call per claim; the benefit
+  is not shipping stale-wrong answers. This is the single highest-
+  leverage rule the framework can enforce to prevent the LLM weak-
+  work patterns the project exists to prevent (per the user's
+  vision: "çoğu llm zaten parametreleri ve eğitim verileri sayesinde
+  bildiğini sanıp hafızasındaki şeyler ile yapmayı deniyor ve tool
+  veya skillerden yardım almıyor").
+- **What is mandatory, specifically:** See
+  `skills/tool-use-discipline/SKILL.md` step 3's table — the table
+  maps request classes (factual claim, code generation, bug
+  diagnosis, architectural recommendation, review/assessment) to
+  the mandatory tool for each. This ADR makes the table's entries
+  constitution-level rules, not skill-level suggestions.
+- **What is NOT mandatory:**
+  - Tools the agent's adapter does not declare (per
+    `adapters/agents/<adapter>/adapter.ts` `capabilities()`). If an
+    agent doesn't have `web_search`, it cannot be mandatory — but
+    the agent must then emit `Decision: recency_unverifiable` and
+    transition to `blocked` rather than asserting the claim from
+    memory.
+  - Tools whose cost exceeds their value for trivial claims
+    ("what's 2+2?"). The agent's judgment applies here; this ADR
+    covers time-sensitive and code-generation claims specifically.
+- **Tradeoffs:** Slightly slower per-claim (one tool call). Mitigated
+  by the fact that the alternative — shipping stale-wrong answers
+  and discovering the staleness in `verify` or worse, in production
+  — is much slower.
+- **Status:** Decided 2026-08-14. Adds `constitution.md` §8.
+  Operationalized by three skills:
+  `skills/tool-use-discipline/SKILL.md` (the mandatory-tool table),
+  `skills/recency-verification/SKILL.md` (time-sensitive claims
+  specifically), `skills/quality-gate/SKILL.md` (code quality after
+  generation).

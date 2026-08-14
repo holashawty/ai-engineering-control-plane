@@ -103,6 +103,40 @@ its own prior beliefs about external, changeable facts as provisional
 and checks them (via search/fetch tooling) before asserting them as
 current fact in documentation, code comments, or user-facing output.
 
+## 8. Tool use is mandatory, not optional
+
+Per ADR-0019: an agent operating under this framework MUST invoke
+its available tools before asserting any time-sensitive fact,
+generating any code, or proposing any fix. The agent's own parametric
+knowledge is a hypothesis to be verified, never ground truth. This
+rule exists because LLMs — including capable ones — conflate "I have
+seen this pattern in training data" with "I know this is currently
+true," which produces authoritative-looking hallucinations for
+time-sensitive claims (library versions, API behaviors, current
+best practices, current date, current syntax).
+
+Operationally, the rule is enforced by three skills:
+
+- `skills/tool-use-discipline/SKILL.md` — the mandatory-tool-per-
+  request-class table. Skipping a mandatory tool emits a `Decision`
+  with `what: "tool_use_skipped"`, `validated: false`, and the agent
+  must either invoke the tool or transition to `blocked` with
+  `on: tool_unavailable`.
+- `skills/recency-verification/SKILL.md` — the time-sensitive-claim
+  procedure specifically, extending §7 with a three-class taxonomy
+  (static / slowly-evolving / time-sensitive).
+- `skills/quality-gate/SKILL.md` — the code-quality checkpoint
+  between code generation and behavioral verification, catching
+  lint/type/complexity issues that `verify` would otherwise waste a
+  cycle on.
+
+This rule applies uniformly to all agent adapters (CLI agents and
+chat LLMs). For chat LLMs without certain tools (e.g. no `web_search`),
+the rule's enforcement is honest fallback: emit `Decision:
+recency_unverifiable` and transition to `blocked` rather than assert
+the claim from memory. Pretending to know is the failure mode this
+rule exists to prevent; saying "I cannot verify this" is honest work.
+
 ## See also
 
 - `constitution/engineering-principles.md` — the day-to-day engineering

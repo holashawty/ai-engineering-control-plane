@@ -196,41 +196,39 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
 
 ---
 
-## Öncelik sırası (önerilen, 2026-08-14 güncellemesi #2)
+## Öncelik sırası (önerilen, 2026-08-14 güncellemesi #3)
 
 1. ✅ **A1** (superpowers derinleştirme) — TAMAMLANDI.
 2. ✅ **B1** (feature-request workflow taslağı) — TAMAMLANDI.
 3. ✅ **ADR-0018** (izin verici lisanslar için verbatim kopyalama
    politikası) — kontrolcü tarafından TAMAMLANDI.
-4. ✅ **C2** (3 workflow + 3 skill + 2 meta-skill + chat adapter)
-   — Z.ai Agent tarafından TAMAMLANDI (bu commit). code-review +
-   refactor + change-request workflow'leri, code-review + refactor +
-   specification + implementation + documentation skill'leri,
-   behavioral-simulation + diverse-thinking meta-skill'leri, ve
-   chat-adapter + CHAT-ENTRYPOINT + validate-chat-output üçlüsü
-   eklendi.
-5. **Live session test** — SONRAKİ ÖNCELİK. İki versiyon:
+4. ✅ **C2** (3 workflow + 5 skill + 2 meta-skill + chat adapter)
+   — TAMAMLANDI.
+5. ✅ **C3** (ADR-0019 + constitution §8 + 3 tool-use discipline skill
+   + CHAT-ENTRYPOINT manifesto + 5 workflow skills_required update)
+   — TAMAMLANDI (bu commit). Patron'un "tool kullanımını üst düzeye
+   çıkartmak" vizyonu constitution düzeyinde enforce edildi.
+6. **Live session test** — SONRAKİ ÖNCELİK. İki versiyon:
    (a) CLI agent (Claude Code veya Codex) ile gerçek çok-turlu
-   oturum, her turda bir tool call, `translateObservation` gerçek
-   tool çıktısıyla test edilir.
+   oturum, her turda bir tool call.
    (b) Chat LLM (ChatGPT / Claude chat / Gemini chat / GLM chat)
-   ile gerçek çok-turlu oturum; LLM `CHAT-ENTRYPOINT.md`'i okuyup
-   `aiecp:*` blokları emit ediyor mu, validator doğruluyor mu?
-   Her ikisi de "structural proof var, canlı kanıt yok" gap'ini
-   kapatır.
-6. **A2** (spec-kit şablonları) — ADR-0018 sayesinde artık paraphrase
-   yerine verbatim + attribution tercih edilebilir. spec-kit MIT'li,
-   `NOTICE`'e satır satır yazmak yeterli. `specs/*.template.md`
-   dosyalarını doldur.
-7. **Eval harness** (Phase 8, Python) — her skill için ≥5 senaryo,
-   her workflow için ≥3 senaryo (per `docs/evaluations/evaluation-strategy.md`).
-   Şu an 6 proof-of-concept e2e driver var ama hiçbürü formal eval
-   değil.
-8. **Kalan 9 workflow** (user-complaint, regression, performance-problem,
-   security-problem, release, incident, project-onboarding,
-   unknown-failure, vb.) — uzun kuyruk, düşük öncelik.
-9. **Kalan ~9 skill** (database, frontend, backend, mobile, security,
-   performance, vb.) — uzun kuyruk, düşük öncelik.
+   ile gerçek çok-turlu oturum; LLM CHAT-ENTRYPOINT.md'yi okuyup
+   aiecp:* blokları emit ediyor mu, validator doğruluyor mu?
+   Şu an constitution §8 chat LLM'leri tool kullanmaya ZORLUYOR —
+   bu live test, ZORLAMANIN çalıştığını kanıtlayacak.
+7. **A2** (spec-kit şablonları) — ADR-0018 sayesinde verbatim +
+   attribution ile. spec-kit MIT'li, NOTICE'e satır satır yazmak
+   yeterli. specs/*.template.md dosyalarını doldur.
+8. **Eval harness** (Phase 8, Python) — her skill için ≥5 senaryo,
+   her workflow için ≥3 senaryo. Şu an 6 proof-of-concept e2e
+   driver var ama hiçbürü formal eval değil.
+9. **Kalan 9 workflow + ~6 skill** — uzun kuyruk, düşük öncelik.
+10. **"Son vurucu darbe"** — patron'un vizyonu: "hazır çalışan çok
+    zeki hazır proje ve sistemleri de kusursuz entegre edip diğer
+    projelerin çok çok üstünde bir yapıya sahip olmak." Bu, A2-A4
+    görevleri (spec-kit, OpenHands, BMAD, anthropics/skills
+    incelemeleri) tamamlandıkça gerçekleşecek. README'deki upstream
+    repo listesi bu entegrasyonların öncül hazırlığı.
 
 ## Bu listenin kullanımı
 

@@ -171,14 +171,12 @@ skills_required:
   - evidence-engineering
   - behavioral-verification
   - testing
-  # Future skills not yet authored (see skills/README.md "remaining
-  # ~15 skills") will be added here when they exist:
-  #   - specification  (for the `design` state)
-  #   - implementation (for the `implement` state)
-  #   - documentation (for the `document` state)
-  # Until then, the workflow runs with the three skills above and the
-  # agent fills the gaps directly — flagged in STATUS.md as a known
-  # shortcut, not a permanent design choice.
+  - specification  # for the `design` state (ADR-0002 spec-kit family)
+  - implementation  # for the `implement` state (AI-output validation pattern)
+  - documentation  # for the `document` state
+  - tool-use-discipline  # ADR-0019 — mandatory before code generation, library version claims
+  - recency-verification  # ADR-0019 — the new feature may use a library whose API changed
+  - quality-gate  # ADR-0019 — runs after implement, before test
 
 capabilities_required:
   - filesystem_read

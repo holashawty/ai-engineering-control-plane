@@ -282,7 +282,49 @@ don't silently reorder.
       discovered", it asserts "at least the 4 MVP skills
       discovered" + "all 4 MVP skill names present in the
       discovered set." This future-proofs the test against the
-      growing skill catalog (now 10 skills, was 4 at MVP).
+      growing skill catalog (now 13 skills, was 4 at MVP).
+- [x] C3 sprint — ADR-0019 + constitution §8 ("Tool use is
+      mandatory, not optional") + 3 tool-use discipline skills
+      authored. The user's vision explicitly named "tool
+      kullanımını üst düzeye çıkartmak" as a core goal; this
+      sprint makes it constitution-level, not just skill-level:
+      - **ADR-0019** added to `DECISIONS.md`: an agent's own
+        parametric knowledge is a hypothesis to be verified, never
+        ground truth. Skipping a mandatory tool (per
+        `skills/tool-use-discipline/SKILL.md`'s request-class
+        table) emits a `Decision` with `what: "tool_use_skipped"`,
+        `validated: false`, `result: "rejected"`.
+      - **Constitution §8** added to `constitution/constitution.md`:
+        the governance-layer rule, citing ADR-0019 and the three
+        operational skills.
+      - **3 skills** authored (subagent C3-A, opus):
+        - `skills/tool-use-discipline/SKILL.md` — the mandatory-
+          tool-per-request-class table (web_search for version
+          claims, test_runner for code generation, shell_exec for
+          current date, etc.) with a self-correction loop.
+        - `skills/recency-verification/SKILL.md` — extends
+          constitution §7 with a three-class taxonomy (static /
+          slowly-evolving / time-sensitive) and per-source
+          verification procedure; honest fallback to `blocked`
+          for chat LLMs without web_search.
+        - `skills/quality-gate/SKILL.md` — code-quality checkpoint
+          between `implement` and `verify`. Runs the project's own
+          linters (tsc, eslint, ruff, mypy per project-intelligence)
+          plus a 6-item self-review checklist (empty inputs,
+          concurrent calls, actionable errors, complexity, TODOs,
+          conventions). `result: "mismatch"` → transition back to
+          the code-changing state with `on: quality_gate_failed`.
+      - **CHAT-ENTRYPOINT.md** rewritten with an aggressive
+        tool-use manifesto + zip-upload protocol (chat LLM's first
+        5 actions: verify date via web_search, inventory tools,
+        read constitution, identify workflow, read workflow+skills).
+      - **5 workflow .sm.yaml files** updated to cite the 3 new
+        skills in their `skills_required` lists (code-review cites
+        2 — no quality-gate since it's read-only; the other 4 cite
+        all 3). All 5 workflows still structurally valid; all 6
+        e2e drivers still PASS.
+      - **AGENTS.md + CLAUDE.md** regenerated via sync-entrypoints
+        — now list all 13 skills.
 
 ## In progress
 
@@ -321,10 +363,11 @@ below is the next task to pick up)
       long-tail (specialized domains: performance, security,
       release engineering, incident response) and lower priority
       than the eval harness and live-session tests.
-- [ ] Remaining skills (~9 of ~19, per ADR-0016 long-term scope).
-      10 of ~19 are now authored. The remaining ~9 are
+- [ ] Remaining skills (~6 of ~19, per ADR-0016 long-term scope).
+      13 of ~19 are now authored. The remaining ~6 are
       domain-specific (database, frontend, backend, mobile, security,
-      performance, release, incident-response, etc.).
+      performance, release, incident-response — pick the most
+      relevant 6 to the project's actual needs).
 - [ ] Remaining stack adapters (9 of 11) and agent adapters (6 of 9
       — chat adapter is now the 3rd, alongside claude-code and codex).
       Long-term scope per ADR-0016.
@@ -373,12 +416,12 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, C2 sprint complete (3 more workflows + 5
-more skills + chat LLM adapter + 2 meta-skills). The repo now covers
-all four primary shapes of engineering work (reactive / constructive /
-behavior-preserving / behavior-modifying) plus gatekeeping, all driven
-by the same workflow-agnostic executor. Chat LLM support is structurally
-proven — any text-in/text-out LLM can now drive the framework via the
-`CHAT-ENTRYPOINT.md` protocol and `validate-chat-output.mjs`. Next
-priority per TASKS.md: live multi-turn session test (CLI agent or chat
-LLM), then eval harness.*
+*Last updated: 2026-08-14, C3 sprint complete (ADR-0019 + constitution
+§8 + 3 tool-use discipline skills + CHAT-ENTRYPOINT manifesto + 5
+workflow skills_required updates). The framework now constitutionally
+forces tool use before any time-sensitive claim or code generation —
+directly addressing the user's vision of preventing LLM halüsinasyon
+and tool-skip patterns. 13 skills, 5 workflows, 3 adapters, 6 e2e
+drivers, 180+ assertions all PASS. Next priority per TASKS.md: live
+multi-turn session test (CLI agent or chat LLM), then A2 (spec-kit
+templates), then eval harness.*

@@ -162,6 +162,8 @@ state_detail:
 
 skills_required:
   - evidence-engineering
+  - tool-use-discipline  # ADR-0019 — mandatory: read the actual diff, do not review from memory
+  - recency-verification  # ADR-0019 — the diff may use a library whose API changed since the reviewer's training
   # The code-review skill itself (skills/code-review/SKILL.md) drives
   # the understand-change, assess, and review states. It is not
   # duplicated here because it is the skill being authored alongside

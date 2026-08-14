@@ -165,3 +165,24 @@ each entry must additionally record:
   (fenced `aiecp:evidence`/`aiecp:memory`/`aiecp:advance`/`aiecp:question`
   code blocks parsed by a validator script) is original to this
   project. No upstream code or prose was adapted or copied.
+
+- **`skills/tool-use-discipline/SKILL.md` +
+  `skills/recency-verification/SKILL.md` +
+  `skills/quality-gate/SKILL.md`** — novel to AIECP. Together they
+  operationalize the forthcoming constitution §8 ("Tool use is
+  mandatory, not optional") at the procedure layer.
+  `tool-use-discipline` provides the mandatory-tool-per-request-class
+  table (web_search for version claims, test_runner for code
+  generation, shell_exec for current date, etc.); the specific table
+  is curated from general LLM-failure-mode literature, no single
+  upstream source. `recency-verification` extends constitution §7
+  ("Every claim about the current state of things must be checked")
+  with a procedure for time-sensitive claims specifically; the
+  three-claim-class taxonomy (static / slowly-evolving / time-
+  sensitive) is AIECP-original. `quality-gate` adds a code-quality
+  checkpoint between `implement` and `verify` — distinct from
+  behavioral-verification (which checks behavior) and behavioral-
+  simulation (which probes for behavioral bugs in untested usage
+  paths); the self-review checklist items are standard software-
+  engineering practice, no upstream attribution required. No
+  upstream code or prose was adapted or copied.

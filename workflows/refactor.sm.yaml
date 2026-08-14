@@ -221,14 +221,16 @@ skills_required:
   - evidence-engineering
   - behavioral-verification
   - testing
+  - specification  # for the design-refactor state (ADR-0002 spec-kit family)
+  - documentation  # for the document state (refactor docs are usually internal-architecture)
+  - tool-use-discipline  # ADR-0019 — mandatory before code restructuring
+  - recency-verification  # ADR-0019 — the refactor may touch code using a now-deprecated API
+  - quality-gate  # ADR-0019 — runs after implement, before verify-equivalence
   # Refactor depends critically on `testing` for the baseline + post-
   # refactor test runs, and on `behavioral-verification` for the
-  # equivalence check. There is no `refactoring` skill upstream that
-  # this workflow cites; the procedure is encoded in
+  # equivalence check. The procedure is encoded in
   # skills/refactor/SKILL.md (the dedicated skill authored alongside
-  # this workflow). Until a `specification` skill exists (see
-  # skills/README.md "remaining ~15 skills"), the design step is
-  # filled by skills/refactor/SKILL.md's procedure directly.
+  # this workflow).
 
 capabilities_required:
   - filesystem_read
