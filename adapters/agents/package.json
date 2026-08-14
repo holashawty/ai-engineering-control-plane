@@ -5,7 +5,8 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "aiecp-sync-entrypoints": "./dist/sync-entrypoints-cli.js"
+    "aiecp-sync-entrypoints": "./dist/sync-entrypoints-cli.js",
+    "aiecp-write-entrypoints": "./dist/bin/write-entrypoints.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

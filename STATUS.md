@@ -12,7 +12,7 @@ that's `docs/`. This file only tracks *what's done and what's next*.
 
 ---
 
-## Current phase: Phase 2 (Core) — in progress
+## Current phase: Phase 2 (Core) — MVP vertical slice complete, entering Phase 3+ scope
 
 Phase 0 (Research + Architecture) and Phase 1 (Schemas) are complete and
 merged. See `docs/implementation-roadmap.md` for the full phase
@@ -123,6 +123,35 @@ don't silently reorder.
       "not yet implemented" after this package made that false — caught
       by reading the generated output directly, not just trusting
       assertions. See `adapters/agents/README.md`.
+- [x] Disk-writing CLI wrapper (`adapters/agents/src/bin/write-
+      entrypoints.ts`) — actually run against this repo, confirmed it
+      writes real `CLAUDE.md` + `AGENTS.md` files to a target
+      directory.
+- [x] **The final MVP milestone: a real (non-scripted) end-to-end run**
+      — `executor/examples/e2e-membership-bug/`. A real toy Python repo
+      was built with a genuine off-by-one bug (membership expiry
+      boundary check using `<` instead of `<=`, contradicting its own
+      docstring). The bug was diagnosed for real: `discovery/cli` ran
+      against it for real, `grep` located the implicated code for
+      real, the *existing* test suite was run and observed passing
+      2/2 (the actual ADR-0010 trap — technically green, behaviorally
+      wrong), a new boundary-case test was written and run for real
+      and failed for real, the root cause was read from the real
+      source line, the fix was applied for real
+      (`today < expiry_date` → `today <= expiry_date`), and
+      verification reran the real suite (3/3 passed) plus a real
+      direct behavioral check. All of that real captured output (not
+      invented) was then fed into the real `WorkflowRun` API via
+      `drive-run.mjs`, reaching the `report` terminal state with 0
+      questions asked and the safety gate genuinely blocking an
+      unconfirmed `propose-fix -> apply-fix` attempt before allowing
+      the confirmed one. Full transcript in
+      `executor/examples/e2e-membership-bug/README.md`.
+      **Honest scope note:** this proves the discovery → evidence →
+      executor → schema chain holds together against a genuine bug,
+      but it is one driver script assembling real captured data, not a
+      live multi-turn agent session issuing one tool call per turn
+      through an actual agent adapter. That remains open — see below.
 
 ## In progress
 
@@ -131,28 +160,25 @@ below is the next task to pick up)
 
 ## Not started (in sequence order)
 
-- [ ] Disk-writing CLI wrapper around `sync-entrypoints`'s `syncAll()`
-      — currently produces file contents in memory only; no "write
-      CLAUDE.md/AGENTS.md into host repo X" command exists yet. Small,
-      mechanical remaining piece.
-- [ ] End-to-end run + evidence schema validation against **real**
-      (non-scripted) bug scenarios — the executor's self-test proves
-      the engine works correctly against a realistic *scripted*
-      scenario, and the adapters now translate realistic *shapes* of
-      agent tool output correctly, but no actual LLM agent session has
-      driven this end-to-end yet. This is the last MVP milestone
-      (ADR-0016): install AIECP into a real toy repo, have an actual
-      agent session (this Claude session, most likely) work through a
-      real bug using `executor`'s `WorkflowRun` API, and confirm the
-      full chain — discovery → skills → executor → evidence/memory →
-      adapters — holds together outside of scripted self-tests.
+- [ ] A **live**, multi-turn agent session (not a single driver script)
+      actually exercising `adapters/agents/`'s `translateObservation`
+      on real tool-call output from a real Claude Code or Codex
+      session, one call at a time, rather than a script assembling
+      captured data after the fact. This is the honest remaining gap
+      after the milestone above.
 - [ ] 2 stack adapters (Python, TypeScript) beyond what `discovery/cli/`
-      already does — `adapters/stacks/` placeholder only. Discovery
-      already produces stack-aware output; a dedicated stack-adapter
-      layer (test-runner invocation helpers, etc.) is separate,
-      smaller remaining work, and may turn out to be unnecessary once
-      the end-to-end run above proves `testing`/`discovery` already
-      cover what's needed.
+      already does — `adapters/stacks/` placeholder only. May turn out
+      to be unnecessary now that `discovery/cli` + `skills/testing/`
+      have been proven sufficient for a real Python bug-report run
+      above; revisit before building this speculatively.
+- [ ] Formal eval harness (Phase 8, Python, per ADR-0017) — the
+      real end-to-end run above is a single proof-of-concept scenario,
+      not the ≥5-scenario-per-skill / ≥3-scenario-per-workflow bar
+      `docs/evaluations/evaluation-strategy.md` sets as the actual
+      minimum.
+- [ ] Remaining workflows (13 of 14), remaining skills (~15 of ~19),
+      remaining stack adapters (9 of 11), remaining agent adapters (7
+      of 9) — all explicitly long-term scope per ADR-0016, not MVP.
 
 ## Known open questions (not blocking, but unresolved)
 
@@ -186,5 +212,6 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-12, end of workflow-executor session (discovery
-detectors + 4 MVP skills + workflow executor all complete and tested).*
+*Last updated: 2026-08-14, end of real end-to-end MVP validation session
+(discovery + skills + executor + agent adapters + a genuine, non-
+scripted bug-report run all complete and proven to work together).*
