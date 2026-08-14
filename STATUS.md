@@ -199,6 +199,90 @@ don't silently reorder.
       proof point — proves the executor is workflow-agnostic (the
       same engine runs `bug-report` and `feature-request` with no
       per-workflow code).
+- [x] C2 — three more workflows authored and proven end-to-end
+      through the same workflow-agnostic executor (zero executor
+      code changes):
+      - `code-review.sm.yaml` (gatekeeping, read-only, no safety
+        gate) — 30/30 assertions pass via
+        `executor/examples/e2e-code-review/drive-run.mjs`.
+      - `refactor.sm.yaml` (behavior-preserving, uses
+        `Validation.method: "replay_comparison"` at
+        `verify-equivalence`) — 28/28 assertions pass via
+        `executor/examples/e2e-refactor/drive-run.mjs`.
+      - `change-request.sm.yaml` (behavior-modifying, emits TWO
+        `Expected` entities — OLD baseline + NEW contract) —
+        28/28 assertions pass via
+        `executor/examples/e2e-change-request/drive-run.mjs`.
+      Together these cover the four primary shapes of engineering
+      work (reactive / constructive / behavior-preserving /
+      behavior-modifying) plus the orthogonal gatekeeping shape.
+- [x] C2 skills — three workflow-driven skills (`code-review`,
+      `refactor`, `specification`, `implementation`, `documentation`)
+      authored following the existing SKILL.md format. The three
+      skills `specification`, `implementation`, `documentation`
+      fill the placeholder slots in `feature-request.sm.yaml`'s and
+      `change-request.sm.yaml`'s `skills_required` lists.
+- [x] Two meta-skills authored (cross-cutting, not tied to one
+      workflow):
+      - `behavioral-simulation/SKILL.md` — simulates plausible
+        end-user interaction sequences against the changed
+        behavior. Catches behavioral bugs that unit tests miss
+        because tests assert what the author thought to check,
+        while simulation explores what users actually do. Works
+        for chat LLMs (`method: "manual_review"`, mental
+        simulation) as well as tool-using agents
+        (`method: "app_validation"`, executed simulation).
+      - `diverse-thinking/SKILL.md` — switches the agent to a
+        different thinking style (first-principles, inverse,
+        analogical, systems, lateral, adversarial,
+        constraint-relaxation) when stuck, breaking out of
+        cognitive loops. Triggers after 3+ rejected hypotheses
+        (per `systematic-debugging`'s three-failure rule) or
+        after 10+ minutes without verifiable progress. Emits a
+        `Decision` recording the style switch.
+- [x] Chat LLM support — the gap that previously limited this
+      framework to CLI tools with tool use (Claude Code, Codex)
+      is now closed:
+      - `adapters/agents/src/chat/adapter.ts` — third agent
+        adapter (alongside `claude-code` and `codex`) that
+        honestly declares all capabilities as `false` (chat LLMs
+        have no tool use) and produces `CHAT-ENTRYPOINT.md` via
+        `renderEntrypoint`. `translateObservation` is a no-op
+        that throws (chat LLMs emit `Event`s directly as text,
+        not via raw observations).
+      - `CHAT-ENTRYPOINT.md` (repo root) — the orientation file
+        a chat LLM reads first when given this repo as a zip.
+        Documents the text-based evidence protocol, the minimum
+        reading list, worked examples, and stuck-pattern style
+        switches.
+      - `scripts/validate-chat-output.mjs` — parses
+        `aiecp:evidence`/`aiecp:memory`/`aiecp:advance`/`aiecp:question`
+        fenced code blocks from a chat LLM's text response and
+        validates each against the Phase 1 schemas. Accepts file
+        path arg or stdin. Run via
+        `npm run validate:chat-output path/to/response.md` or
+        `cat response.md | npm run validate:chat-output`.
+      - `executor/examples/e2e-chat-adapter/drive-run.mjs` —
+        32/32 assertions proving the chat adapter declares
+        honest capabilities, `renderEntrypoint` produces valid
+        `CHAT-ENTRYPOINT.md`, `translateObservation` throws,
+        the validator accepts well-formed responses (11 blocks
+        of all kinds), rejects malformed blocks (5 separate
+        defect classes), rejects input with no blocks at all,
+        and supports stdin input. Run via
+        `npm run e2e:chat-adapter-demo`.
+      - Honest remaining gap: this proves the protocol +
+        validator pair works; it does NOT prove a real chat LLM
+        (ChatGPT, Claude chat, etc.) actually emits blocks in
+        this format. That requires a live multi-turn session
+        with a real chat LLM — a separate milestone, honestly
+        out of scope for this proof.
+- [x] `adapters/agents/src/cli.ts` self-test updated to be
+      superset-aware: instead of asserting "exactly 4 skills
+      discovered", it asserts "at least the 4 MVP skills
+      discovered" + "all 4 MVP skill names present in the
+      discovered set." This future-proofs the test against the
+      growing skill catalog (now 10 skills, was 4 at MVP).
 
 ## In progress
 
@@ -210,35 +294,40 @@ below is the next task to pick up)
 - [ ] A **live**, multi-turn agent session (not a single driver script)
       actually exercising `adapters/agents/`'s `translateObservation`
       on real tool-call output from a real Claude Code or Codex
-      session, one call at a time, rather than a script assembling
-      captured data after the fact. This is the honest remaining gap
-      after the milestone above.
+      session, one call at a time. **Now extended:** also includes a
+      live multi-turn session with a real chat LLM (ChatGPT / Claude
+      chat / Gemini chat / GLM chat) actually emitting `aiecp:*` blocks
+      per `CHAT-ENTRYPOINT.md` and having them validated by
+      `scripts/validate-chat-output.mjs`. The chat adapter + validator
+      pair is structurally proven (32/32 assertions); the live session
+      is the honest remaining gap.
 - [ ] 2 stack adapters (Python, TypeScript) beyond what `discovery/cli/`
       already does — `adapters/stacks/` placeholder only. May turn out
       to be unnecessary now that `discovery/cli` + `skills/testing/`
       have been proven sufficient for a real Python bug-report run
       above; revisit before building this speculatively.
 - [ ] Formal eval harness (Phase 8, Python, per ADR-0017) — the
-      real end-to-end run above is a single proof-of-concept scenario,
+      real end-to-end runs above are proof-of-concept scenarios,
       not the ≥5-scenario-per-skill / ≥3-scenario-per-workflow bar
       `docs/evaluations/evaluation-strategy.md` sets as the actual
       minimum.
-- [ ] Remaining workflows (12 of 14: `code-review`, `refactor`, and
-      10 others from `_router.md`'s planned table). `feature-request`
-      was the second of three priority workflows in TASKS.md (B1)
-      intended to prove the executor's workflow-agnosticism; that
-      proof is now in. `code-review` and `refactor` would extend
-      coverage to two more structurally different shapes (read-mostly
-      and behavior-preserving respectively) but are no longer
-      blocking on the executor question.
-- [ ] Remaining skills (~15 of ~19, per ADR-0016 long-term scope).
-      `specification`, `implementation`, `documentation` are the
-      three currently-faked-within-`feature-request.sm.yaml`'s
-      `design` / `implement` / `document` states; authoring them
-      would let `feature-request` cite real skills the way
-      `bug-report` cites real ones.
-- [ ] Remaining stack adapters (9 of 11) and agent adapters (7 of 9)
-      — long-term scope per ADR-0016.
+- [ ] Remaining workflows (9 of 14: `user-complaint`, `regression`,
+      `performance-problem`, `security-problem`, `release`,
+      `incident`, `project-onboarding`, `unknown-failure`, plus any
+      added since). Five of fourteen target workflows are now done
+      (`bug-report`, `feature-request`, `code-review`, `refactor`,
+      `change-request`) — covering the four primary shapes of
+      engineering work plus gatekeeping. The remaining nine are
+      long-tail (specialized domains: performance, security,
+      release engineering, incident response) and lower priority
+      than the eval harness and live-session tests.
+- [ ] Remaining skills (~9 of ~19, per ADR-0016 long-term scope).
+      10 of ~19 are now authored. The remaining ~9 are
+      domain-specific (database, frontend, backend, mobile, security,
+      performance, release, incident-response, etc.).
+- [ ] Remaining stack adapters (9 of 11) and agent adapters (6 of 9
+      — chat adapter is now the 3rd, alongside claude-code and codex).
+      Long-term scope per ADR-0016.
 
 ## Known open questions (not blocking, but unresolved)
 
@@ -284,9 +373,12 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, B1 (feature-request workflow) end-to-end
-proof added on top of A1 (systematic-debugging deepening) and ADR-0018
-(permissive-license verbatim reuse policy). Two workflows now runnable
-end-to-end through the same workflow-agnostic executor. Next priority
-per TASKS.md: A2 (spec-kit template adaptation), then B2 (skills for
-the new workflow's faked states).*
+*Last updated: 2026-08-14, C2 sprint complete (3 more workflows + 5
+more skills + chat LLM adapter + 2 meta-skills). The repo now covers
+all four primary shapes of engineering work (reactive / constructive /
+behavior-preserving / behavior-modifying) plus gatekeeping, all driven
+by the same workflow-agnostic executor. Chat LLM support is structurally
+proven — any text-in/text-out LLM can now drive the framework via the
+`CHAT-ENTRYPOINT.md` protocol and `validate-chat-output.mjs`. Next
+priority per TASKS.md: live multi-turn session test (CLI agent or chat
+LLM), then eval harness.*

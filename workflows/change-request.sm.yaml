@@ -1,0 +1,263 @@
+workflow: change-request
+schema_version: "1.0.0"
+description: >
+  Triggered when the user wants existing behavior to be different going
+  forward ("change the password reset email to come from noreply@
+  instead of support@", "modify how X works") — without anything being
+  broken. This is distinct from `feature-request` (which ADDS a new
+  capability that did not exist before) and from `bug-report` (which
+  fixes something whose current behavior diverges from what was
+  specified). In `change-request`, the current behavior is exactly as
+  designed and was correct at the time it was written — it is simply no
+  longer the desired behavior. Pairs with `feature-request` and
+  `bug-report` as the third workflow in the MVP scope: all three
+  modify code, but the *reason* they modify it differs structurally,
+  and so does the shape of the workflow. The distinguishing structural
+  feature of `change-request` is that it emits TWO `Expected` entities
+  in the same run — one for the OLD behavior (in
+  `understand-current-behavior`, the baseline being superseded) and
+  one for the NEW behavior (in `design-change`, the replacement
+  contract). `feature-request`'s `understand-existing-behavior` state
+  also emits an `Expected`, but it describes a baseline the new
+  feature must NOT silently break (a constraint to preserve); the
+  `Expected` emitted here in `change-request`'s
+  `understand-current-behavior` describes a baseline that IS being
+  replaced. That semantic difference is why the state is named
+  differently (`understand-current-behavior` vs
+  `understand-existing-behavior`) and why the transition out is
+  `current_behavior_mapped` rather than `existing_behavior_mapped`.
+
+states:
+  - intake
+  - classify
+  - understand-current-behavior
+  - design-change
+  - migrate
+  - verify
+  - document
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: understand-current-behavior, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_two_questions }
+  - { from: understand-current-behavior, to: design-change, on: current_behavior_mapped }
+  - { from: understand-current-behavior, to: blocked, on: current_behavior_unknowable }
+  - { from: design-change, to: migrate, on: change_design_approved }
+  - { from: design-change, to: understand-current-behavior, on: design_needs_more_context }
+  - { from: design-change, to: blocked, on: change_infeasible }
+  - { from: migrate, to: verify, on: migration_complete }
+  - { from: migrate, to: design-change, on: migration_blocked_by_design }
+  - { from: verify, to: document, on: behavior_verified }
+  - { from: verify, to: migrate, on: behavior_not_verified }
+  - { from: document, to: report, on: documentation_complete }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's change request verbatim. Do not ask
+      clarifying questions here — that belongs in `classify` or
+      `design-change` (per question_economy below). Distinguishing a
+      true change-request from a feature-request ("X doesn't exist,
+      add it" vs "X exists, change how it works") and from a bug-report
+      ("X is supposed to do Y but doesn't" vs "X does Y but we now
+      want Z") happens here, structurally, before the workflow commits
+      to its `change-request` shape — if the intent is actually a
+      feature or a bug, route to the corresponding workflow instead.
+      The acid test: would the current behavior, left as-is, be
+      considered a defect by the spec/contract that governed it when
+      it was written? If yes, this is a `bug-report` (the spec was
+      violated) or a `feature-request` (the spec is being extended).
+      If no — the spec was honored, and is now being changed — this is
+      a `change-request`.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine the change class (behavioral contract change, config
+      change, parameter value change, deprecation, policy update)
+      and rough scope using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the
+      request text. May ask up to ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — the second question, if needed, is reserved
+      for `design-change`. The `Decision` emitted here is the
+      acceptance decision (proceed / reject / rescope), not a
+      design-change decision; "reject" is a valid outcome (e.g. the
+      requested change is actually a bug-report because the current
+      behavior diverges from the documented contract).
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  understand-current-behavior:
+    purpose: >
+      Before designing the new behavior, read the code path the
+      change will touch and emit a `Trace` of how it currently
+      behaves — including a real observation (a `test_result` or
+      `log_line` `Event` showing what the system currently does),
+      not just a code read. A change-request that skips this state
+      designs the new behavior in a vacuum and produces an `Expected`
+      that conflicts with invariants the codebase already enforces.
+      The `Expected` emitted HERE describes the OLD behavior — the
+      baseline contract being superseded. This is unique to
+      `change-request` and is the structural feature that
+      distinguishes it from `feature-request`'s
+      `understand-existing-behavior` (whose `Expected` describes a
+      baseline the new feature must NOT silently break, not one being
+      replaced). This OLD `Expected` is what `verify` later compares
+      the post-change `Actual` against in the negative direction: the
+      new behavior should NOT match this OLD `Expected` (otherwise
+      nothing actually changed), and the new behavior SHOULD match the
+      NEW `Expected` emitted in `design-change`.
+    emits_evidence: [trace, event, expected]
+    reads_memory: [project, environment]
+
+  design-change:
+    purpose: >
+      Author the `Expected` for the NEW behavior — a behavioral
+      contract, not a code sketch. May ask at most ONE necessary,
+      specific, decision-changing question if the design choice
+      cannot be made from Project Intelligence plus the
+      `understand-current-behavior` trace. Emits a `Decision`
+      recording the chosen change design and the alternatives
+      rejected (with reasons), so the eventual `report` can include
+      a decision trace per `constitution/engineering-principles.md`
+      "Report the decision trace, not just the outcome." Per
+      ADR-0008, design `Decision`s with `validated: false` are
+      proposals, not commitments. The `alternatives` array is
+      especially important for `change-request`: it is where the
+      decision to *change* (rather than leave alone, or deprecate
+      rather than replace) is justified — a change-request without
+      considered alternatives is an assumption, not a decision.
+    emits_evidence: [decision, expected]
+    reads_memory: [project, environment]
+
+  migrate:
+    purpose: >
+      Apply the approved change to the existing code, configuration,
+      or data. Named `migrate` rather than `implement` because the
+      existing behavior is being migrated to new behavior — the
+      semantic weight is on the *transition* between two valid
+      states, not the *creation* of something new (which is
+      `feature-request`'s `implement`). The change may require a
+      database migration, a config flip, an API version bump, or a
+      refactor across multiple call sites — each of which is a
+      broad-refactor-class surface, which is why the safety gate
+      fires HERE, not at `design-change`: the actual migration
+      surface is only knowable once the change begins. If the gate
+      trips, transition back to `design-change` rather than pressing
+      on with a refactor that was never approved as a design. Per
+      the AI-output validation pattern (docs/evidence-model.md),
+      every code change is a `Decision` with `validated: false`
+      until `verify` confirms behavior — migration is not success,
+      it is a candidate for success.
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  verify:
+    purpose: >
+      Behavioral verification per ADR-0010 and the
+      `behavioral-verification` skill — directly check the migrated
+      behavior against the NEW `Expected` from `design-change`, not
+      just that the test suite exits 0. Emit a `Validation` with
+      `method` stronger than `unit_test` alone, or `unit_test`
+      plus an explicit contract/invariant check. A green suite
+      with no direct behavioral check does not earn
+      `result: "match"`. For `change-request` specifically,
+      verification has a second axis: the post-change `Actual`
+      should NOT match the OLD `Expected` (from
+      `understand-current-behavior`) — otherwise the migration did
+      nothing. This workflow does NOT have a dedicated `test`
+      state (unlike `feature-request`); the project's test suite is
+      run as part of `verify` rather than as a separate state,
+      because change-requests typically run the existing suite
+      (which already covers the OLD behavior) plus a new assertion
+      for the NEW behavior — there is no benefit to splitting that
+      into two states.
+    emits_evidence: [actual, validation]
+
+  document:
+    purpose: >
+      Update user-facing and developer-facing docs to reflect the
+      new behavior — including any deprecation notes for users who
+      relied on the OLD behavior, since the OLD `Expected` is being
+      superseded. Documentation is part of the change, not an
+      afterthought — a behavior change that ships without updated
+      docs leaves every consumer of the old contract quietly
+      broken, per `constitution/engineering-principles.md`
+      "Report the decision trace, not just the outcome." The
+      `Event` emitted here records what docs changed, so `report`
+      can cite them in the decision trace.
+    emits_evidence: [event]
+
+  report:
+    purpose: >
+      Summarize the change, the OLD vs NEW `Expected`, the
+      `design-change` `Decision` and rejected alternatives, the
+      migration, and the validation evidence chain. Must include
+      the Decision Trace (docs/architecture.md), not just "changed."
+      Writes a `known-failure` memory entry if the change might
+      cause regressions for users relying on the OLD behavior —
+      change-request is the workflow MOST likely to introduce
+      regressions in existing users (because the old behavior was,
+      by definition, the designed and shipped behavior, and any
+      caller may have built on it). The `known-failure` entry's
+      `symptom` field documents the failure mode a downstream user
+      might encounter (their code or workflow assuming the OLD
+      behavior), and the `fix` field documents how to migrate to
+      the new behavior. This is a critical safety practice specific
+      to `change-request` and is not mirrored in `feature-request`
+      or `bug-report` — `feature-request` writes a `project`
+      memory entry (the capability is new, no users to regress),
+      and `bug-report` writes its `known-failure` entry in
+      `regression-protect` (the bug, not the change, is the
+      known failure).
+    writes_memory: [known-failure]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Must surface a precise gap (intent
+      ambiguous after two questions, current behavior unknowable,
+      change infeasible within current architecture, broad-refactor
+      gate tripped and not approved) — never a vague failure, per
+      docs/portability.md failure modes.
+
+skills_required:
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+  - specification
+  - implementation
+  - documentation
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: migrate
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, design-change]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and
+    `design-change` (up to 1), totaling 2 across the workflow. Each
+    must be necessary, specific, and decision-changing — see
+    docs/workflow-model.md "Question economy." The budget matches
+    `feature-request`'s 2 because changing existing behavior is
+    inherently more ambiguous than fixing a broken one (`bug-report`
+    budgets 1): the existing behavior was once a deliberate decision,
+    and changing it requires understanding why it was originally
+    chosen before deciding to replace it. The budget is bounded, not
+    unlimited. Questions about implementation details ("should this
+    be a constant or a config value?") are never permitted under this
+    budget — they are not decision-changing at the workflow level.

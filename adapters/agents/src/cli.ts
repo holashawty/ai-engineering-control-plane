@@ -30,11 +30,17 @@ function scenarioLoadCanonical() {
   console.log("\n=== Scenario 1: load canonical sources from this repo ===");
   const canonical = loadCanonicalSources(REPO_ROOT);
   check("agents/AGENTS.md content loaded, non-empty", canonical.agentsMdContent.length > 100);
-  check("all 4 MVP skills discovered", canonical.skills.length === 4);
+  // The 4 MVP skills (ADR-0016) must always be present; additional skills
+  // (refactor, code-review, specification, implementation, documentation,
+  // ...) may be present as the catalog grows. The test verifies the MVP
+  // set is a subset, not an exact match, so adding new skills does not
+  // break this self-test.
+  const MVP_SKILL_NAMES = ["behavioral-verification", "evidence-engineering", "systematic-debugging", "testing"];
+  const discoveredNames = new Set(canonical.skills.map((s) => s.name));
+  check("at least the 4 MVP skills discovered", canonical.skills.length >= 4);
   check(
-    "discovered skill names match expected set",
-    JSON.stringify(canonical.skills.map((s) => s.name).sort()) ===
-      JSON.stringify(["behavioral-verification", "evidence-engineering", "systematic-debugging", "testing"])
+    "all 4 MVP skill names are present in the discovered set",
+    MVP_SKILL_NAMES.every((name) => discoveredNames.has(name))
   );
 }
 

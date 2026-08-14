@@ -112,3 +112,56 @@ each entry must additionally record:
   copied. The bisection pattern is described in prose and emitted as a
   one-line `for` loop in the skill body, written from scratch for this
   skill's AIECP-targeted narrative.
+
+- **`workflows/change-request.sm.yaml` + `skills/specification/SKILL.md` +
+  `skills/implementation/SKILL.md` + `skills/documentation/SKILL.md`** —
+  novel to AIECP. `specification` operationalizes ADR-0002 (spec-kit's
+  spec/plan/tasks/constitution family adoption); `implementation`
+  operationalizes the AI-output validation pattern from
+  docs/evidence-model.md; `documentation` operationalizes
+  constitution/engineering-principles.md's "Report the decision trace,
+  not just the outcome" rule for the document state. No upstream code
+  or prose was adapted or copied for these skill/workflow set. If
+  during authoring any technique was borrowed from an upstream source
+  — even paraphrased — that borrowing is recorded inline in the
+  skill's prose with a citation; otherwise this entry confirms the
+  work is original.
+
+- **`workflows/code-review.sm.yaml` + `skills/code-review/SKILL.md`** —
+  novel to AIECP (no upstream equivalent found in `docs/research.md`'s
+  verified-license table; code-review as a state-machine workflow with
+  Evidence Model emission appears to be AIECP-original). No upstream
+  code or prose was adapted or copied for this skill/workflow pair.
+  If during authoring any technique was borrowed from an upstream
+  source, that borrowing is recorded inline in the skill's prose with
+  a citation; otherwise this entry confirms the work is original.
+
+- **`workflows/refactor.sm.yaml` + `skills/refactor/SKILL.md`** —
+  novel to AIECP (no upstream equivalent found in `docs/research.md`'s
+  verified-license table; refactor-as-state-machine-workflow with
+  `verify-equivalence` state and `replay_comparison` validation method
+  appears to be AIECP-original). No upstream code or prose was adapted
+  or copied for this skill/workflow pair. If during authoring any
+  technique was borrowed from an upstream source — even paraphrased —
+  that borrowing is recorded inline in the skill's prose with a
+  citation; otherwise this entry confirms the work is original.
+
+- **`skills/behavioral-simulation/SKILL.md` + `skills/diverse-thinking/SKILL.md`**
+  + **`adapters/agents/src/chat/adapter.ts`** + **`CHAT-ENTRYPOINT.md`**
+  + **`scripts/validate-chat-output.mjs`** — novel to AIECP.
+  `behavioral-simulation` extends ADR-0010 ("no exception ≠ success")
+  from single-scenario verification to multi-scenario end-user-behavior
+  simulation; the technique of generating an interaction matrix from
+  an `Expected`'s parameter dimensions is original to this project.
+  `diverse-thinking` provides seven named cognitive stances
+  (first-principles, inverse, analogical, systems, lateral,
+  adversarial, constraint-relaxation); the specific list is curated
+  from general problem-solving literature (no single upstream
+  source), and the procedural "detect stuck → switch style → emit
+  Decision → test candidate" pattern is AIECP-original.
+  `chat/adapter.ts` + `CHAT-ENTRYPOINT.md` + `validate-chat-output.mjs`
+  together implement the text-in/text-out protocol that lets chat LLMs
+  without tool use drive the full framework; the protocol design
+  (fenced `aiecp:evidence`/`aiecp:memory`/`aiecp:advance`/`aiecp:question`
+  code blocks parsed by a validator script) is original to this
+  project. No upstream code or prose was adapted or copied.

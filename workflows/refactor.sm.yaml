@@ -1,0 +1,261 @@
+workflow: refactor
+schema_version: "1.0.0"
+description: >
+  Triggered when the user wants a behavior-preserving change: "clean
+  up", "refactor", "simplify", "extract this into a helper". This is
+  the third MVP-vertical-slice workflow alongside `bug-report` (which
+  fixes broken behavior) and `feature-request` (which adds new
+  behavior). What makes refactor distinct from both is the *negative*
+  contract: the externally-observable behavior of the codebase MUST
+  NOT change, even though its internal structure does. Where
+  `bug-report` has a `replay` state to confirm a fix didn't regress
+  elsewhere and `feature-request` has a `verify` state to confirm new
+  behavior matches a freshly-authored `Expected`, refactor has a
+  `verify-equivalence` state whose `Validation.method` is
+  `replay_comparison` — the captured-baseline behavior replayed
+  against the post-refactor behavior must match. This is the only
+  workflow in the catalog that uses `replay_comparison` as its
+  validation method, because equivalence is the only correctness
+  criterion. A "refactor" that grows beyond `broad_refactor_threshold`
+  is no longer a refactor — it is a rewrite — and the safety gate at
+  `implement` exists specifically to catch that drift and force a
+  reclassification as `feature-request` or `change-request`.
+
+states:
+  - intake
+  - classify
+  - capture-baseline
+  - design-refactor
+  - implement
+  - verify-equivalence
+  - document
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: capture-baseline, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: capture-baseline, to: design-refactor, on: baseline_captured }
+  - { from: capture-baseline, to: blocked, on: baseline_unknowable }
+  - { from: design-refactor, to: implement, on: refactor_design_approved }
+  - { from: design-refactor, to: capture-baseline, on: design_needs_more_baseline }
+  - { from: design-refactor, to: blocked, on: refactor_infeasible }
+  - { from: implement, to: verify-equivalence, on: implementation_complete }
+  - { from: implement, to: design-refactor, on: implementation_blocked_by_design }
+  - { from: verify-equivalence, to: document, on: equivalence_verified }
+  - { from: verify-equivalence, to: implement, on: equivalence_violated }
+  - { from: verify-equivalence, to: blocked, on: equivalence_unverifiable }
+  - { from: document, to: report, on: documentation_complete }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's refactor request verbatim. Do not ask
+      clarifying questions here — the one allowed question belongs to
+      `classify` (see question_economy). Structurally, the most
+      important classification made here is: is this *actually* a
+      refactor (no intended behavior change), or is it a
+      feature-request / change-request / bug-report misfiled as a
+      refactor? If the user's description includes any "and while
+      you're at it, also make it do X" — that is a feature-request,
+      not a refactor, and should route to `feature-request.sm.yaml`
+      instead. A refactor that smuggles in a behavior change is not a
+      refactor that merely failed verification; it is a refactor that
+      was mis-classified, and the discipline starts here.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine the refactor class (extract-method, extract-module,
+      rename, simplify-control-flow, restructure-data) and rough
+      scope using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the
+      request text. May ask at most ONE necessary, specific,
+      decision-changing question if the refactor's *goal* cannot be
+      determined from inspection — different goals (readability,
+      performance, maintainability) genuinely produce different
+      refactors from the same starting code, and the goal is not
+      always inferrable from the code itself. The `Decision` emitted
+      here is the acceptance decision (proceed / reject / rescope),
+      not a design decision. Reject here means "this is actually a
+      feature-request, route there instead."
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  capture-baseline:
+    purpose: >
+      Run the project's existing test suite (per Project Intelligence
+      `project.test_system`) and capture the result as the baseline
+      the refactor must NOT break. This is the state that makes
+      refactor different from `feature-request`'s
+      `understand-existing-behavior` state: in feature-request, the
+      baseline `Expected` describes behavior the new feature must
+      not silently regress; in refactor, the baseline `Expected`
+      describes the *entire* behavior surface the refactor must
+      preserve, and the refactor is incomplete if any part of it
+      drifts. Emit the test-suite run as a `Trace` of `test_result`
+      `Event`s, and author the baseline behavioral contract as an
+      `Expected`. If no test suite exists, transition to `blocked`
+      with `baseline_unknowable` — a refactor without a baseline is
+      a gamble, not a refactor.
+    emits_evidence: [trace, event, expected]
+    reads_memory: [environment]
+
+  design-refactor:
+    purpose: >
+      Author the refactor design `Decision` — the chosen refactoring
+      approach (extract-method, extract-module, rename, etc.) with
+      the alternatives considered and their rejection reasons, so
+      `report` can produce a real decision trace per
+      `constitution/engineering-principles.md`. Emit an `Expected`
+      describing the new internal structure's properties (e.g.,
+      "ExtractHelper module now exports 3 pure functions, each ≤ 20
+      lines, with no shared mutable state"), distinct from the
+      baseline `Expected` from `capture-baseline` — this `Expected`
+      is about structure, not behavior. Per ADR-0008, design
+      `Decision`s with `validated: false` are proposals, not
+      commitments. If the design needs more baseline evidence
+      (e.g., the test suite didn't cover a code path the refactor
+      would touch), transition back to `capture-baseline` rather than
+      designing against a gap.
+    emits_evidence: [decision, expected]
+    reads_memory: [project, architecture]
+
+  implement:
+    purpose: >
+      Apply the approved refactor. Per the AI-output validation
+      pattern (docs/evidence-model.md), every code change is a
+      `Decision` with `validated: false` until `verify-equivalence`
+      confirms behavior was preserved — implementation is not
+      success, it is a candidate for success, and for refactor
+      specifically the only acceptable success criterion is
+      equivalence. The `broad-refactor` safety gate fires here, not
+      at `design-refactor`, because the actual refactor surface is
+      only knowable once implementation begins. This gate matters
+      MORE for refactor than for `feature-request`: a refactor that
+      trips the `broad_refactor_threshold` is no longer a refactor,
+      it is a rewrite, and should be reclassified as
+      `feature-request` or `change-request` rather than pressed
+      through. If the gate trips, transition back to `design-refactor`
+      to either narrow the refactor or re-route.
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  verify-equivalence:
+    purpose: >
+      Behavioral verification per ADR-0010 and the
+      `behavioral-verification` skill — but specialized for refactor.
+      The check is NOT "did the new tests pass" (there are no new
+      tests in a refactor — that would be a feature-request); the
+      check is "did the SAME tests against the SAME inputs produce
+      the SAME outputs as the captured baseline." Emit an `Actual`
+      for the post-refactor test run, then a `Validation` with
+      `method: "replay_comparison"` and `result: "match"` if the
+      post-refactor behavior is observationally indistinguishable
+      from the baseline. Per ADR-0010, `method: "unit_test"` alone is
+      INSUFFICIENT for refactor specifically: a passing test suite
+      only proves the suite still passes, not that behavior is
+      unchanged — a refactor can accidentally tighten an input
+      validation in a way the existing tests don't notice, "pass"
+      the suite, and silently break a caller the tests don't cover.
+      True equivalence requires either `replay_comparison` (replay
+      captured baseline inputs against the new code, observe
+      identical outputs) or `contract_validation` (the public API
+      surface is provably unchanged). `result: "mismatch"` means the
+      refactor changed behavior — transition back to `implement` with
+      `equivalence_violated`, not forward. This is the workflow state
+      that `Replay` (evidence/schema/replay.schema.json) was designed
+      for.
+    emits_evidence: [actual, validation]
+
+  document:
+    purpose: >
+      Update internal-architecture docs to reflect the new structure.
+      For a refactor, this is usually more important than user-facing
+      docs (which describe behavior, and behavior didn't change) —
+      the consumers of refactor docs are future maintainers reading
+      the architecture map, not users reading an API reference. The
+      `Event` emitted here records what internal docs changed
+      (module map, ADR updates, dependency graph), so `report` can
+      cite them in the decision trace. A refactor that restructures
+      the code but leaves the architecture map stale has done half
+      the work.
+    emits_evidence: [event]
+
+  report:
+    purpose: >
+      Summarize the refactor, the design `Decision` and rejected
+      alternatives, the implementation, and the equivalence
+      validation evidence chain. Must include the Decision Trace
+      (docs/architecture.md), not just "refactored." Writes a
+      `project` memory entry recording the new structural fact (e.g.,
+      "parseExpiryDate is now a pure helper exported from
+      src/membership/parsing.ts"), so future workflows do not re-
+      derive or re-propose the same extraction. A refactor that
+      doesn't record its outcome in memory is one that a future run
+      will re-litigate.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Must surface a precise gap: intent
+      ambiguous after one question, no test suite exists to capture
+      a baseline from (`baseline_unknowable`), refactor infeasible
+      within current architecture (`refactor_infeasible`), or
+      equivalence unverifiable even after a replay attempt
+      (`equivalence_unverifiable`). Never a vague failure — per
+      docs/portability.md failure modes, a precise gap is
+      recoverable; a silent wrong guess is not. The
+      `equivalence_unverifiable` case is especially important: a
+      refactor where you cannot verify equivalence is a refactor you
+      cannot prove did not change behavior, and an unprovable
+      refactor is, by ADR-0010, not verified — even if the suite
+      happens to be green.
+
+skills_required:
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+  # Refactor depends critically on `testing` for the baseline + post-
+  # refactor test runs, and on `behavioral-verification` for the
+  # equivalence check. There is no `refactoring` skill upstream that
+  # this workflow cites; the procedure is encoded in
+  # skills/refactor/SKILL.md (the dedicated skill authored alongside
+  # this workflow). Until a `specification` skill exists (see
+  # skills/README.md "remaining ~15 skills"), the design step is
+  # filled by skills/refactor/SKILL.md's procedure directly.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: implement
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if Project
+    Intelligence + Discovery + Memory genuinely cannot resolve the
+    refactor's goal (readability vs. performance vs. maintainability —
+    different goals produce different refactors from the same starting
+    code). Refactor should be based on the code itself, not on
+    questions to the user: the code is the primary input. See
+    docs/workflow-model.md "Question economy." Questions about
+    implementation details ("what should I name the extracted
+    function?") are never permitted under this budget — they are not
+    decision-changing at the workflow level. The budget is lower
+    than `feature-request`'s 2 because refactor is the most
+    code-driven of the three MVP workflows: the code tells you what
+    to extract, the test suite tells you whether you broke anything,
+    and the only question worth asking a human is the one about
+    intent that the code cannot answer.

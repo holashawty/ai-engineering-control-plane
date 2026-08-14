@@ -1,0 +1,204 @@
+workflow: code-review
+schema_version: "1.0.0"
+description: >
+  Triggered when the user asks for review of a change before merge
+  ("review this PR/diff", "look at this change before I merge it") —
+  the code exists and works, the question is whether it should ship.
+  Distinct from `bug-report` (something is broken) and `feature-request`
+  (something new is needed): code-review is read-only by design. It
+  produces a `Validation` with `result: match/mismatch/inconclusive`
+  but does not apply any patch. If the review surfaces a needed fix,
+  the user should run `bug-report` or `change-request` against the
+  surfaced concern — code-review does not transition into a fix state.
+  This is why the workflow declares no `safety_gates`: there is no
+  source edit to gate. Pairs with `bug-report.sm.yaml` and
+  `feature-request.sm.yaml` as the third MVP-shape workflow — exercises
+  the same Evidence Model entities (Trace, Event, Decision, Expected,
+  Actual, Validation) but in a read-only direction. Notably omits
+  `Incident` (nothing has diverged yet; the review's job is to prevent
+  divergence) and `Replay` (no fix was applied, so there is no original
+  reproduction to re-run).
+
+states:
+  - intake
+  - classify
+  - understand-change
+  - assess
+  - review
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: understand-change, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: understand-change, to: assess, on: change_mapped }
+  - { from: understand-change, to: blocked, on: change_unknowable }
+  - { from: assess, to: review, on: assessment_complete }
+  - { from: assess, to: understand-change, on: assessment_needs_more_context }
+  - { from: review, to: report, on: review_complete }
+  - { from: review, to: blocked, on: review_blocked_by_unresolved_concern }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's review request verbatim, including any PR/diff
+      reference (URL, branch name, or commit range). Do not ask
+      clarifying questions here — that belongs in `classify` (per
+      question_economy below). Distinguishing a code-review request
+      from a bug-report ("X is broken") or a feature-request ("add X")
+      happens here, structurally, before the workflow commits to its
+      `code-review` shape — if the intent is actually a bug or a
+      feature request, route to that workflow instead. Read-only by
+      design from the very first state: `intake` does not fetch the
+      diff, only records where it is.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine review class (new feature merge, refactor, dependency
+      bump, hotfix candidate) and rough scope using Project
+      Intelligence (discovery/schema/project-intelligence.schema.json)
+      plus the request text. May ask at most ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — e.g. "is this intended for the next release
+      or a hotfix?" (the answer changes the review bar: hotfixes
+      need stricter rollback review). The `Decision` emitted here is
+      the acceptance decision (proceed / reject / rescope), not a
+      review verdict — that comes in `review` as a `Validation`.
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  understand-change:
+    purpose: >
+      Capture the diff itself as evidence before forming any judgment
+      about it. Emit a `Trace` of how the change was inspected
+      (git diff, file reads) and an `Event` of `kind: "file_change"`
+      with the diff captured verbatim in `payload` — the diff is the
+      primary subject of the review, so it must be a first-class
+      evidence artifact, not a paraphrase in a comment. Emit an
+      `Expected` describing the *baseline* contract the change must
+      not silently break (existing behavior the diff touches). A
+      review that skips this state reviews the reviewer's summary
+      of the diff rather than the diff itself — exactly the failure
+      mode `constitution/engineering-principles.md` "Evidence before
+      explanation" exists to prevent.
+    emits_evidence: [trace, event, expected]
+    reads_memory: [project, architecture]
+
+  assess:
+    purpose: >
+      Form an assessment of the change against the baseline `Expected`
+      from `understand-change` and against the change's own claims.
+      Emit a `Decision` recording the assessment findings, with
+      `alternatives` listing each concern surfaced and whether it is
+      blocking or non-blocking (with reasons) — the eventual `report`
+      state can cite these for the decision trace
+      `constitution/engineering-principles.md` requires. Emit a second
+      `Expected` describing what the change *claims* to do — the new
+      contract the diff asserts. This is distinct from the baseline
+      `Expected` from `understand-change`: the baseline is what must
+      not break, the new-contract `Expected` is what the change
+      promises to add. If the assessment cannot be completed without
+      more context (e.g. a referenced spec is missing, an upstream
+      contract is ambiguous), transition back to `understand-change`
+      with `on: assessment_needs_more_context` rather than guessing.
+    emits_evidence: [decision, expected]
+    reads_memory: [project, architecture, constraint]
+
+  review:
+    purpose: >
+      Emit an `Actual` describing what the change actually does, as
+      observed by reading the diff and (optionally) running the diff's
+      new tests via `test_runner`. Emit a `Validation` comparing the
+      `Actual` against the new-contract `Expected` from `assess`,
+      with `method: "manual_review"` for a read-only review, or
+      `method: "contract_validation"` if the diff claims to honor a
+      specific named contract. Per ADR-0010, `method: "unit_test"`
+      alone is never sufficient — a green test suite is not a code
+      review. code-review is read-only by design; it produces a
+      `Validation` with `result: match/mismatch/inconclusive` but
+      does not apply any patch. If the review surfaces a needed fix,
+      the user should run `bug-report` or `change-request` against
+      the surfaced concern — code-review does not transition into a
+      fix state. This is why this workflow declares no `safety_gates`:
+      there is no source edit to gate. The `edit_source` and
+      `broad-refactor` gates exist to control patch application, which
+      this workflow never does.
+    emits_evidence: [actual, validation]
+
+  report:
+    purpose: >
+      Summarize the review: the change assessed, the concerns surfaced
+      (with their dispositions), the validation result, and the
+      reviewer's verdict (ship / ship with caveats / block). Must
+      include the Decision Trace (docs/architecture.md), not just
+      "looks good." Writes a `project` memory entry recording that the
+      change was reviewed and accepted (when validation is match), so
+      a future workflow does not re-review the same diff. If the
+      review surfaced concerns but reached `report` with caveats
+      (validation inconclusive, non-blocking concerns documented as
+      follow-ups), the `project` memory entry's `domain` field should
+      note the open caveats so they are visible without re-running the
+      review.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when the review cannot complete:
+      intent ambiguous after one question (`classify`), change
+      unknowable (`understand-change` — diff too large, no base ref,
+      binary patch the agent can't read), or an unresolved blocking
+      concern surfaced in `review` (`review_blocked_by_unresolved_
+      concern`). Must surface a precise gap, never a vague failure, per
+      docs/portability.md failure modes. If a blocking concern was
+      surfaced, the `blocked` state's report should point the user at
+      `bug-report` or `change-request` for follow-up — `code-review`
+      itself does not fix.
+
+skills_required:
+  - evidence-engineering
+  # The code-review skill itself (skills/code-review/SKILL.md) drives
+  # the understand-change, assess, and review states. It is not
+  # duplicated here because it is the skill being authored alongside
+  # this workflow (analogous to how systematic-debugging drives
+  # bug-report's diagnose state and IS listed there — the convention is
+  # that skills_required names skills whose existence is independent of
+  # this workflow). Future: when an `assessment` skill exists, add it
+  # here.
+
+# test_runner is optional in practice — declared here because the
+# review state MAY run the diff's new tests to corroborate the Actual,
+# but a review that proceeds on manual reading alone is also valid.
+capabilities_required:
+  - filesystem_read
+  - shell_exec
+  - test_runner
+
+# No safety_gates declared. code-review is read-only by design — it
+# produces a Validation but does not edit source. The `edit_source` and
+# `broad-refactor` gates exist to control patch application, which this
+# workflow never does. See state_detail.review.purpose for the explicit
+# read-only declaration. The e2e driver at
+# executor/examples/e2e-code-review/drive-run.mjs asserts this by
+# checking the run log has zero "gate-check" entries (every other e2e
+# driver in this repo has them).
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if the review
+    class cannot be determined from the diff itself + Project
+    Intelligence. code-review is meant to be fast and based on the diff
+    itself; one clarifying question max (e.g. "is this intended for the
+    next release or a hotfix?"). See docs/workflow-model.md "Question
+    economy." Tighter than `feature-request`'s 2 because the diff is
+    the primary input — there is less to clarify than when designing a
+    new capability from scratch. Equal to `bug-report`'s 1 in budget,
+    but applied to a different state shape (review-classification
+    rather than incident-classification).

@@ -16,7 +16,12 @@
     "bootstrap": "npm run install:all && npm run build && npm run test",
     "e2e:membership-demo": "node executor/examples/e2e-membership-bug/drive-run.mjs",
     "e2e:feature-request-demo": "node executor/examples/e2e-feature-request/drive-run.mjs",
+    "e2e:code-review-demo": "node executor/examples/e2e-code-review/drive-run.mjs",
+    "e2e:refactor-demo": "node executor/examples/e2e-refactor/drive-run.mjs",
+    "e2e:change-request-demo": "node executor/examples/e2e-change-request/drive-run.mjs",
+    "e2e:chat-adapter-demo": "node executor/examples/e2e-chat-adapter/drive-run.mjs",
     "validate:feature-request": "node scripts/validate-feature-request.mjs",
+    "validate:chat-output": "node scripts/validate-chat-output.mjs",
     "sync-entrypoints": "node adapters/agents/dist/bin/write-entrypoints.js . ."
   }
 }

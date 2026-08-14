@@ -196,25 +196,41 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
 
 ---
 
-## Öncelik sırası (önerilen, 2026-08-14 güncellemesi)
+## Öncelik sırası (önerilen, 2026-08-14 güncellemesi #2)
 
 1. ✅ **A1** (superpowers derinleştirme) — TAMAMLANDI.
 2. ✅ **B1** (feature-request workflow taslağı) — TAMAMLANDI.
-   `code-review` ve `refactor` workflow'ları da artık bloklanmıyor;
-   istenirse paralel verilebilir.
 3. ✅ **ADR-0018** (izin verici lisanslar için verbatim kopyalama
    politikası) — kontrolcü tarafından TAMAMLANDI.
-4. **A2** (spec-kit şablonları) — SONRAKİ ÖNCELİK. spec-kit MIT
-   lisanslı, ADR-0018 sayesinde artık gerçek şablon içerikleri
-   verbatim + attribution ile alınabilir (paraphrase zorunluluğu
-   yok). `specs/*.template.md` dosyalarını doldur.
-5. **B2** (B1'deki workflow'larla eşleşen skill'ler) — özellikle
-   `specification`, `implementation`, `documentation` skill'leri.
-   `feature-request.sm.yaml` şu an bu üç skill'i `skills_required`
-   comment'inde "henüz yazılmadı" olarak işaretliyor; gerçek
-   SKILL.md dosyaları yazılınca comment'ler kaldırılıp `skills_required`
-   listesine eklenebilir.
-6. **A3, A4, B3, B4** — arka planda, öncelik sırasıyla.
+4. ✅ **C2** (3 workflow + 3 skill + 2 meta-skill + chat adapter)
+   — Z.ai Agent tarafından TAMAMLANDI (bu commit). code-review +
+   refactor + change-request workflow'leri, code-review + refactor +
+   specification + implementation + documentation skill'leri,
+   behavioral-simulation + diverse-thinking meta-skill'leri, ve
+   chat-adapter + CHAT-ENTRYPOINT + validate-chat-output üçlüsü
+   eklendi.
+5. **Live session test** — SONRAKİ ÖNCELİK. İki versiyon:
+   (a) CLI agent (Claude Code veya Codex) ile gerçek çok-turlu
+   oturum, her turda bir tool call, `translateObservation` gerçek
+   tool çıktısıyla test edilir.
+   (b) Chat LLM (ChatGPT / Claude chat / Gemini chat / GLM chat)
+   ile gerçek çok-turlu oturum; LLM `CHAT-ENTRYPOINT.md`'i okuyup
+   `aiecp:*` blokları emit ediyor mu, validator doğruluyor mu?
+   Her ikisi de "structural proof var, canlı kanıt yok" gap'ini
+   kapatır.
+6. **A2** (spec-kit şablonları) — ADR-0018 sayesinde artık paraphrase
+   yerine verbatim + attribution tercih edilebilir. spec-kit MIT'li,
+   `NOTICE`'e satır satır yazmak yeterli. `specs/*.template.md`
+   dosyalarını doldur.
+7. **Eval harness** (Phase 8, Python) — her skill için ≥5 senaryo,
+   her workflow için ≥3 senaryo (per `docs/evaluations/evaluation-strategy.md`).
+   Şu an 6 proof-of-concept e2e driver var ama hiçbürü formal eval
+   değil.
+8. **Kalan 9 workflow** (user-complaint, regression, performance-problem,
+   security-problem, release, incident, project-onboarding,
+   unknown-failure, vb.) — uzun kuyruk, düşük öncelik.
+9. **Kalan ~9 skill** (database, frontend, backend, mobile, security,
+   performance, vb.) — uzun kuyruk, düşük öncelik.
 
 ## Bu listenin kullanımı
 
