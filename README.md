@@ -15,6 +15,16 @@ Phase 2 (Core) is in progress. See `docs/implementation-roadmap.md` for
 the full phase breakdown and `docs/research.md` for the verification
 methodology.
 
+**Root-level `AGENTS.md` / `CLAUDE.md`** in this repo are generated
+files (per ADR-0006) — the canonical, hand-edited source is
+`agents/AGENTS.md`. Regenerate after editing the canonical source or
+any `skills/*/SKILL.md`:
+
+```bash
+cd adapters/agents && npm install && npm run build
+node dist/bin/write-entrypoints.js <repo-root> <repo-root>
+```
+
 ## What this is *not*
 
 - Not a prompt collection.
