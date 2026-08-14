@@ -5,7 +5,8 @@ working in a repository that has AIECP installed. Per ADR-0006, this
 file is the source of truth; `CLAUDE.md`, `GEMINI.md`,
 `.cursor/rules/*.mdc`, `.windsurfrules`, and
 `.github/copilot-instructions.md` are generated from it by
-`sync-entrypoints` (not yet implemented — see `STATUS.md`) and must
+`sync-entrypoints` (`adapters/agents/src/sync-entrypoints.ts` — see
+`STATUS.md` for current coverage) and must
 never be hand-edited directly.
 
 If you are an agent reading this file natively (no generated wrapper

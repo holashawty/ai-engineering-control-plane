@@ -1,0 +1,142 @@
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
+import { syncAll, loadCanonicalSources } from "./sync-entrypoints.js";
+import { claudeCodeAdapter } from "./claude-code/adapter.js";
+import { codexAdapter } from "./codex/adapter.js";
+
+const AjvCtor = Ajv2020 as unknown as new (opts?: object) => import("ajv").default;
+const addFormatsFn = addFormats as unknown as (ajv: import("ajv").default) => void;
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+// This package lives at adapters/agents/ — repo root is 2 levels up.
+const REPO_ROOT = join(__dirname, "..", "..", "..");
+
+let passed = 0;
+let failed = 0;
+function check(label: string, condition: boolean) {
+  if (condition) {
+    console.log(`  OK   ${label}`);
+    passed++;
+  } else {
+    console.log(`  FAIL ${label}`);
+    failed++;
+  }
+}
+
+function scenarioLoadCanonical() {
+  console.log("\n=== Scenario 1: load canonical sources from this repo ===");
+  const canonical = loadCanonicalSources(REPO_ROOT);
+  check("agents/AGENTS.md content loaded, non-empty", canonical.agentsMdContent.length > 100);
+  check("all 4 MVP skills discovered", canonical.skills.length === 4);
+  check(
+    "discovered skill names match expected set",
+    JSON.stringify(canonical.skills.map((s) => s.name).sort()) ===
+      JSON.stringify(["behavioral-verification", "evidence-engineering", "systematic-debugging", "testing"])
+  );
+}
+
+function scenarioRenderAndIdempotency() {
+  console.log("\n=== Scenario 2: render entrypoints + idempotency (ADR-0006) ===");
+  const canonical = loadCanonicalSources(REPO_ROOT);
+
+  const claudeFiles1 = claudeCodeAdapter.renderEntrypoint(canonical);
+  const claudeFiles2 = claudeCodeAdapter.renderEntrypoint(canonical);
+  check("Claude Code adapter renders CLAUDE.md", claudeFiles1[0]?.path === "CLAUDE.md");
+  check(
+    "Claude Code render is idempotent (byte-identical on repeat run)",
+    claudeFiles1[0]?.content === claudeFiles2[0]?.content
+  );
+  check(
+    "CLAUDE.md includes canonical AGENTS.md content verbatim",
+    claudeFiles1[0]?.content.includes(canonical.agentsMdContent)
+  );
+  check(
+    "CLAUDE.md lists all 4 skills by name",
+    canonical.skills.every((s) => claudeFiles1[0]?.content.includes(s.name))
+  );
+
+  const codexFiles1 = codexAdapter.renderEntrypoint(canonical);
+  const codexFiles2 = codexAdapter.renderEntrypoint(canonical);
+  check("Codex adapter renders AGENTS.md (native filename, not CLAUDE.md)", codexFiles1[0]?.path === "AGENTS.md");
+  check(
+    "Codex render is idempotent (byte-identical on repeat run)",
+    codexFiles1[0]?.content === codexFiles2[0]?.content
+  );
+}
+
+function scenarioCapabilitiesDiffer() {
+  console.log("\n=== Scenario 3: adapters declare distinct, real capabilities ===");
+  const claude = claudeCodeAdapter.capabilities();
+  const codex = codexAdapter.capabilities();
+
+  check("Claude Code declares full native_skills support", claude.native_skills === true);
+  check("Codex declares partial native_skills support", codex.native_skills === "partial");
+  check("Claude Code declares browser capability", claude.browser === true);
+  check("Codex declares no browser capability", codex.browser === false);
+  check("both declare filesystem + shell + test_runner", claude.filesystem_read && claude.shell_exec && claude.test_runner && codex.filesystem_read && codex.shell_exec && codex.test_runner);
+}
+
+function scenarioTranslateObservation() {
+  console.log("\n=== Scenario 4: translateObservation produces schema-valid Events ===");
+  const schemaPath = join(REPO_ROOT, "evidence", "schema", "event.schema.json");
+  const schema = JSON.parse(readFileSync(schemaPath, "utf-8"));
+  const ajv = new AjvCtor({ strict: false, allErrors: true });
+  addFormatsFn(ajv);
+  const validate = ajv.compile(schema);
+
+  const rawObs = {
+    raw: { tool: "bash_tool", command: "pytest", api_key: "sk-should-be-redacted" },
+    timestamp: new Date().toISOString(),
+    traceRef: "trace-repro-1",
+    source: "run-1",
+  };
+
+  const claudeEvent = claudeCodeAdapter.translateObservation(rawObs);
+  const codexEvent = codexAdapter.translateObservation(rawObs);
+
+  check("Claude Code translateObservation output validates against event.schema.json", validate(claudeEvent) === true);
+  check("Codex translateObservation output validates against event.schema.json", validate(codexEvent) === true);
+
+  const claudePayload = claudeEvent.payload as Record<string, unknown>;
+  const codexPayload = codexEvent.payload as Record<string, unknown>;
+  check("Claude Code adapter redacted the api_key in payload", claudePayload.api_key === "[redacted]");
+  check("Codex adapter redacted the api_key in payload", codexPayload.api_key === "[redacted]");
+  check("Claude Code adapter did not redact the non-sensitive command field", claudePayload.command === "pytest");
+}
+
+async function selfTest() {
+  console.log("=== agent-adapters self-test ===");
+  scenarioLoadCanonical();
+  scenarioRenderAndIdempotency();
+  scenarioCapabilitiesDiffer();
+  scenarioTranslateObservation();
+
+  console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
+  if (failed > 0) {
+    console.error("SELF-TEST FAILED");
+    process.exit(1);
+  }
+  console.log("SELF-TEST PASSED");
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.includes("--self-test")) {
+    await selfTest();
+    return;
+  }
+  console.log(
+    "aiecp-sync-entrypoints: use { syncAll } from sync-entrypoints.js in a " +
+      "host project's own tooling to generate CLAUDE.md/AGENTS.md from " +
+      "this framework's canonical agents/AGENTS.md + skills/. Use " +
+      "--self-test to verify the adapters themselves against this repo."
+  );
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

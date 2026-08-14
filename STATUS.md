@@ -109,6 +109,20 @@ don't silently reorder.
       assertions pass. 2 real bugs found and fixed while building this
       (missing `ajv-formats` wiring; a test fixture missing a required
       field) — see `executor/README.md`.
+- [x] Agent adapters (`adapters/agents/`) — Claude Code and Codex
+      adapters implementing `docs/portability.md`'s contract
+      (`capabilities()`, `renderEntrypoint()`, `translateObservation()`),
+      plus `sync-entrypoints.ts` (ADR-0006). 19/19 self-test assertions
+      pass: canonical-source loading, render idempotency (byte-
+      identical output on repeat runs — the actual ADR-0006
+      requirement, not just "it ran twice without crashing"), genuinely
+      distinct declared capabilities per adapter, and schema-valid
+      `Event` output from `translateObservation` with secret
+      redaction confirmed. One real inconsistency found and fixed: the
+      canonical `agents/AGENTS.md` still claimed `sync-entrypoints` was
+      "not yet implemented" after this package made that false — caught
+      by reading the generated output directly, not just trusting
+      assertions. See `adapters/agents/README.md`.
 
 ## In progress
 
@@ -117,24 +131,28 @@ below is the next task to pick up)
 
 ## Not started (in sequence order)
 
+- [ ] Disk-writing CLI wrapper around `sync-entrypoints`'s `syncAll()`
+      — currently produces file contents in memory only; no "write
+      CLAUDE.md/AGENTS.md into host repo X" command exists yet. Small,
+      mechanical remaining piece.
 - [ ] End-to-end run + evidence schema validation against **real**
       (non-scripted) bug scenarios — the executor's self-test proves
       the engine works correctly against a realistic *scripted*
-      scenario, but no actual LLM agent has driven it yet. This
-      requires wiring an agent adapter (Claude Code or Codex, next
-      item) to actually call `WorkflowRun` while doing real diagnosis
-      on a real repository.
-- [ ] `sync-entrypoints` implementation — design only so far
-      (`docs/portability.md` adapter contract), no code.
-- [ ] 2 agent adapters (Claude Code, Codex) — `adapters/agents/`
-      placeholder only. This is what would let a real agent drive
-      `executor/`'s `WorkflowRun` instead of the scripted self-test
-      standing in for one.
+      scenario, and the adapters now translate realistic *shapes* of
+      agent tool output correctly, but no actual LLM agent session has
+      driven this end-to-end yet. This is the last MVP milestone
+      (ADR-0016): install AIECP into a real toy repo, have an actual
+      agent session (this Claude session, most likely) work through a
+      real bug using `executor`'s `WorkflowRun` API, and confirm the
+      full chain — discovery → skills → executor → evidence/memory →
+      adapters — holds together outside of scripted self-tests.
 - [ ] 2 stack adapters (Python, TypeScript) beyond what `discovery/cli/`
       already does — `adapters/stacks/` placeholder only. Discovery
       already produces stack-aware output; a dedicated stack-adapter
       layer (test-runner invocation helpers, etc.) is separate,
-      smaller remaining work.
+      smaller remaining work, and may turn out to be unnecessary once
+      the end-to-end run above proves `testing`/`discovery` already
+      cover what's needed.
 
 ## Known open questions (not blocking, but unresolved)
 
