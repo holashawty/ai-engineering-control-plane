@@ -289,3 +289,24 @@ each entry must additionally record:
   real chat LLM sessions at home without writing code. Run via
   `npm run chat-harness -- <workflow-name> <response-file>` or
   `cat response.md | npm run chat-harness -- <workflow-name>`.
+
+- **`adapters/agents/src/chat-sandbox/adapter.ts` +
+  `adapters/agents/src/types.ts` (sandboxed_code_execution field) +
+  `DECISIONS.md` (ADR-0020) + `CHAT-ENTRYPOINT.md` (Step 0
+  self-identification + Step 0.5 router pre-condition check) +
+  `CHAT-ENTRYPOINT-SANDBOX.md` (generated)** — novel to AIECP.
+  ADR-0020 splits chat LLMs into two adapter categories:
+  pure-text (the original `chat` adapter, all capabilities false)
+  and sandbox (new `chat-sandbox` adapter, declares
+  filesystem_read/write/shell_exec/test_runner true *within the
+  sandbox*). This was prompted by a real ChatGPT session
+  (2026-08-14, patron's home test): ChatGPT correctly followed
+  `workflows/_router.md` rule 1 (".aiecp/project-intelligence.json
+  missing → project-onboarding first") but couldn't proceed because
+  the original chat adapter declared `filesystem_write=false`.
+  ChatGPT's Code Interpreter is a real Python environment that CAN
+  write files in the sandbox. The new `chat-sandbox` adapter
+  reflects this. The Step 0 self-identification step in
+  CHAT-ENTRYPOINT.md tells the chat LLM to check whether it has a
+  code execution tool and select the appropriate adapter. No
+  upstream code or prose was adapted or copied.

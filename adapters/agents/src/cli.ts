@@ -6,6 +6,8 @@ import addFormats from "ajv-formats";
 import { syncAll, loadCanonicalSources } from "./sync-entrypoints.js";
 import { claudeCodeAdapter } from "./claude-code/adapter.js";
 import { codexAdapter } from "./codex/adapter.js";
+import { chatAdapter } from "./chat/adapter.js";
+import { chatSandboxAdapter } from "./chat-sandbox/adapter.js";
 
 const AjvCtor = Ajv2020 as unknown as new (opts?: object) => import("ajv").default;
 const addFormatsFn = addFormats as unknown as (ajv: import("ajv").default) => void;
@@ -32,12 +34,14 @@ function scenarioLoadCanonical() {
   check("agents/AGENTS.md content loaded, non-empty", canonical.agentsMdContent.length > 100);
   // The 4 MVP skills (ADR-0016) must always be present; additional skills
   // (refactor, code-review, specification, implementation, documentation,
-  // ...) may be present as the catalog grows. The test verifies the MVP
-  // set is a subset, not an exact match, so adding new skills does not
-  // break this self-test.
+  // tool-use-discipline, recency-verification, quality-gate,
+  // behavioral-simulation, diverse-thinking, project-onboarding, regression,
+  // performance-problem, ...) may be present as the catalog grows. The
+  // test verifies the MVP set is a subset, not an exact match, so adding
+  // new skills does not break this self-test.
   const MVP_SKILL_NAMES = ["behavioral-verification", "evidence-engineering", "systematic-debugging", "testing"];
   const discoveredNames = new Set(canonical.skills.map((s) => s.name));
-  check("at least the 4 MVP skills discovered", canonical.skills.length >= 4);
+  check(`at least the 4 MVP skills discovered (found ${canonical.skills.length} total)`, canonical.skills.length >= 4);
   check(
     "all 4 MVP skill names are present in the discovered set",
     MVP_SKILL_NAMES.every((name) => discoveredNames.has(name))
@@ -77,12 +81,24 @@ function scenarioCapabilitiesDiffer() {
   console.log("\n=== Scenario 3: adapters declare distinct, real capabilities ===");
   const claude = claudeCodeAdapter.capabilities();
   const codex = codexAdapter.capabilities();
+  const chat = chatAdapter.capabilities();
+  const chatSandbox = chatSandboxAdapter.capabilities();
 
   check("Claude Code declares full native_skills support", claude.native_skills === true);
   check("Codex declares partial native_skills support", codex.native_skills === "partial");
   check("Claude Code declares browser capability", claude.browser === true);
   check("Codex declares no browser capability", codex.browser === false);
   check("both declare filesystem + shell + test_runner", claude.filesystem_read && claude.shell_exec && claude.test_runner && codex.filesystem_read && codex.shell_exec && codex.test_runner);
+
+  // ADR-0020: chat LLMs split into pure-text and sandbox variants.
+  check("chat (pure-text) declares all capabilities false", !chat.filesystem_read && !chat.filesystem_write && !chat.shell_exec && !chat.test_runner && !chat.browser && !chat.mcp && !chat.native_skills && chat.sandboxed_code_execution === false);
+  check("chat-sandbox declares sandboxed_code_execution=true", chatSandbox.sandboxed_code_execution === true);
+  check("chat-sandbox declares filesystem_read=true (within sandbox)", chatSandbox.filesystem_read === true);
+  check("chat-sandbox declares filesystem_write=true (within sandbox)", chatSandbox.filesystem_write === true);
+  check("chat-sandbox declares shell_exec=true (within sandbox)", chatSandbox.shell_exec === true);
+  check("chat-sandbox declares test_runner=true (within sandbox)", chatSandbox.test_runner === true);
+  check("chat-sandbox declares native_skills=false (still must read SKILL.md via shell)", chatSandbox.native_skills === false);
+  check("chat and chat-sandbox have distinct ids", chatAdapter.id === "chat" && chatSandboxAdapter.id === "chat-sandbox");
 }
 
 function scenarioTranslateObservation() {

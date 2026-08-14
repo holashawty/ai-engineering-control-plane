@@ -22,6 +22,7 @@
 // session is a separate milestone.
 
 import { chatAdapter } from "../../../adapters/agents/dist/chat/adapter.js";
+import { chatSandboxAdapter } from "../../../adapters/agents/dist/chat-sandbox/adapter.js";
 import { execFileSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -367,6 +368,53 @@ async function scenario() {
     check(`simulated response exercises 5+ distinct evidence kinds (found ${evidenceKindsUsed.size}: ${[...evidenceKindsUsed].join(", ")})`,
       evidenceKindsUsed.size >= 5);
 
+    // ------------------------------------------------------------------
+    // Scenario 9: chat-sandbox adapter (ADR-0020) — code-execution chat LLMs
+    // ------------------------------------------------------------------
+    console.log("\n--- Scenario 9: chat-sandbox adapter (ADR-0020) ---");
+    const sandboxCaps = chatSandboxAdapter.capabilities();
+    check("chat-sandbox id is 'chat-sandbox'", chatSandboxAdapter.id === "chat-sandbox");
+    check("chat-sandbox declares sandboxed_code_execution=true", sandboxCaps.sandboxed_code_execution === true);
+    check("chat-sandbox declares filesystem_read=true (within sandbox)", sandboxCaps.filesystem_read === true);
+    check("chat-sandbox declares filesystem_write=true (within sandbox)", sandboxCaps.filesystem_write === true);
+    check("chat-sandbox declares shell_exec=true (within sandbox)", sandboxCaps.shell_exec === true);
+    check("chat-sandbox declares test_runner=true (within sandbox)", sandboxCaps.test_runner === true);
+    check("chat-sandbox declares native_skills=false (still must read SKILL.md via shell)", sandboxCaps.native_skills === false);
+    check("chat-sandbox declares browser=false (typical sandbox has no browser)", sandboxCaps.browser === false);
+    check("chat-sandbox declares mcp=false (MCP not typically in sandbox)", sandboxCaps.mcp === false);
+
+    // chat-sandbox renderEntrypoint produces CHAT-ENTRYPOINT-SANDBOX.md
+    const sandboxFiles = chatSandboxAdapter.renderEntrypoint(minimalCanonical);
+    check("chat-sandbox renderEntrypoint produces exactly 1 file", sandboxFiles.length === 1);
+    check("rendered file is CHAT-ENTRYPOINT-SANDBOX.md", sandboxFiles[0].path === "CHAT-ENTRYPOINT-SANDBOX.md");
+    check("sandbox entrypoint mentions code execution", sandboxFiles[0].content.includes("code execution"));
+    check("sandbox entrypoint mentions sandbox", sandboxFiles[0].content.includes("sandbox"));
+    check("sandbox entrypoint lists skills by name", sandboxFiles[0].content.includes("systematic-debugging") && sandboxFiles[0].content.includes("evidence-engineering"));
+    check("sandbox entrypoint notes artifacts live in sandbox (not user's real FS)", sandboxFiles[0].content.includes("sandbox") && sandboxFiles[0].content.includes("real filesystem"));
+    check("renderEntrypoint is idempotent", chatSandboxAdapter.renderEntrypoint(minimalCanonical)[0].content === sandboxFiles[0].content);
+
+    // chat-sandbox translateObservation IS a real function (unlike pure-text
+    // chat which throws) — sandbox agents CAN produce raw tool observations
+    // (shell output, file reads from the sandbox)
+    const sandboxObs = {
+      raw: { tool: "python", command: "pytest tests/", exit_code: 0, output: "3 passed" },
+      timestamp: new Date().toISOString(),
+      traceRef: "trace-sandbox-1",
+      source: "sandbox-run-1",
+    };
+    const sandboxEvent = chatSandboxAdapter.translateObservation(sandboxObs);
+    check("chat-sandbox translateObservation produces an Event object", typeof sandboxEvent === "object" && sandboxEvent !== null);
+    check("chat-sandbox event has trace_ref", sandboxEvent.trace_ref === "trace-sandbox-1");
+    check("chat-sandbox event source is 'chat-sandbox:python'", sandboxEvent.source === "chat-sandbox:python");
+    check("chat-sandbox event kind is 'action' (python maps to action)", sandboxEvent.kind === "action");
+    check("chat-sandbox event id starts with 'event-sandbox-run-1-'", String(sandboxEvent.id).startsWith("event-sandbox-run-1-"));
+
+    // chat-sandbox vs pure-text chat: distinct capabilities
+    const pureChatCaps = chatAdapter.capabilities();
+    check("chat and chat-sandbox have distinct filesystem_write declarations", pureChatCaps.filesystem_write !== sandboxCaps.filesystem_write);
+    check("chat and chat-sandbox have distinct sandboxed_code_execution declarations", pureChatCaps.sandboxed_code_execution === false && sandboxCaps.sandboxed_code_execution === true);
+    check("chat and chat-sandbox have distinct ids", chatAdapter.id !== chatSandboxAdapter.id);
+
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -379,9 +427,11 @@ async function scenario() {
   console.log("CHAT ADAPTER PROOF PASSED");
   console.log("");
   console.log("Proof summary:");
-  console.log("- chat adapter declares capabilities honestly (all false, no false claims)");
-  console.log("- renderEntrypoint produces CHAT-ENTRYPOINT.md with the protocol documentation");
-  console.log("- translateObservation is a no-op that throws (chat LLMs emit directly)");
+  console.log("- chat (pure-text) adapter declares capabilities honestly (all false, no false claims)");
+  console.log("- chat-sandbox adapter (ADR-0020) declares sandboxed capabilities (true within sandbox)");
+  console.log("- chat-sandbox can drive project-onboarding (filesystem_write=true in sandbox)");
+  console.log("- chat-sandbox translateObservation IS a real function (unlike pure-text chat which throws)");
+  console.log("- renderEntrypoint produces CHAT-ENTRYPOINT.md (pure-text) + CHAT-ENTRYPOINT-SANDBOX.md (sandbox)");
   console.log("- validate-chat-output.mjs parses + schema-validates aiecp:* blocks");
   console.log("- Validator accepts well-formed responses with 11 blocks of all kinds");
   console.log("- Validator rejects malformed blocks (unknown kinds, missing fields, bad id patterns, bad YAML)");

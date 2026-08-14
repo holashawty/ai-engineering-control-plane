@@ -1,14 +1,23 @@
-// Chat LLM adapter — implements the same AgentAdapter contract as
-// claude-code and codex, but for chat-based LLMs that have no tool
-// use (ChatGPT, Claude chat, Gemini chat, GLM chat, etc.).
+// Chat LLM adapter (pure-text) — implements the same AgentAdapter
+// contract as claude-code and codex, but for chat-based LLMs that
+// have NO tool use (no Code Interpreter, no sandboxed execution).
+// Examples: ChatGPT without Code Interpreter, Claude chat without
+// code execution tool, Gemini chat basic, GLM chat basic.
+//
+// For chat LLMs WITH a sandboxed code execution environment
+// (ChatGPT Code Interpreter / Advanced Data Analysis, Claude code
+// execution, Gemini code execution), use the chat-sandbox adapter
+// instead — it declares filesystem_read/write/shell_exec/test_runner
+// as true (within the sandbox).
 //
 // Per docs/portability.md's adapter contract: every adapter declares
-// its capabilities honestly. A chat LLM has NO filesystem, NO shell,
-// NO test_runner — only the ability to read text the user pastes and
-// produce text in response. The "protocol" for emitting evidence is
-// therefore text-encoding: the chat LLM includes fenced code blocks
-// (```aiecp:evidence, ```aiecp:advance, etc.) in its response, and
-// the user (or scripts/validate-chat-output.mjs) parses them out.
+// its capabilities honestly. A pure-text chat LLM has NO filesystem,
+// NO shell, NO test_runner — only the ability to read text the user
+// pastes and produce text in response. The "protocol" for emitting
+// evidence is therefore text-encoding: the chat LLM includes fenced
+// code blocks (```aiecp:evidence, ```aiecp:advance, etc.) in its
+// response, and the user (or scripts/validate-chat-output.mjs)
+// parses them out.
 //
 // This adapter's renderEntrypoint produces CHAT-ENTRYPOINT.md (the
 // orientation file at repo root) rather than CLAUDE.md/AGENTS.md.
@@ -20,15 +29,19 @@
 import type { AgentAdapter, AgentCapabilities, RenderedFile, GenericObservation, CanonicalSources } from "../types.js";
 
 export const chatAdapter: AgentAdapter = {
+  // id stays "chat" for backward compatibility — existing code that
+  // imports chatAdapter should keep working. The new
+  // chatSandboxAdapter (id: "chat-sandbox") is a separate export
+  // for code-execution-capable chat LLMs.
   id: "chat",
 
   capabilities(): AgentCapabilities {
     return {
-      // A chat LLM has none of these — it can only read pasted text
-      // and produce text. This is the honest declaration; pretending
-      // otherwise would let the executor believe the agent can do
-      // things it cannot, violating constitution/constitution.md §3
-      // ("autonomy is bounded, not implicit").
+      // A pure-text chat LLM has none of these — it can only read
+      // pasted text and produce text. This is the honest declaration;
+      // pretending otherwise would let the executor believe the agent
+      // can do things it cannot, violating constitution/constitution.md
+      // §3 ("autonomy is bounded, not implicit").
       filesystem_read: false,
       filesystem_write: false,
       shell_exec: false,
@@ -39,6 +52,11 @@ export const chatAdapter: AgentAdapter = {
       native_skills: false,
       browser: false,
       mcp: false,
+      // Explicitly false — this adapter is for pure-text chat LLMs.
+      // Chat LLMs WITH a sandboxed code execution environment should
+      // use the chat-sandbox adapter instead (which sets this to true
+      // and declares the sandbox-internal capabilities accordingly).
+      sandboxed_code_execution: false,
     };
   },
 

@@ -323,3 +323,60 @@ Every framework-level decision — especially anything touching
   `skills/recency-verification/SKILL.md` (time-sensitive claims
   specifically), `skills/quality-gate/SKILL.md` (code quality after
   generation).
+
+## ADR-0020 — Chat LLMs are not all the same: pure-text vs sandboxed-code-execution
+- **Decision:** The agent adapter capability model gains a new flag
+  `sandboxed_code_execution: boolean` on `AgentCapabilities`
+  (`adapters/agents/src/types.ts`). Chat LLMs are split into two
+  adapter categories:
+  - **`chat` (pure-text)**: no code execution at all. All
+    filesystem/shell/test_runner capabilities false. Must transition
+    to `blocked` on `requires_filesystem_write_capability`. Examples:
+    ChatGPT without Code Interpreter, Claude chat without code
+    execution tool, Gemini chat basic.
+  - **`chat-sandbox` (new)**: has a sandboxed code execution
+    environment (ChatGPT Code Interpreter / Advanced Data Analysis,
+    Claude code execution, Gemini code execution). Within the
+    sandbox: `filesystem_read=true`, `filesystem_write=true`,
+    `shell_exec=true`, `test_runner=true`,
+    `sandboxed_code_execution=true`. The agent CAN drive
+    `project-onboarding` (which writes `.aiecp/project-intelligence.json`)
+    — the file lives in the sandbox.
+- **Reason:** The original `chat` adapter (commit `ff4afbc`)
+  assumed all chat LLMs have zero capabilities. This was proven
+  wrong by a real ChatGPT session (2026-08-14, patron's home test):
+  ChatGPT correctly followed `workflows/_router.md` rule 1
+  (".aiecp/project-intelligence.json missing → project-onboarding
+  first") but couldn't proceed because the chat adapter declared
+  `filesystem_write=false`. The framework's router was right, the
+  chat LLM was right, but the adapter's capability model was wrong
+  — it conflated "no real filesystem" with "no sandboxed code
+  execution," which are different things. ChatGPT's Code Interpreter
+  is a real (if ephemeral) Python environment that can read files,
+  run shell commands, write artifacts, and run tests *inside the
+  sandbox*.
+- **What this fixes:** The catch-22 where a chat LLM correctly
+  routes to `project-onboarding` per `_router.md` rule 1, but
+  `project-onboarding` requires `filesystem_write` (to write
+  `.aiecp/project-intelligence.json`), and the chat adapter declared
+  `filesystem_write=false`. With the new `chat-sandbox` adapter,
+  ChatGPT-with-Code-Interpreter can drive `project-onboarding` to
+  completion — the `.aiecp/` artifacts live in the sandbox.
+- **What does NOT change:**
+  - The pure-text `chat` adapter stays for chat LLMs without code
+    execution — it still declares all capabilities false and must
+    transition to `blocked` on `requires_filesystem_write_capability`.
+  - CLI agents (Claude Code, Codex) are unaffected — they already
+    declare `filesystem_write=true` and `sandboxed_code_execution`
+    is implicitly false (their filesystem is real, not sandboxed).
+- **Tradeoffs:** Slightly more complex adapter selection. The user
+  (or the chat LLM itself) must correctly identify which adapter
+  applies — pure-text vs sandbox. Mitigated by CHAT-ENTRYPOINT.md
+  being updated to include a self-identification step: the chat LLM
+  checks whether it has a code execution tool and selects the
+  appropriate entrypoint (`CHAT-ENTRYPOINT.md` for pure-text,
+  `CHAT-ENTRYPOINT-SANDBOX.md` for sandbox).
+- **Status:** Decided 2026-08-14. Adds `sandboxed_code_execution`
+  to `AgentCapabilities`. Adds `chat-sandbox` adapter alongside
+  the existing `chat` adapter. Updates `CHAT-ENTRYPOINT.md` with
+  self-identification guidance.

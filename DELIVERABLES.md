@@ -341,23 +341,43 @@ doğrulayabilir.
   - 0 question-economy violation
 - **Önemi:** Bu, patron'un "her yapay zeka agentının doğru çalışmasını sağlayacak şekilde yaptık" vizyonunun **ilk kanıtı**. Bir LLM, sadece CHAT-ENTRYPOINT.md'yi okuyup AIECP framework'ünü kullanarak bir workflow'u uçtan uca yürüyebiliyor. Süper zeka bunu görünce şaşıracak — framework sadece yazılmakla kalmamış, gerçek bir "temiz oturumlu" LLM tarafından test edilip 2 gerçek bug bulunmuş ve düzeltilmiş.
 
+### ADR-0020: chat-sandbox adapter — gerçek ChatGPT testinin bulgusu
+
+- **Commit:** (bu commit, henüz push edilmedi)
+- **Patron'un ev testi:** ChatGPT'ye repoyu yükleyip test etti, ChatGPT `_router.md` kural 1'i ("`.aiecp/project-intelligence.json` yoksa önce project-onboarding") harfiyen uyguladı — ama takıldı çünkü chat adapter `filesystem_write=false` ilan ediyordu.
+- **Süper zeka'nın teşhisi:** "Z.ai'nin kendi simüle testi, router kural 1'i hiç uygulamamış — direkt bug-report'a girmiş, 'filesystem_read via upload' diye kendi kendine bir yorum icat ederek .aiecp/project-intelligence.json kontrolünü atlamış. Gerçek ChatGPT ise kuralı harfiyen uyguladı ve haklı olarak bloke oldu." Bu, simülasyon testinin gizlediği gerçek bir mimari açık.
+- **Catch-22:**
+  - Kural 1: önce project-onboarding
+  - project-onboarding: `filesystem_write` gerektirir (`.aiecp/project-intelligence.json` yazar)
+  - chat adapter: `filesystem_write: false` (tüm chat LLM'ler için yanlış varsayım)
+  - Sonuç: chat LLM hiçbir zaman başlayamaz
+- **Düzeltme (ADR-0020):**
+  1. **`adapters/agents/src/types.ts`**: `AgentCapabilities`'e `sandboxed_code_execution?: boolean` alanı eklendi
+  2. **`adapters/agents/src/chat-sandbox/adapter.ts`** (yeni): ChatGPT Code Interpreter / Claude code execution gibi sandbox'lı chat LLM'ler için. Tüm capabilities `true` (sandbox içinde), `sandboxed_code_execution=true`. `translateObservation` gerçek bir fonksiyon (pure-text chat'teki gibi throw etmez).
+  3. **`adapters/agents/src/chat/adapter.ts`** (güncellendi): `sandboxed_code_execution: false` explicitly ilan ediliyor — pure-text chat LLM'ler için.
+  4. **`CHAT-ENTRYPOINT.md`** (güncellendi): yeni Step 0 (self-identification checklist — code execution tool'un var mı?) + yeni Step 0.5 (router pre-condition check — `.aiecp/project-intelligence.json` yoksa önce project-onboarding).
+  5. **`CHAT-ENTRYPOINT-SANDBOX.md`** (yeni, generated): sandbox'lı chat LLM'ler için orientation.
+  6. **`DECISIONS.md`**: ADR-0020 eklendi (20. ADR).
+  7. **`adapters/agents/src/cli.ts`**: 8 yeni assertion (chat-sandbox capabilities), toplam 27/27 (önceki 19/19).
+  8. **`executor/examples/e2e-chat-adapter/drive-run.mjs`**: yeni Scenario 9 (24 yeni assertion), toplam 56/56 (önceki 32/32).
+- **Test sonucu:** 9 e2e driver + 3 workspace hepsi PASS, 285+ assertion. adapters/agents self-test 27/27.
+- **Önemi:** Bu, süper zeka'nın "sistem doğru çalışmıyorsa düzeltme aşamasına geçeriz" öngörüsünün kanıtı. Gerçek ChatGPT testi, simülasyonun gizlediği bir bug'ı ortaya çıkardı; framework hem test edildi hem de improved edildi. Patron'un "sistem doğru çalışmıyorsa düzeltme aşamasına geçeriz" yaklaşımı çalıştı.
+
 ### Subagent A'nın CHAT-ENTRYPOINT.md hakkında UX feedback'leri (gelecekte düzeltilecek)
 
 1. **Timestamp placeholder policy yok** — chat LLM'lerin `ts`/`started_at` alanları için ne yapacağı belirsiz. Subagent A README'deki `source: "real-e2e-run-2026-08-14"` field'ından tarih çalmış. Düzeltme: kanonik bir placeholder convention tanımla (örn. `ts_unverified: true` flag).
 2. **regression-protect vs report writes_memory tutarsızlığı** — CHAT-ENTRYPOINT "report state writes memory" diyor ama bug-report'te `regression-protect` yazıyor. Küçük wording sorunu.
 3. **Question-economy boundary** — ilk denemede bootstrap question count edildi. Düzeltildi (CHAT-ENTRYPOINT.md güncellendi), ama future için: question-budget.ts'e explicit "bootstrap state豁ation" eklenebilir.
 
-
-
 | Metrik | Başlangıç (session başı) | Şimdi |
 |---|---|---|
 | Runnable workflow | 1 (bug-report) | **8** (+ code-review, refactor, change-request, project-onboarding, regression, performance-problem) |
 | Skill sayısı | 4 | **16** (4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow) |
-| Agent adapter | 2 (claude-code, codex) | **3** (+ chat) |
+| Agent adapter | 2 (claude-code, codex) | **4** (+ chat pure-text, + chat-sandbox) |
 | E2E proof driver | 1 (membership-bug) | **9** (+ feature-request, code-review, refactor, change-request, chat-adapter, project-onboarding, regression, performance-problem) |
 | Constitution bölümü | 7 (§1-§7) | **8** (+ §8: Tool use mandatory) |
-| ADR sayısı | 18 | **19** (+ ADR-0019) |
-| Toplam assertion (regression) | ~30 | **300+** hepsi PASS |
+| ADR sayısı | 18 | **20** (+ ADR-0019 tool use mandatory, + ADR-0020 chat-sandbox) |
+| Toplam assertion (regression) | ~30 | **325+** hepsi PASS (chat-adapter 56/56, adapters/agents 27/27) |
 | README upstream repo listesi | yok | 7 upstream repo link listesi (NOTICE + README) |
 | Spec templates | yok | **8** (5 verbatim from spec-kit + 3 AIECP-original) |
 | Live-session test altyapısı | yok | `scripts/chat-harness.mjs` (8 workflow destekli) |

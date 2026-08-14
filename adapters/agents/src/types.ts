@@ -14,6 +14,27 @@ export interface AgentCapabilities {
   native_skills: boolean | "partial";
   browser: boolean;
   mcp: boolean;
+  /** true = this agent has a sandboxed code execution environment
+   * (e.g. ChatGPT's Code Interpreter / Advanced Data Analysis,
+   * Claude's code execution tool, Gemini's code execution). When
+   * true, filesystem_read/write/shell_exec/test_runner may all be
+   * true *within the sandbox* — the agent can actually run code,
+   * read files in the sandbox, and write artifacts there. When
+   * false, those capabilities reflect the agent's *real* filesystem
+   * (false for pure chat LLMs, true for CLI agents like Claude
+   * Code/Codex). The distinction matters because a chat-with-
+   * sandbox agent can drive project-onboarding (which writes
+   * .aiecp/project-intelligence.json) inside its sandbox, while a
+   * pure chat LLM cannot.
+   *
+   * Per ADR-0020 (forthcoming): chat LLMs are NOT all the same.
+   * The original chat adapter (commit ff4afbc) assumed all chat
+   * LLMs have zero capabilities — this was proven wrong by a real
+   * ChatGPT session that correctly detected it should route to
+   * project-onboarding but couldn't proceed because the adapter
+   * declared filesystem_write=false. The sandboxed_code_execution
+   * flag fixes this. */
+  sandboxed_code_execution?: boolean;
 }
 
 export interface RenderedFile {
