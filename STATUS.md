@@ -549,12 +549,13 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, toy-shipping-bug fixture added for
-end-to-end chat-sandbox testing. The 3rd ChatGPT test correctly
-blocked at "requires target source file" because no real source
-existed — this fixture fixes that. Now chat-sandbox LLMs can test
-the FULL bug-report workflow (intake → ... → apply-fix → verify →
-regression-protect → replay → report) against a real buggy Python
-file in the repo. 22 ADRs, 9 e2e drivers, 325+ assertions, 4
-agent adapters. Next priority: patron runs the 4th ChatGPT test
-against this fixture — full end-to-end, including apply-fix.*
+*Last updated: 2026-08-14, ADR-0023 (safety gate authorization for
+chat-sandbox) added after controller found security gap in
+chat-harness.mjs. The 4th ChatGPT test proved chat-sandbox CAN write
+files, but the harness was auto-confirming ALL safety gates
+unconditionally — a stale comment from pre-ADR-0020 days. Fixed:
+adapter-aware safety gate handling (chat=auto-confirm, chat-sandbox
+requires explicit authorization via aiecp:confirm or --user-prompt).
+Also added already-terminal violation handling (catches the "extra
+block past terminal" bug from the 4th test). 23 ADRs, 9 e2e drivers,
+325+ assertions. Next: 5th ChatGPT test with the fixed harness.*

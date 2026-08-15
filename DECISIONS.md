@@ -539,3 +539,73 @@ Every framework-level decision — especially anything touching
   with executability check. Corrects ADR-0021's "npm install gerekmez"
   claim where it was previously wrong — now it's actually true
   because the runtime dependency is gone.
+
+## ADR-0023 — Safety gate authorization for chat-sandbox adapter
+- **Decision:** `scripts/chat-harness.mjs` no longer auto-confirms
+  safety gates unconditionally. The safety gate handling is now
+  adapter-aware:
+  - **`chat` (pure-text) adapter**: auto-confirm safety gates.
+    The pure-text chat LLM cannot actually write files, so the gate
+    is moot — the LLM will transition to `blocked:
+    requires_filesystem_write_capability` before reaching any gated
+    state anyway. This is the pre-ADR-0023 behavior, unchanged.
+  - **`chat-sandbox` adapter**: DO NOT auto-confirm. The chat-sandbox
+    CAN actually write files (per ADR-0020), so the safety gate is a
+    real authorization boundary. The harness checks authorization
+    via TWO mechanisms:
+    1. **`aiecp:confirm` block** (NEW, per this ADR): the chat LLM
+       may emit an explicit confirmation block in its response.
+       If present, it serves as the authorization. Optional fields:
+       `gate` (which gate, e.g., `"broad-refactor"`), `reason`
+       (why the LLM is confirming).
+    2. **`--user-prompt` argument**: the harness reads the user's
+       original prompt to the chat LLM and checks if it contains
+       authorization keywords (`fix`, `düzelt`, `apply`, `uygula`,
+       `implement`, `refactor`, `migrate`, `optimize`, `change`,
+       `modify`, `update`, `patch`, `edit`, `write`, etc.). If the
+       prompt authorizes the gated action, the harness allows it.
+    If neither authorization mechanism is present, the harness
+    FAILS the safety-gated advance with a clear message explaining
+    how to authorize.
+
+- **Reason:** The 4th ChatGPT test (2026-08-14, patron's home with
+  `toy-shipping-bug` fixture) proved that chat-sandbox LLMs can
+  drive the full workflow including `apply-fix` (writing real files
+  in the sandbox). The controller's verification found that
+  `chat-harness.mjs` was auto-confirming ALL safety gates
+  unconditionally, with a comment saying "chat LLM can't actually
+  apply fixes anyway" — but this comment was written before
+  ADR-0020 (which added the chat-sandbox adapter that CAN write
+  files). The comment was stale; the behavior was a security gap:
+  a chat-sandbox LLM could pass through a `broad-refactor` safety
+  gate without any user authorization, and the harness would let
+  it through silently.
+
+- **What does NOT change:**
+  - The `chat` (pure-text) adapter's behavior is unchanged.
+  - CLI agents (Claude Code, Codex) are unaffected — they use
+    `advanceWithConfirmation` directly, not through the harness.
+  - The executor's `WorkflowRun.advance()` behavior is unchanged —
+    it still throws `safety-gate-needs-confirmation` when a gated
+    transition is attempted without confirmation. The harness's
+    handling of this exception is what changed.
+  - The `aiecp:confirm` block is new but optional — existing chat
+    LLM responses that don't use it still work (if the adapter is
+    `chat` or if `--user-prompt` authorizes).
+
+- **Tradeoffs:**
+  - Slightly more complex harness usage for chat-sandbox: the user
+    must pass `--user-prompt` (or the LLM must emit `aiecp:confirm`
+    blocks). Mitigated by clear error messages explaining how to
+    authorize.
+  - The authorization keyword list is heuristic, not perfect. A
+    user prompt like "analyze the bug" (without "fix") would NOT
+    authorize `apply-fix`, even if the user intended to authorize
+    it. This is intentional — the harness errs on the side of
+    requiring explicit authorization for file-writing actions.
+
+- **Status:** Decided 2026-08-14. Updates `scripts/chat-harness.mjs`
+  with adapter-aware safety gate handling. Adds `aiecp:confirm`
+  block type. Adds `--adapter` and `--user-prompt` arguments.
+  Adds `already-terminal` violation handling (catches the "extra
+  block past terminal state" bug from the 4th ChatGPT test).

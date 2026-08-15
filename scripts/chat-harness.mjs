@@ -3,18 +3,18 @@
 //
 // Purpose: lets a user (e.g., patron at home) drive an AIECP workflow
 // interactively with a real chat LLM (ChatGPT, Claude chat, Gemini
-// chat, etc.) and validate the LLM's output against the Phase 1
+// chat, GLM chat, etc.) and validate the LLM's output against the Phase 1
 // schemas — without writing any code.
 //
 // How it works:
 //   1. User starts a chat LLM session, uploads this repo as a zip.
-//   2. User tells the chat LLM: "Read CHAT-ENTRYPOINT.md first, then
-//      help me with [task]."
+//   2. User tells the chat LLM: "Read CHAT-ENTRYPOINT.md (or
+//      CHAT-ENTRYPOINT-SANDBOX.md) first, then help me with [task]."
 //   3. Chat LLM responds with text containing aiecp:* blocks.
 //   4. User copies the chat LLM's response, runs this harness:
-//        node scripts/chat-harness.mjs <workflow-name> <response.md>
+//        node scripts/chat-harness.mjs <workflow-name> <response.md> [--adapter <id>] [--user-prompt <file>]
 //      or pipes it:
-//        cat response.md | node scripts/chat-harness.mjs <workflow-name>
+//        cat response.md | node scripts/chat-harness.mjs <workflow-name> --adapter chat-sandbox --user-prompt prompt.txt
 //   5. This harness:
 //      a. Loads the workflow's .sm.yaml.
 //      b. Walks every aiecp:advance block in the response, driving
@@ -23,20 +23,29 @@
 //      d. Validates every aiecp:memory block against the schema.
 //      e. Counts aiecp:question blocks, checks the workflow's
 //         question_economy.
-//      f. Reports: which states were walked, which evidence was
+//      f. Handles aiecp:confirm blocks (per ADR-0023) for safety
+//         gate authorization.
+//      g. Reports: which states were walked, which evidence was
 //         emitted, whether the run reached a terminal state, and
-//         any violations (invalid transition, schema violation,
-//         question-economy violation, etc.).
+//         any violations.
 //
-// What this is NOT:
-//   - It does NOT call a chat LLM API. The user is the bridge
-//     between the chat LLM and this harness.
-//   - It does NOT replace the e2e proof drivers in executor/examples/.
-//     Those are scripted; this is interactive.
-//   - It does NOT enforce safety gates (the chat LLM cannot apply
-//     source edits anyway, so safety gates are moot). It DOES
-//     detect when the chat LLM tried to advance through a gated
-//     transition without confirmation, and warns the user.
+// Safety gate handling (per ADR-0023 — CRITICAL):
+//   - chat (pure-text) adapter: auto-confirm safety gates. The pure-text
+//     chat LLM cannot actually write files, so the safety gate is moot —
+//     the LLM will transition to `blocked: requires_filesystem_write_capability`
+//     before reaching any gated state anyway.
+//   - chat-sandbox adapter: DO NOT auto-confirm. The chat-sandbox CAN
+//     actually write files (per ADR-0020), so the safety gate is a real
+//     authorization boundary. The harness checks whether the user's
+//     original prompt authorized the gated action (via --user-prompt
+//     arg containing authorization keywords like "fix", "düzelt",
+//     "apply", "uygula"). If authorized, advance with confirmation.
+//     If not, FAIL — the chat-sandbox LLM tried to do something the
+//     user didn't authorize.
+//   - aiecp:confirm blocks (per ADR-0023): the chat LLM may emit an
+//     explicit confirmation block. If present, it serves as the
+//     authorization (the LLM is explicitly confirming it wants to
+//     proceed through the gate).
 
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -58,9 +67,37 @@ const REPO_ROOT = join(__dirname, "..");
 
 // ---- Argument parsing ----
 
-const args = process.argv.slice(2);
-if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
-  console.log(`Usage: node scripts/chat-harness.mjs <workflow-name> [response-file]
+function parseArgs(argv) {
+  const opts = {
+    workflowName: null,
+    responseFile: null,
+    adapter: "chat", // default: pure-text chat (backward compat)
+    userPromptFile: null,
+  };
+
+  const positional = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--adapter") {
+      opts.adapter = argv[++i];
+    } else if (arg === "--user-prompt") {
+      opts.userPromptFile = argv[++i];
+    } else if (arg === "--help" || arg === "-h") {
+      opts.help = true;
+    } else {
+      positional.push(arg);
+    }
+  }
+
+  opts.workflowName = positional[0];
+  opts.responseFile = positional[1];
+  return opts;
+}
+
+const args = parseArgs(process.argv.slice(2));
+
+if (args.help || !args.workflowName) {
+  console.log(`Usage: node scripts/chat-harness.mjs <workflow-name> [response-file] [--adapter <id>] [--user-prompt <file>]
 
 Reads a chat LLM's response (from a file or stdin), extracts every
 \`aiecp:*\` block, and drives the named workflow through the real
@@ -73,20 +110,52 @@ Arguments:
   response-file    path to a markdown file containing the chat LLM's
                    response. If omitted, reads from stdin.
 
+Options (per ADR-0023 — safety gate authorization):
+  --adapter <id>          Which chat adapter produced the response.
+                           - "chat" (default): pure-text chat LLM.
+                             Safety gates are auto-confirmed (the LLM
+                             can't write files anyway).
+                           - "chat-sandbox": chat LLM with code
+                             execution (ChatGPT Code Interpreter,
+                             Claude code execution). Safety gates
+                             REQUIRE explicit authorization — either
+                             via --user-prompt or aiecp:confirm blocks.
+  --user-prompt <file>     The user's original prompt to the chat LLM.
+                           Required for chat-sandbox when the response
+                           contains safety-gated transitions. The
+                           harness checks if the prompt authorizes the
+                           gated action (keywords: fix, düzelt, apply,
+                           uygula, implement, refactor, migrate, etc.).
+
+Block types parsed (per ADR-0023):
+  aiecp:evidence    Evidence Model entity (validated against schema)
+  aiecp:memory      Memory entry (validated against schema)
+  aiecp:advance     Workflow state transition (on: <event>)
+  aiecp:question    Question to user (subject to question_economy)
+  aiecp:confirm     Explicit safety-gate confirmation (per ADR-0023)
+
 Examples:
   node scripts/chat-harness.mjs bug-report chatgpt-response.md
-  cat claude-response.md | node scripts/chat-harness.mjs feature-request
+  node scripts/chat-harness.mjs bug-report response.md --adapter chat-sandbox --user-prompt my-task.txt
+  cat response.md | node scripts/chat-harness.mjs feature-request --adapter chat-sandbox
 
 Exit codes:
   0  all blocks valid + workflow reached a terminal state
   1  some blocks invalid OR workflow did not reach a terminal state
      OR question economy violated
+     OR (chat-sandbox) safety gate not authorized
 `);
-  process.exit(args.length === 0 ? 1 : 0);
+  process.exit(args.help ? 0 : 1);
 }
 
-const workflowName = args[0];
-const responseFile = args[1];
+const { workflowName, responseFile, adapter, userPromptFile } = args;
+
+const VALID_ADAPTERS = ["chat", "chat-sandbox"];
+if (!VALID_ADAPTERS.includes(adapter)) {
+  console.error(`Unknown adapter "${adapter}". Valid: ${VALID_ADAPTERS.join(", ")}`);
+  console.error(`Use --adapter chat (pure-text, default) or --adapter chat-sandbox (code execution).`);
+  process.exit(1);
+}
 
 const WORKFLOW_PATHS = {
   "bug-report": "workflows/bug-report.sm.yaml",
@@ -114,13 +183,21 @@ if (responseFile) {
   responseText = readFileSyncSync(0, "utf-8");
 }
 
+// Read user prompt (for chat-sandbox authorization check)
+let userPromptText = "";
+if (userPromptFile) {
+  userPromptText = readFileSync(userPromptFile, "utf-8");
+} else if (adapter === "chat-sandbox") {
+  console.warn("WARNING: --adapter chat-sandbox without --user-prompt.");
+  console.warn("Safety-gated transitions will FAIL unless the response contains aiecp:confirm blocks.");
+  console.warn("");
+}
+
 // ---- Parse aiecp:* blocks ----
 
 const AIECP_BLOCK = /```aiecp:([a-z]+)\n([\s\S]*?)```/g;
 
 function parseYaml(body) {
-  // js-yaml auto-converts ISO 8601 dates to Date objects; use JSON_SCHEMA
-  // to keep them as strings for schema validation.
   return yaml.load(body, { schema: yaml.JSON_SCHEMA });
 }
 
@@ -163,11 +240,45 @@ while ((match = AIECP_BLOCK.exec(responseText)) !== null) {
     } else {
       block.questionText = block.parsed.text;
     }
+  } else if (kind === "confirm") {
+    // aiecp:confirm block (per ADR-0023) — explicit safety-gate
+    // confirmation from the chat LLM. The LLM is saying "yes, I
+    // want to proceed through the gate." Optional fields: `gate`
+    // (which gate, e.g., "broad-refactor"), `reason` (why).
+    block.confirmGate = block.parsed.gate ?? null;
+    block.confirmReason = block.parsed.reason ?? null;
   } else {
     block.error = `unknown aiecp block kind "${kind}"`;
   }
   blocks.push(block);
 }
+
+// ---- Safety gate authorization (per ADR-0023) ----
+
+// Authorization keywords (case-insensitive) — if the user's prompt
+// OR the response text contains any of these, the safety gate is
+// considered authorized for chat-sandbox.
+const AUTH_KEYWORDS = [
+  // English
+  "fix", "apply", "implement", "refactor", "migrate", "optimize",
+  "change", "modify", "update", "patch", "edit", "write",
+  "diagnose and fix", "find and fix",
+  // Turkish
+  "düzelt", "uygula", "düzenle", "değiştir", "güncelle", "yaz",
+  "tamir et", "çöz",
+];
+
+function isAuthorized(prompts) {
+  const combined = prompts.join("\n").toLowerCase();
+  return AUTH_KEYWORDS.some((kw) => combined.includes(kw.toLowerCase()));
+}
+
+// Collect all aiecp:confirm blocks — these are explicit authorizations
+const confirmBlocks = blocks.filter((b) => b.kind === "confirm");
+const hasExplicitConfirm = confirmBlocks.length > 0;
+
+// For chat-sandbox: check if the user's prompt authorizes the gated action
+const promptAuthorized = userPromptText ? isAuthorized([userPromptText]) : false;
 
 // ---- Load workflow + create run ----
 
@@ -226,9 +337,17 @@ let failCount = 0;
 const violations = [];
 
 console.log(`=== Chat Harness: driving ${workflowName} workflow ===`);
+console.log(`Adapter: ${adapter}`);
 console.log(`Loaded workflow: ${def.workflow} (${def.states.length} states, ${def.transitions.length} transitions)`);
 console.log(`Initial state: ${def.initial_state}`);
-console.log(`Found ${blocks.length} aiecp:* blocks in response\n`);
+console.log(`Found ${blocks.length} aiecp:* blocks in response`);
+if (adapter === "chat-sandbox") {
+  console.log(`Safety gate mode: ${promptAuthorized ? "prompt-authorized" : (hasExplicitConfirm ? "explicit-confirm" : "REQUIRES-AUTHORIZATION")}`);
+  if (userPromptFile) {
+    console.log(`User prompt: ${userPromptFile} (${userPromptText.length} chars)`);
+  }
+}
+console.log("");
 
 for (const block of blocks) {
   const label = `block #${block.index} (aiecp:${block.kind})`;
@@ -246,9 +365,16 @@ for (const block of blocks) {
     continue;
   }
 
+  // Skip confirm blocks in the main loop — they're handled when
+  // a safety-gated advance is encountered.
+  if (block.kind === "confirm") {
+    console.log(`  OK   ${label} — explicit confirmation recorded (gate: ${block.confirmGate ?? "any"}, reason: ${block.confirmReason ?? "(none)"})`);
+    passCount++;
+    continue;
+  }
+
   try {
     if (block.kind === "evidence") {
-      // Validate against schema first
       const result = validateEvidenceAgainstSchema(block.kindOrType, block.data);
       if (!result.ok) {
         console.log(`  FAIL ${label} — schema: ${result.errors}`);
@@ -256,7 +382,6 @@ for (const block of blocks) {
         violations.push({ block: block.index, kind: block.kind, error: `schema: ${result.errors}` });
         continue;
       }
-      // Then emit through WorkflowRun (also schema-validates internally)
       await run.emitEvidence(block.kindOrType, block.data);
       console.log(`  OK   ${label} — evidence/${block.kindOrType} (id: ${block.data.id})`);
       passCount++;
@@ -274,20 +399,60 @@ for (const block of blocks) {
     } else if (block.kind === "advance") {
       try {
         const result = run.advance(block.onEvent);
-        if (result.gateDecision === "requires-confirmation") {
-          console.log(`  WARN ${label} — advance gated by safety gate; chat LLM should use aiecp:confirm (but harness will proceed for testing)`);
-          // For harness purposes, auto-confirm — chat LLM can't actually apply fixes anyway
-          // Re-do the advance with confirmation
-          // But we already advanced... actually advance() throws on gate. Let me re-check.
-        }
         console.log(`  OK   ${label} — advance on "${block.onEvent}" → ${run.currentState}`);
         passCount++;
       } catch (e) {
         if (e instanceof WorkflowViolation && e.kind === "safety-gate-needs-confirmation") {
-          // Auto-confirm for harness purposes
-          run.advanceWithConfirmation(block.onEvent);
-          console.log(`  OK   ${label} — advance on "${block.onEvent}" → ${run.currentState} (auto-confirmed safety gate)`);
-          passCount++;
+          // Safety gate handling (per ADR-0023):
+          if (adapter === "chat") {
+            // Pure-text chat: auto-confirm. The LLM can't actually
+            // write files, so the gate is moot — the LLM will hit
+            // `blocked: requires_filesystem_write_capability` before
+            // reaching any real gated state anyway.
+            run.advanceWithConfirmation(block.onEvent);
+            console.log(`  OK   ${label} — advance on "${block.onEvent}" → ${run.currentState} (auto-confirmed: pure-text chat, gate moot)`);
+            passCount++;
+          } else if (adapter === "chat-sandbox") {
+            // Chat-sandbox: the LLM CAN actually write files (per
+            // ADR-0020). The safety gate is a REAL authorization
+            // boundary. Check authorization.
+            if (hasExplicitConfirm) {
+              // Explicit aiecp:confirm block present — authorized.
+              run.advanceWithConfirmation(block.onEvent);
+              console.log(`  OK   ${label} — advance on "${block.onEvent}" → ${run.currentState} (authorized: explicit aiecp:confirm block)`);
+              passCount++;
+            } else if (promptAuthorized) {
+              // User's prompt contains authorization keywords.
+              run.advanceWithConfirmation(block.onEvent);
+              console.log(`  OK   ${label} — advance on "${block.onEvent}" → ${run.currentState} (authorized: user prompt contains authorization keyword)`);
+              passCount++;
+            } else {
+              // NOT authorized. The chat-sandbox LLM tried to do
+              // something the user didn't authorize. FAIL.
+              console.log(`  FAIL ${label} — safety gate NOT authorized for chat-sandbox`);
+              console.log(`       The chat-sandbox adapter can actually write files (per ADR-0020).`);
+              console.log(`       The safety gate is a real authorization boundary.`);
+              console.log(`       To authorize: (a) add aiecp:confirm block before this advance, OR`);
+              console.log(`       (b) pass --user-prompt <file> with the user's original prompt`);
+              console.log(`       containing authorization keywords (fix, düzelt, apply, uygula, etc.).`);
+              failCount++;
+              violations.push({
+                block: block.index,
+                kind: block.kind,
+                error: `safety-gate-not-authorized: chat-sandbox adapter requires explicit authorization (aiecp:confirm or --user-prompt with authorization keyword)`,
+              });
+            }
+          }
+        } else if (e instanceof WorkflowViolation && e.kind === "already-terminal") {
+          // Chat LLM tried to advance past the terminal state —
+          // this is the "extra block" bug found in the 4th ChatGPT test.
+          console.log(`  FAIL ${label} — already-terminal: workflow is in "${run.currentState}" (terminal), cannot advance further`);
+          failCount++;
+          violations.push({
+            block: block.index,
+            kind: block.kind,
+            error: `already-terminal: workflow reached "${run.currentState}" and cannot advance on "${block.onEvent}"`,
+          });
         } else if (e instanceof WorkflowViolation) {
           console.log(`  FAIL ${label} — ${e.kind}: ${e.message}`);
           failCount++;
@@ -323,6 +488,7 @@ for (const block of blocks) {
 console.log("");
 console.log("=== Summary ===");
 console.log(`Blocks:    ${passCount} OK / ${failCount} FAIL (of ${blocks.length} total)`);
+console.log(`Adapter:   ${adapter}`);
 console.log(`Workflow:  ${workflowName}`);
 console.log(`Final state: ${run.currentState}`);
 console.log(`Terminal:  ${run.isTerminal() ? "YES ✓" : "NO ✗"}`);
@@ -368,8 +534,6 @@ console.log("");
 console.log(`=== VERDICT: ${verdict ? "PASS ✓" : "FAIL ✗"} ===`);
 if (!reachedTerminal) {
   console.log(`  Reason: workflow did not reach a terminal state (currently at "${run.currentState}").`);
-  console.log(`  The chat LLM's response either emitted an incomplete evidence chain,`);
-  console.log(`  or stopped emitting aiecp:advance blocks before reaching report/blocked.`);
 }
 if (!noViolations) {
   console.log(`  Reason: ${violations.length} violation(s) — see above.`);
@@ -378,6 +542,9 @@ if (verdict) {
   console.log(`  The chat LLM's response drove the ${workflowName} workflow from`);
   console.log(`  ${def.initial_state} to ${run.currentState}, emitting ${passCount} valid`);
   console.log(`  aiecp:* blocks, all schema-valid, with no question-economy violations.`);
+  if (adapter === "chat-sandbox") {
+    console.log(`  Safety gate authorization: ${hasExplicitConfirm ? "explicit aiecp:confirm" : (promptAuthorized ? "user-prompt keyword" : "N/A (no gated transitions)")}.`);
+  }
 }
 
 process.exit(verdict ? 0 : 1);
