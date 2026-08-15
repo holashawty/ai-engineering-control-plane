@@ -1,0 +1,326 @@
+# Bug-report workflow eval scenarios (3 minimum per evaluation-strategy.md)
+# Each scenario drives the real WorkflowRun API and checks expected outcomes.
+
+- id: bug-report-happy-path
+  workflow: bug-report
+  tier: workflow
+  description: "Happy path: full bug-report workflow from intake to report with all evidence emitted"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: incident
+      data:
+        id: incident-eval-1
+        observed_at: "2026-08-15T10:00:00Z"
+        environment_fingerprint_ref: env-fp-eval-1
+        expected_ref: expected-eval-1
+        actual_ref: actual-eval-1
+        severity: medium
+        status: open
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-locate-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-grep
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-grep
+        trace_ref: trace-eval-locate-1
+        ts: "2026-08-15T10:00:35Z"
+        kind: observation
+        source: "grep"
+        payload:
+          finding: "found bug at line 47"
+    - action: advance
+      on: evidence_located
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-repro-1
+        started_at: "2026-08-15T10:01:00Z"
+        event_refs:
+          - event-eval-pytest-before
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-pytest-before
+        trace_ref: trace-eval-repro-1
+        ts: "2026-08-15T10:01:10Z"
+        kind: test_result
+        source: "pytest"
+        payload:
+          result: "2 failed, 5 passed"
+    - action: advance
+      on: reproduction_ready
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-root-cause-1
+        trace_ref: trace-eval-repro-1
+        what: "root_cause_candidate:off_by_one"
+        why: "boundary check uses > instead of >="
+        validated: true
+        root_cause: true
+        result: accepted
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-1
+        source_ref: "docstring"
+        predicate: "function should return 15.0 at boundary"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-1
+        expected_ref: expected-eval-1
+        observed_value: "returned 8.0"
+        observation_ref: event-eval-pytest-before
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-diagnose-1
+        expected_ref: expected-eval-1
+        actual_ref: actual-eval-1
+        result: mismatch
+        method: app_validation
+    - action: advance
+      on: root_cause_found
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-propose-fix-1
+        trace_ref: trace-eval-repro-1
+        what: "ai_proposal:change_gt_to_gte"
+        why: "minimal fix"
+        validated: false
+        result: pending
+    - action: advance
+      on: fix_approved
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-apply-fix-1
+        trace_ref: trace-eval-repro-1
+        what: "ai_proposal:apply_patch"
+        why: "changed > to >="
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-file-change-1
+        trace_ref: trace-eval-repro-1
+        ts: "2026-08-15T10:02:00Z"
+        kind: file_change
+        source: "shipping.py"
+        payload:
+          before: ">"
+          after: ">="
+    - action: advance
+      on: fix_applied
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-after-fix-1
+        expected_ref: expected-eval-1
+        observed_value: "returned 15.0"
+        observation_ref: event-eval-pytest-before
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-verify-1
+        expected_ref: expected-eval-1
+        actual_ref: actual-eval-after-fix-1
+        result: match
+        method: app_validation
+    - action: advance
+      on: behavior_verified
+    - action: writeMemory
+      type: known-failure
+      data:
+        id: mem-known-failure-eval-1
+        type: known-failure
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:03:00Z"
+        source: eval-run-1
+        incident_ref: incident-eval-1
+        symptom: "boundary bug"
+        root_cause: "> instead of >="
+        fix: "changed to >="
+    - action: advance
+      on: regression_added
+    - action: emitEvidence
+      kind: replay
+      data:
+        id: replay-eval-1
+        original_trace_ref: trace-eval-repro-1
+        result: matches_expected
+        environment_fingerprint_ref: env-fp-eval-1
+    - action: advance
+      on: replay_matches
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    evidence_kinds: ["incident", "trace", "event", "decision", "expected", "actual", "validation", "replay"]
+    memory_types: ["known-failure"]
+    evidence_on_disk: true
+    min_log_entries: 10
+
+- id: bug-report-question-economy-exceeded
+  workflow: bug-report
+  tier: workflow
+  description: "Question economy: second question in classify should be rejected"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: askQuestion
+      text: "First question — allowed."
+    - action: expectViolation
+      violationAction: askQuestion
+      text: "Second question — should be rejected."
+      expectedKind: question-economy-exceeded
+  expected:
+    terminal_state: classify
+    is_terminal: false
+    max_questions: 1
+    no_errors: true
+
+- id: bug-report-wrong-state-question
+  workflow: bug-report
+  tier: workflow
+  description: "Question economy: question in intake (wrong state) should be rejected"
+  steps:
+    - action: expectViolation
+      violationAction: askQuestion
+      text: "Asked too early."
+      expectedKind: question-economy-wrong-state
+  expected:
+    terminal_state: intake
+    is_terminal: false
+    no_errors: true
+
+- id: bug-report-safety-gate-blocks
+  workflow: bug-report
+  tier: workflow
+  description: "Safety gate: unconfirmed advance from propose-fix should be blocked"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-gate-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs: []
+    - action: advance
+      on: evidence_located
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-gate-2
+        started_at: "2026-08-15T10:01:00Z"
+        event_refs: []
+    - action: advance
+      on: reproduction_ready
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-gate-1
+        trace_ref: trace-eval-gate-2
+        what: "root_cause_candidate:test"
+        why: "test"
+        validated: true
+        root_cause: true
+        result: accepted
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-gate-1
+        source_ref: "test"
+        predicate: "test"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-gate-1
+        expected_ref: expected-eval-gate-1
+        observed_value: "test"
+        observation_ref: event-eval-gate-1
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-gate-1
+        trace_ref: trace-eval-gate-2
+        ts: "2026-08-15T10:01:10Z"
+        kind: test_result
+        source: "test"
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-gate-1
+        expected_ref: expected-eval-gate-1
+        actual_ref: actual-eval-gate-1
+        result: mismatch
+        method: app_validation
+    - action: advance
+      on: root_cause_found
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-gate-propose-1
+        trace_ref: trace-eval-gate-2
+        what: "ai_proposal:test"
+        why: "test"
+        validated: false
+        result: pending
+    - action: expectViolation
+      violationAction: advance
+      on: fix_approved
+      expectedKind: safety-gate-needs-confirmation
+  expected:
+    terminal_state: propose-fix
+    is_terminal: false
+    no_errors: true
+
+- id: bug-report-blocked-cannot-reproduce
+  workflow: bug-report
+  tier: workflow
+  description: "Failure mode: cannot reproduce → blocked terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: incident
+      data:
+        id: incident-eval-blocked-1
+        observed_at: "2026-08-15T10:00:00Z"
+        environment_fingerprint_ref: env-fp-eval-blocked-1
+        expected_ref: expected-eval-blocked-1
+        actual_ref: actual-eval-blocked-1
+        severity: low
+        status: open
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-blocked-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs: []
+    - action: advance
+      on: evidence_located
+    - action: advance
+      on: cannot_reproduce
+  expected:
+    terminal_state: blocked
+    is_terminal: true
+    no_errors: true

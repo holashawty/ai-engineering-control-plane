@@ -1,0 +1,139 @@
+# Code-review workflow eval scenarios (3 minimum)
+
+- id: code-review-happy-path
+  workflow: code-review
+  tier: workflow
+  description: "Happy path: full code-review workflow with clean review"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-cr-classify-1
+        trace_ref: trace-eval-cr-1
+        what: "acceptance:proceed"
+        why: "diff is reviewable"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-cr-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs:
+          - event-eval-cr-diff
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-cr-diff
+        trace_ref: trace-eval-cr-1
+        ts: "2026-08-15T10:00:05Z"
+        kind: observation
+        source: "git diff"
+        payload:
+          finding: "diff adds 10 lines, removes 2"
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-cr-understand-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-cr-source-read
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-cr-source-read
+        trace_ref: trace-eval-cr-understand-1
+        ts: "2026-08-15T10:00:35Z"
+        kind: observation
+        source: "src/api/items.ts"
+        payload:
+          finding: "endpoint adds tag filtering"
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-cr-baseline-1
+        source_ref: "specs/spec.md#items-endpoint"
+        predicate: "GET /items returns 200 with JSON array"
+    - action: advance
+      on: change_mapped
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-cr-assess-1
+        trace_ref: trace-eval-cr-understand-1
+        what: "assessment:clean"
+        why: "diff is correct, tests cover the change"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-cr-new-1
+        source_ref: "specs/spec.md#tag-filter"
+        predicate: "tag filtering is additive (AND)"
+    - action: advance
+      on: assessment_complete
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-cr-review-1
+        expected_ref: expected-eval-cr-new-1
+        observed_value: "implementation matches spec"
+        observation_ref: event-eval-cr-source-read
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-cr-review-1
+        expected_ref: expected-eval-cr-new-1
+        actual_ref: actual-eval-cr-review-1
+        result: match
+        method: manual_review
+    - action: advance
+      on: review_complete
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    evidence_kinds: ["decision", "trace", "event", "expected", "actual", "validation"]
+    min_log_entries: 5
+
+- id: code-review-no-safety-gate
+  workflow: code-review
+  tier: workflow
+  description: "Code-review has NO safety gate — no gate-check log entries"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: advance
+      on: class_known
+    - action: advance
+      on: change_mapped
+    - action: advance
+      on: assessment_complete
+    - action: advance
+      on: review_complete
+  expected:
+    terminal_state: report
+    is_terminal: true
+    no_errors: true
+
+- id: code-review-blocked-binary-diff
+  workflow: code-review
+  tier: workflow
+  description: "Failure mode: binary diff cannot be reviewed → blocked"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: advance
+      on: class_known
+    - action: advance
+      on: change_unknowable
+  expected:
+    terminal_state: blocked
+    is_terminal: true
+    no_errors: true

@@ -1,0 +1,184 @@
+# Feature-request workflow eval scenarios (3 minimum)
+
+- id: feature-request-happy-path
+  workflow: feature-request
+  tier: workflow
+  description: "Happy path: full feature-request from intake to report"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-fr-classify-1
+        trace_ref: trace-eval-fr-1
+        what: "acceptance:proceed"
+        why: "new capability request"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-fr-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-fr-understand-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-fr-existing
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-fr-existing
+        trace_ref: trace-eval-fr-understand-1
+        ts: "2026-08-15T10:00:35Z"
+        kind: observation
+        source: "src/api/items.ts"
+        payload:
+          finding: "endpoint exists, no tag filtering"
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-fr-baseline-1
+        source_ref: "specs/spec.md#items"
+        predicate: "GET /items returns 200 with JSON array"
+    - action: advance
+      on: existing_behavior_mapped
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-fr-design-1
+        trace_ref: trace-eval-fr-understand-1
+        what: "design:add_tag_filtering"
+        why: "additive filtering via query param"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-fr-new-1
+        source_ref: "specs/spec.md#tag-filter"
+        predicate: "tag filtering returns items with BOTH tags"
+    - action: advance
+      on: design_approved
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-fr-implement-1
+        trace_ref: trace-eval-fr-understand-1
+        what: "ai_proposal:apply_patch"
+        why: "add tag query param parsing"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-fr-file-change-1
+        trace_ref: trace-eval-fr-understand-1
+        ts: "2026-08-15T10:01:00Z"
+        kind: file_change
+        source: "src/api/items.ts"
+        payload:
+          change: "added tag parsing"
+    - action: advance
+      on: implementation_complete
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-fr-test-1
+        started_at: "2026-08-15T10:01:30Z"
+        event_refs:
+          - event-eval-fr-test-result
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-fr-test-result
+        trace_ref: trace-eval-fr-test-1
+        ts: "2026-08-15T10:01:35Z"
+        kind: test_result
+        source: "npm test"
+        payload:
+          result: "15 passed"
+    - action: advance
+      on: tests_pass
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-fr-verify-1
+        expected_ref: expected-eval-fr-new-1
+        observed_value: "tag filtering works correctly"
+        observation_ref: event-eval-fr-test-result
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-fr-verify-1
+        expected_ref: expected-eval-fr-new-1
+        actual_ref: actual-eval-fr-verify-1
+        result: match
+        method: app_validation
+    - action: advance
+      on: behavior_verified
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-fr-doc-change-1
+        trace_ref: trace-eval-fr-understand-1
+        ts: "2026-08-15T10:02:00Z"
+        kind: file_change
+        source: "docs/api.md"
+        payload:
+          change: "added tag filtering section"
+    - action: advance
+      on: documentation_complete
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    evidence_kinds: ["decision", "trace", "event", "expected", "actual", "validation"]
+    min_log_entries: 8
+
+- id: feature-request-safety-gate-blocks
+  workflow: feature-request
+  tier: workflow
+  description: "Safety gate: unconfirmed advance from implement should be blocked"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: advance
+      on: class_known
+    - action: advance
+      on: existing_behavior_mapped
+    - action: advance
+      on: design_approved
+    - action: expectViolation
+      violationAction: advance
+      on: implementation_complete
+      expectedKind: safety-gate-needs-confirmation
+  expected:
+    terminal_state: implement
+    is_terminal: false
+    no_errors: true
+
+- id: feature-request-blocked-design-infeasible
+  workflow: feature-request
+  tier: workflow
+  description: "Failure mode: design infeasible → blocked"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: advance
+      on: class_known
+    - action: advance
+      on: existing_behavior_mapped
+    - action: advance
+      on: design_infeasible
+  expected:
+    terminal_state: blocked
+    is_terminal: true
+    no_errors: true

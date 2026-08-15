@@ -26,6 +26,7 @@
     "validate:feature-request": "node scripts/validate-feature-request.mjs",
     "validate:chat-output": "node scripts/validate-chat-output.mjs",
     "chat-harness": "node scripts/chat-harness.mjs",
+    "eval": "python3 evaluations/eval_runner.py",
     "sync-entrypoints": "node adapters/agents/dist/bin/write-entrypoints.js . .",
     "e2e:user-complaint-demo": "node executor/examples/e2e-user-complaint/drive-run.mjs",
     "e2e:security-problem-demo": "node executor/examples/e2e-security-problem/drive-run.mjs",

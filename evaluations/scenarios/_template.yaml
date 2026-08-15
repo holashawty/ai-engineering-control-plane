@@ -1,0 +1,42 @@
+# Eval scenario template
+# Each YAML file in scenarios/ can contain one scenario (dict) or
+# multiple (list). Each scenario has:
+#
+# - id: unique identifier
+# - workflow: which workflow to test (e.g., "bug-report")
+# - tier: "skill" | "workflow" | "compatibility"
+# - description: what this scenario tests
+# - steps: ordered list of actions to drive the WorkflowRun API
+#   - action: "emitEvidence" | "writeMemory" | "advance" | "askQuestion" | "expectViolation"
+#   - (for emitEvidence): kind, data
+#   - (for writeMemory): type, data
+#   - (for advance): on (event name)
+#   - (for askQuestion): text
+#   - (for expectViolation): violationAction, on/text, expectedKind
+# - expected: expected outcomes
+#   - terminal_state: e.g., "report" or "blocked"
+#   - is_terminal: true/false (default true)
+#   - max_questions: int
+#   - no_errors: true (default)
+#   - evidence_kinds: list of expected evidence kinds emitted
+#   - memory_types: list of expected memory types written
+#   - evidence_on_disk: true if evidence should be persisted
+#   - min_log_entries: int
+#   - expected_violation: string (if a specific violation is expected)
+
+- id: template-example
+  workflow: bug-report
+  tier: workflow
+  description: "Template scenario — copy this and fill in your values"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: advance
+      on: class_known
+    # ... more steps
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5
