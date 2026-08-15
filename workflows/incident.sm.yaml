@@ -1,0 +1,291 @@
+workflow: incident
+schema_version: "1.0.0"
+description: >
+  Triggered by a production alert, on-call page, or live-outage
+  report. Distinct from `bug-report` (a defect that may or may not
+  be in production) and from `security-problem` (a vulnerability
+  that may or may not be currently exploited): `incident` is the
+  workflow for *a system that is currently failing in production*
+  — users are being affected right now, the on-call has been
+  paged, and the priority is mitigation FIRST, root-cause SECOND,
+  postmortem THIRD. The workflow's job is to (a) assess impact
+  (severity, blast radius, affected users, SLO breach) under
+  time pressure, (b) triage (identify the proximate trigger — a
+  deploy, a config flip, a traffic spike, a dependency outage),
+  (c) mitigate (roll back, scale out, fail over, block the
+  triggering traffic, disable the buggy feature flag), (d) verify
+  the mitigation (SLO recovering, alerts clearing), (e) write
+  the postmortem (root cause, contributing factors, action
+  items), and (f) report. The `broad-refactor` safety gate fires
+  at `mitigate` (production changes are sensitive — a wrong
+  rollback can lose committed data, a wrong fail-over can split-
+  brain a stateful service). The question economy is 2 (classify
+  + assess-impact) because incidents are inherently ambiguous at
+  two points: what kind of incident is it, and how bad is it.
+
+states:
+  - intake
+  - classify
+  - assess-impact
+  - triage
+  - mitigate
+  - verify-mitigation
+  - postmortem
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: assess-impact, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_two_questions }
+  - { from: assess-impact, to: triage, on: impact_assessed }
+  - { from: assess-impact, to: blocked, on: impact_below_sev_threshold }
+  - { from: triage, to: mitigate, on: proximate_trigger_identified }
+  - { from: triage, to: blocked, on: trigger_unidentifiable }
+  - { from: mitigate, to: verify-mitigation, on: mitigation_applied }
+  - { from: mitigate, to: blocked, on: mitigation_blocked }
+  # Chat-LLM capability transition: a chat-only agent (no
+  # shell_exec, no filesystem_write) cannot run a rollback,
+  # scale-out, fail-over, or feature-flag flip in production.
+  # Per constitution §3 + §8, transitions to blocked rather
+  # than fabricating the mitigation. This is the chat-adapter
+  # case from CHAT-ENTRYPOINT.md — the run hands the prepared
+  # mitigation plan back to the on-call, who can drive the
+  # remaining steps via a tool-using agent or directly via the
+  # production console.
+  - { from: mitigate, to: blocked, on: requires_production_write_capability }
+  - { from: verify-mitigation, to: postmortem, on: mitigation_verified }
+  - { from: verify-mitigation, to: triage, on: mitigation_insufficient }
+  - { from: postmortem, to: report, on: postmortem_complete }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the incident report verbatim — including the alert
+      source (PagerDuty, Opsgenie, a customer-facing monitor, a
+      human report), the alert's firing time, the affected service
+      (per the alert's tags), and the on-call's initial read on
+      severity. Do not ask clarifying questions here — that
+      belongs in `classify` and `assess-impact` (per
+      question_economy below). Structurally, the most important
+      classification made here is: is this *actually* an incident
+      (production is currently failing) or is it a `bug-report`
+      (a defect that may not be in production)? The acid test: are
+      users being affected RIGHT NOW? If yes → incident. If no
+      (the defect exists but is not yet deployed, or is deployed
+      but not yet triggered) → `bug-report`.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine the incident class (deployment regression, config
+      flip, traffic spike, dependency outage, infrastructure
+      failure, data corruption, security incident refiled as
+      outage, cascading failure) using Project Intelligence plus
+      the alert text. May ask at most ONE necessary, specific,
+      decision-changing question — typically "was there a
+      recent deploy in the affected service's window?" (the
+      answer routes `triage` to look at deploy logs vs.
+      infrastructure metrics). The `Decision` emitted here is
+      the acceptance decision (proceed as incident / reject —
+      e.g. the alert fired from a synthetic check that itself
+      was misconfigured; reroute to bug-report against the
+      synthetic check, not incident against the service).
+    emits_evidence: [incident]
+    reads_memory: [project, known-failure]
+
+  assess-impact:
+    purpose: >
+      Score the incident's impact on production users, under time
+      pressure. Emit a `Decision` recording:
+      (a) severity (SEV1: total outage / SEV2: partial outage or
+      data loss / SEV3: degraded / SEV4: cosmetic);
+      (b) blast radius (which endpoints, which user segments,
+      which regions);
+      (c) affected-user estimate (current error rate × current
+      QPS × time-since-start);
+      (d) SLO breach status (which SLOs are currently burning
+      budget, and how much budget remains);
+      (e) customer-facing impact (is the status page already
+      updated? are customers tweeting?).
+      May ask at most ONE necessary, specific, decision-changing
+      question — typically "is the affected service tier-1
+      (revenue-critical) or tier-2 (important but not revenue-
+      blocking)?" (the answer determines the mitigation budget:
+      tier-1 incidents justify aggressive rollback; tier-2 may
+      tolerate a slower but safer mitigation path). If the
+      impact is below the project's declared sev-threshold
+      (e.g., SEV4 cosmetic issues don't trigger the full
+      incident workflow), transition to `blocked` with `on:
+      impact_below_sev_threshold` and a recommendation to
+      reroute to `bug-report`.
+    emits_evidence: [decision]
+    reads_memory: [environment]
+
+  triage:
+    purpose: >
+      Identify the proximate trigger — the most recent change
+      that correlates with the incident's start time. Emit a
+      `Trace` of `Event`s capturing: deploy logs in the affected
+      service's window (`git log --since='2 hours ago'`, CI/CD
+      pipeline runs), config flips (feature flag toggles, config
+      rollouts), traffic patterns (QPS before vs. during, error
+      rate by endpoint), dependency health (third-party status
+      pages, internal service dependencies). The triage
+      conclusion is a `Decision` naming the proximate trigger
+      with `evidence_refs` pointing at the specific `Event`s
+      that justify the attribution. Per `systematic-debugging`
+      Phase 1, the triage is tool-driven — read the actual
+      deploy logs and metrics, do not assert from memory.
+      If the trigger cannot be identified within a reasonable
+      window (the incident's blast radius is too noisy to
+      attribute to a single change), transition to `blocked`
+      with `on: trigger_unidentifiable` and a precise gap.
+      Note: `blocked` here does NOT mean the incident is over
+      — it means the workflow cannot mitigate without a triage
+      conclusion, and the on-call must intervene manually (the
+      blocked state's report explicitly says this).
+    emits_evidence: [trace, event, decision]
+    reads_memory: [known-failure, environment]
+
+  mitigate:
+    purpose: >
+      Apply a mitigation — NOT a fix. The distinction is
+      structural: a *fix* addresses the root cause (which may
+      require a deploy and won't help right now); a *mitigation*
+      stops the bleeding (rollback the deploy, scale out,
+      fail-over, block the triggering traffic, disable the
+      buggy feature flag). The postmortem (next state) addresses
+      the root cause; this state addresses the user impact.
+      Emit a `Decision` recording the chosen mitigation and the
+      alternatives considered (rollback vs. scale-out vs.
+      fail-over — each has tradeoffs the on-call must weigh
+      under time pressure). The `broad-refactor` safety gate
+      fires here (production changes are sensitive — a wrong
+      rollback can lose committed data, a wrong fail-over can
+      split-brain a stateful service). Per the AI-output
+      validation pattern, the mitigation `Decision.validated`
+      stays `false` until `verify-mitigation` confirms SLO
+      recovery.
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold; production changes are sensitive — a wrong rollback can lose committed data, a wrong fail-over can split-brain a stateful service)
+
+  verify-mitigation:
+    purpose: >
+      Behavioral verification per ADR-0010 — a green test suite
+      is irrelevant in production (tests don't run in prod). The
+      verification here is: did SLOs recover? Did alerts clear?
+      Did the error rate drop? Emit a `Trace` with `Event`s
+      capturing the SLO-recovery metrics (error rate before vs.
+      after mitigation, latency p50/p95/p99, queue depth), and
+      a `Validation` with `method: "app_validation"` (the
+      validation is the production system's own behavior, not
+      a test suite). If the mitigation didn't recover the SLOs
+      (or only partially recovered), transition back to `triage`
+      with `on: mitigation_insufficient` rather than proceeding
+      to `postmortem` — the postmortem is for RESOLVED
+      incidents, not for incidents still bleeding.
+    emits_evidence: [trace, event, actual, validation]
+
+  postmortem:
+    purpose: >
+      Write the postmortem: root cause (the underlying defect
+      or configuration that the proximate trigger exposed),
+      contributing factors (the systemic conditions that made
+      the trigger possible — missing alerting, insufficient
+      rollback automation, a deploy process that bypassed
+      canary), timeline (alert fired → ack → triage → mitigate
+      → recovered, with timestamps), and action items (each
+      with an owner, a due date, and a severity). Emit a
+      `Decision` recording the root cause and contributing
+      factors (with `evidence_refs` to the triage `Trace` and
+      the verify-mitigation `Trace`), and an `Event` recording
+      the postmortem document's location (per the project's
+      postmortem convention — typically `docs/postmortems/
+      YYYY-MM-DD-<slug>.md`). The postmortem is blameless:
+      it identifies systemic gaps, not individual mistakes.
+    emits_evidence: [decision, event]
+
+  report:
+    purpose: >
+      Summarize the incident: severity, blast radius, proximate
+      trigger, mitigation, root cause, action items, and the
+      postmortem document location. Must include the Decision
+      Trace (docs/architecture.md), not just "resolved." Writes
+      a `known-failure` memory entry (referencing the Incident
+      id emitted at `classify`) so a future regression of the
+      same symptom is recognized as a regression (per the
+      `regression` workflow), AND writes a `project` memory
+      entry recording the incident occurrence and resolution
+      for the project's incident history. The `known-failure`
+      symptom should be the *production-observed symptom* (the
+      alert that fired), not the root cause — so a future
+      regression is detected by alert, not by code structure.
+    writes_memory: [known-failure, project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous
+      after two questions (`classify`), impact below sev-
+      threshold (`assess-impact` — reroute to bug-report),
+      trigger unidentifiable (`triage` — the on-call must
+      intervene manually; the blocked state's report explicitly
+      says this, because the incident is NOT over), mitigation
+      blocked (`mitigate` — the chosen mitigation failed to
+      apply, e.g. rollback failed because no previous good
+      version is available), `requires_production_write_
+      capability` for chat LLMs without `shell_exec`/
+      `filesystem_write`, or `mitigation_insufficient` after
+      multiple triage→mitigate cycles (escalation needed).
+      The `trigger_unidentifiable` case is especially important:
+      a blocked triage does NOT mean the incident is resolved;
+      it means the workflow cannot mitigate automatically, and
+      the on-call must intervene. The blocked state's report
+      makes this explicit ("the workflow cannot identify the
+      proximate trigger; the on-call should declare a major
+      incident and convene a bridge").
+
+skills_required:
+  - systematic-debugging
+  - evidence-engineering
+  - behavioral-verification
+  - tool-use-discipline  # ADR-0019 — mandatory: triage reads actual deploy logs and metrics, never asserts from memory
+  - recency-verification  # ADR-0019 — the production deploy log and the third-party status page are time-sensitive
+  - quality-gate  # ADR-0019 — runs after mitigate, before verify-mitigation (the mitigation change must pass the project's own quality bar before being verified in prod)
+  # The incident skill itself (skills/incident/SKILL.md) drives
+  # the assess-impact, triage, mitigate, verify-mitigation, and
+  # postmortem states. It is the dedicated skill authored
+  # alongside this workflow; per the convention, it is not
+  # duplicated in skills_required.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: mitigate
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, assess-impact]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and
+    `assess-impact` (up to 1), totaling 2 across the workflow.
+    Each must be necessary, specific, and decision-changing —
+    see docs/workflow-model.md "Question economy." The budget
+    matches `change-request`'s 2 and `security-problem`'s 2
+    because incidents are inherently ambiguous at two distinct
+    points: the class (was there a recent deploy?) and the
+    impact (tier-1 vs. tier-2 — which determines the mitigation
+    budget). The budget is bounded, not unlimited — questions
+    about mitigation implementation details ("should I roll
+    back to v1.3.2 or v1.3.1?") are never permitted under this
+    budget; they belong to the mitigate state's design, not to
+    question-asking.

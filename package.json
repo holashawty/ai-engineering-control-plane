@@ -2,7 +2,7 @@
   "name": "aiecp",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Engineering Control Plane — root orchestrator. Ties discovery/cli, executor, and adapters/agents into one install/build/test flow. See STATUS.md for current phase.",
+  "description": "AI Engineering Control Plane \u2014 root orchestrator. Ties discovery/cli, executor, and adapters/agents into one install/build/test flow. See STATUS.md for current phase.",
   "license": "MIT",
   "workspaces": [
     "discovery/cli",
@@ -26,6 +26,12 @@
     "validate:feature-request": "node scripts/validate-feature-request.mjs",
     "validate:chat-output": "node scripts/validate-chat-output.mjs",
     "chat-harness": "node scripts/chat-harness.mjs",
-    "sync-entrypoints": "node adapters/agents/dist/bin/write-entrypoints.js . ."
+    "sync-entrypoints": "node adapters/agents/dist/bin/write-entrypoints.js . .",
+    "e2e:user-complaint-demo": "node executor/examples/e2e-user-complaint/drive-run.mjs",
+    "e2e:security-problem-demo": "node executor/examples/e2e-security-problem/drive-run.mjs",
+    "e2e:release-demo": "node executor/examples/e2e-release/drive-run.mjs",
+    "e2e:incident-demo": "node executor/examples/e2e-incident/drive-run.mjs",
+    "e2e:unknown-failure-demo": "node executor/examples/e2e-unknown-failure/drive-run.mjs",
+    "e2e:discovery-refresh-demo": "node executor/examples/e2e-discovery-refresh/drive-run.mjs"
   }
 }

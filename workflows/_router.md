@@ -42,15 +42,15 @@ target routing for post-MVP workflows and are not yet backed by an
 | No `.aiecp/project-intelligence.json` present in repo | `project-onboarding` | **MVP — implemented** |
 | "add a feature", "I want users to be able to...", new capability request | `feature-request` | **MVP — implemented** |
 | "change how X works", modify existing behavior without it being broken | `change-request` | **MVP — implemented** |
-| User reports a UI/API bug filed by someone else against them | `user-complaint` | Planned |
+| User reports a UI/API bug filed by someone else against them | `user-complaint` | **MVP — implemented** |
 | A `known-failure` memory entry's symptom recurs | `regression` | **MVP — implemented** |
 | "clean up", "refactor", "simplify", no behavior change intended | `refactor` | **MVP — implemented** |
 | "review this PR/diff" | `code-review` | **MVP — implemented** |
 | "it's slow", latency/throughput complaint | `performance-problem` | **MVP — implemented** |
-| Vulnerability report, suspicious access pattern | `security-problem` | Planned |
-| "ship this", "cut a release" | `release` | Planned |
-| Production alert, on-call page | `incident` | Planned |
-| Intent doesn't match any row above with confidence | `unknown-failure` | Fallback — must triage into another workflow or refuse safely |
+| Vulnerability report, suspicious access pattern | `security-problem` | **MVP — implemented** |
+| "ship this", "cut a release" | `release` | **MVP — implemented** |
+| Production alert, on-call page | `incident` | **MVP — implemented** |
+| Intent doesn't match any row above with confidence | `unknown-failure` | **MVP — implemented** (fallback) — must triage into another workflow or refuse safely |
 
 ## Classification method (MVP)
 

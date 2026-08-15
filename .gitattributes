@@ -1,0 +1,18 @@
+# Auto-detect text files and normalize line endings
+* text=auto eol=lf
+
+# Force LF for all source files (prevents CRLF from Windows builds)
+*.ts eol=lf
+*.js eol=lf
+*.mjs eol=lf
+*.json eol=lf
+*.yaml eol=lf
+*.yml eol=lf
+*.md eol=lf
+*.py eol=lf
+*.sh eol=lf
+
+# Binary files (don't touch)
+*.png binary
+*.jpg binary
+*.pdf binary

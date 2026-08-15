@@ -1,0 +1,304 @@
+workflow: user-complaint
+schema_version: "1.0.0"
+description: >
+  Triggered when a user reports a UI/API bug filed by someone else
+  against them — i.e., the engineer driving the workflow is on the
+  receiving end of an external complaint (an inter-team ticket, a
+  customer-filed defect, a QA-filed regression, a security-review
+  finding routed as "broken UI"), not the original reporter of the
+  symptom. Distinct from `bug-report.sm.yaml`, where the user notices
+  their own system misbehaving and drives the diagnosis themselves:
+  in `user-complaint`, the symptom was first observed by a third
+  party, the report may be incomplete or mis-stated, and the
+  engineer's first job is to *understand* the complaint (translate
+  "the login page is broken" into a structured Expected + Actual
+  pair drawn from the reporter's own words) before investigating
+  whether the reported behavior is real and whether the implied
+  contract is actually the contract the code is supposed to honor.
+  This is also why `understand-complaint` is a separate state from
+  `locate-evidence`: the engineer reads the complaint itself
+  (translated into evidence) before reading the codebase, whereas
+  `bug-report` reads the codebase first to find evidence the user
+  hasn't yet cited. Pairs with `bug-report` and `change-request` as
+  the reactive triad: `bug-report` is self-reported (the user
+  discovered it), `change-request` is planned (the user wants new
+  behavior), and `user-complaint` is reactive-to-external (someone
+  else surfaced it and the user must now triage and respond).
+
+states:
+  - intake
+  - classify
+  - understand-complaint
+  - investigate
+  - diagnose
+  - propose-fix
+  - apply-fix
+  - verify
+  - regression-protect
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: understand-complaint, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: understand-complaint, to: investigate, on: complaint_understood }
+  - { from: understand-complaint, to: blocked, on: complaint_unintelligible }
+  - { from: investigate, to: diagnose, on: evidence_located }
+  - { from: investigate, to: blocked, on: no_evidence_found }
+  # Investigate may also conclude the complaint is invalid (the
+  # reported behavior is actually correct, or the contract the
+  # reporter cited is not the contract the system promises). In
+  # that case the workflow does NOT proceed to diagnose — there is
+  # no defect to root-cause. The right move is to surface the
+  # invalid complaint to blocked with a precise gap, so the user
+  # can respond to the reporter with the actual contract.
+  - { from: investigate, to: blocked, on: complaint_invalid_per_contract }
+  - { from: diagnose, to: propose-fix, on: root_cause_found }
+  - { from: diagnose, to: investigate, on: root_cause_invalid }
+  - { from: propose-fix, to: apply-fix, on: fix_approved }
+  - { from: apply-fix, to: verify, on: fix_applied }
+  # Chat-LLM capability transition: an agent without filesystem_write
+  # cannot apply fixes. Per constitution §3 ("autonomy is bounded,
+  # not implicit") and §8 (tool use mandatory, honest fallback to
+  # blocked), such an agent transitions to blocked rather than
+  # pretending to apply the fix.
+  - { from: apply-fix, to: blocked, on: requires_filesystem_write_capability }
+  - { from: verify, to: regression-protect, on: behavior_verified }
+  - { from: verify, to: diagnose, on: behavior_not_verified }
+  - { from: regression-protect, to: report, on: regression_added }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's complaint report verbatim — including the
+      external ticket reference (URL, ticket ID, channel), the
+      reporter's stated reproduction steps, and any artifacts
+      (screenshots, request/response pairs, log snippets) attached
+      to the original complaint. Do not ask clarifying questions
+      here — that belongs in `classify` (per question_economy
+      below). Structurally, the most important classification made
+      here is: is this *actually* a complaint about the engineer's
+      system, or did the reporter file it against the wrong service?
+      If the latter (the reporter named a service the engineer
+      doesn't own), route to the appropriate team / mark as
+      mis-routed rather than running the full workflow. The acid
+      test: does the report name a surface (endpoint, UI route,
+      CLI command, error message) that the engineer's repo
+      actually owns?
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine complaint class (UI behavior mismatch, API contract
+      dispute, latency complaint refiled as a bug, regression
+      perceived by an external user, missing-feature filed as a
+      bug, security-reporting routed here by mistake) and rough
+      severity using Project Intelligence
+      (discovery/schema/project-intelligence.schema.json) plus the
+      complaint text. May ask at most ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — typically "is the reporter describing the
+      documented contract, or behavior they expected but is not in
+      the spec?" (the answer determines whether `investigate` looks
+      for evidence of a bug, or for evidence that the complaint is
+      invalid per the actual contract). The `Decision` emitted here
+      is the acceptance decision (proceed as user-complaint / reject
+      as mis-routed / rescope to a different workflow).
+    emits_evidence: [incident]
+    reads_memory: [project, known-failure]
+
+  understand-complaint:
+    purpose: >
+      Translate the third-party complaint into structured evidence
+      BEFORE reading the codebase. Emit an `Event` capturing the
+      complaint text verbatim (the report itself is evidence —
+      `evidence/schema/event.schema.json`'s `kind: "observation"` is
+      the right shape, with `source` pointing at the ticket URL /
+      channel the complaint came in through, and `payload` carrying
+      the reporter's own reproduction steps). Emit TWO `Expected`
+      entities: (1) the contract the *reporter believed* applied
+      (drawn from their words — "I expected a 200 response"),
+      labeled in `source_ref` as "reporter-stated expectation"; (2)
+      the contract the *system actually documents* (drawn from the
+      repo's own specs/docs), labeled in `source_ref` as
+      "documented-contract expectation". This paired-Expected shape
+      is the structural feature unique to `user-complaint`:
+      `bug-report` emits one Expected (the spec the system
+      violated), `feature-request` emits one (a baseline the new
+      feature must not break), `change-request` emits two (OLD +
+      NEW replacement). `user-complaint` emits two *because the
+      complaint may be wrong* — if the two Expecteds agree, the
+      complaint is well-founded and `investigate` proceeds; if they
+      disagree, `investigate` must determine which contract actually
+      governs before diagnosing anything. The paired-Expected
+      pattern makes the disagreement a first-class artifact rather
+      than a hidden assumption. Wrap the complaint Event in a
+      `Trace` so the complaint itself is citable as a unit by later
+      states.
+    emits_evidence: [trace, event, expected]
+    reads_memory: [project, environment]
+
+  investigate:
+    purpose: >
+      Locate evidence in the codebase (logs, recent commits, related
+      tests, known-failure memory) that corroborates or refutes the
+      complaint's claim. Unlike `bug-report`'s `locate-evidence`
+      (which assumes the symptom is real because the user observed
+      it), `investigate` here is *triage*: the third-party report
+      may be incomplete, mis-stated, or based on a wrong mental
+      model — the engineer's job is to find evidence that the
+      reported behavior actually occurs, NOT to assume it does.
+      Emit `event`s of `kind: "log_line"` / `"test_result"` /
+      `"observation"` for each piece of corroborating or refuting
+      evidence. If the evidence shows the reported behavior does
+      NOT occur (the reporter's reproduction was incorrect, or
+      applied to a different version, or named the wrong
+      endpoint), transition to `blocked` with `on:
+      complaint_invalid_per_contract` and a precise gap — never
+      proceed to diagnose a defect that may not exist. If no
+      evidence either way can be located, transition to `blocked`
+      with `on: no_evidence_found`.
+    emits_evidence: [trace, event]
+    reads_memory: [known-failure, environment]
+
+  diagnose:
+    purpose: >
+      Walk the debugging chain per `skills/systematic-debugging/
+      SKILL.md` Phase 3 (hypothesis → test → minimal fix) — but
+      against the corroborated complaint from `investigate`, not
+      the raw report. Emit a `decision` (root-cause candidate,
+      `validated: false` until tested) and an `actual` (what the
+      system actually does, observed in `investigate`'s trace)
+      compared against the appropriate `Expected` from
+      `understand-complaint` via a `validation` (`method:
+      "contract_validation"` for spec/contract divergence,
+      `"app_validation"` for behavioral observation). The
+      paired-Expected from `understand-complaint` matters here: if
+      the reporter's Expected was wrong (they expected behavior
+      outside the contract), the validation must reference the
+      *documented-contract* Expected, not the reporter-stated one.
+      Per `skills/tool-use-discipline/SKILL.md`, no diagnosis is
+      asserted from memory — read the actual code, run the actual
+      reproduction.
+    emits_evidence: [decision, actual, validation]
+    reads_memory: [known-failure]
+
+  propose-fix:
+    purpose: >
+      Propose a minimal fix scoped to the corroborated root cause —
+      not a fix scoped to the original complaint text (which may
+      have been mis-stated). Per the AI-output validation pattern
+      (`docs/evidence-model.md`), the proposal's `Decision.validated`
+      stays `false` until `verify` confirms behavior. The
+      `broad-refactor` safety gate is NOT evaluated here — it is
+      evaluated at `apply-fix`, when the actual refactor surface
+      becomes knowable.
+    emits_evidence: [decision]
+
+  apply-fix:
+    purpose: Apply the approved patch.
+    emits_evidence: [event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold)
+
+  verify:
+    purpose: >
+      Behavioral verification per ADR-0010 — a passing test suite
+      alone is NOT sufficient. Must produce a `Validation` with
+      `method != "unit_test"` alone, or `method: "unit_test"`
+      combined with an explicit contract/invariant check. For
+      `user-complaint` specifically, the verification should also
+      address the original reporter's expected outcome: either
+      confirm the fix resolves their stated symptom (when their
+      Expected matched the documented contract), or note that the
+      fix resolves the actual defect while the reporter's stated
+      expected outcome was out-of-contract (a follow-up reply to
+      the reporter is then needed).
+    emits_evidence: [expected, actual, validation]
+
+  regression-protect:
+    purpose: >
+      Add a regression test/invariant so this incident class cannot
+      recur silently. Write the known-failure memory entry (must
+      reference the Incident id emitted at `classify`, per
+      `memory/schemas/known-failure.schema.json`). The
+      known-failure `symptom` should be the *corroborated* symptom
+      (from `investigate`), not the original complaint text — so a
+      future regression match isn't missed because the reporter
+      worded the symptom differently.
+    emits_evidence: []
+    writes_memory: [known-failure]
+
+  report:
+    purpose: >
+      Summarize the complaint, the triage outcome (was it
+      well-founded, mis-stated, or out-of-contract?), the root
+      cause, the fix, and the evidence chain for the user — AND
+      provide a draft reply to the original reporter, since the
+      user's deliverable in a complaint-driven workflow is
+      typically "fix the bug AND respond to the person who filed
+      the ticket." Must include the Decision Trace
+      (`docs/architecture.md`), not just "fixed."
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous after
+      one question (`classify`), complaint unintelligible
+      (`understand-complaint` — the report is too vague to triage
+      without contradicting itself, and one clarifying question
+      cannot resolve it), no evidence found either way
+      (`investigate`), complaint invalid per the actual contract
+      (`investigate` — the reporter's Expected does not match the
+      documented contract and the system behaves as documented),
+      or `requires_filesystem_write_capability` for chat LLMs that
+      cannot apply fixes. The `complaint_invalid_per_contract` case
+      must surface a precise gap (the documented contract citation,
+      the evidence that the system honors it, and a pointer to the
+      reply the user can send back to the reporter) — never a vague
+      "complaint is wrong."
+
+skills_required:
+  - systematic-debugging
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+  - tool-use-discipline  # ADR-0019 — mandatory before reading the complaint or the codebase
+  - recency-verification  # ADR-0019 — the reporter may have run against an older API version
+  - quality-gate  # ADR-0019 — runs after apply-fix, before verify
+  # The user-complaint skill itself (skills/user-complaint/SKILL.md)
+  # drives the understand-complaint, investigate, and diagnose
+  # states. It is the dedicated skill authored alongside this
+  # workflow; per the convention (see bug-report.sm.yaml /
+  # code-review.sm.yaml), it is not duplicated in skills_required
+  # because skills_required names skills whose existence is
+  # independent of this workflow.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: apply-fix
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if the
+    complaint's class cannot be determined from the report text
+    plus Project Intelligence plus the repo's own specs. One
+    question is the budget because user-complaint is externally
+    triaged: the third-party reporter has already supplied their
+    report, and the engineer's job is to read it (and the code),
+    not to interview the reporter — additional clarifying
+    questions should be routed back through the original ticket
+    channel, not consumed from this workflow's budget. See
+    docs/workflow-model.md "Question economy."

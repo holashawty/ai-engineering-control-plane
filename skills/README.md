@@ -1,6 +1,6 @@
 # Skills (Agent Skills format)
 
-**Status: 16 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem).**
+**Status: 20 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend).**
 
 All skills are written as real, procedural Agent Skills
 (`SKILL.md` + YAML frontmatter, per ADR-0001), not placeholders.
@@ -94,6 +94,46 @@ All skills are written as real, procedural Agent Skills
   commands-per-language reference (Node `--prof`, Python `cProfile`,
   Go `pprof`, Swift Instruments, Rust `cargo-flamegraph`).
 
+## Domain skills (cross-cutting)
+
+These three skills are not tied to a specific workflow — they
+are cross-cutting domain skills that any workflow may cite in its
+`skills_required` list when the task touches that domain. Each is
+modeled on `behavioral-verification/SKILL.md`'s format (frontmatter,
+When-to-use, Procedure with real evidence-schema citations, Tool
+integration, Validation criteria, Examples with happy path +
+failure mode) and produces Evidence Model artifacts (`Decision`/
+`Expected`/`Actual`/`Validation`/`Trace`/`Event`/`Replay`) that
+`behavioral-verification` then judges.
+
+- [`database/`](database/SKILL.md) — covers database-specific
+  discipline: migration safety (every migration is a `Decision`
+  with `validated: false` until verified), query validation,
+  index impact (before/after `EXPLAIN` as a `Trace`), connection
+  pool management (validated under load, not single-request).
+  Covers SQL / NoSQL / NewSQL equally — the migration mechanism
+  varies, the evidence shape does not. Irreversible migrations
+  require a `Replay` against a production-shaped snapshot.
+- [`frontend/`](frontend/SKILL.md) — covers frontend-specific
+  discipline: accessibility checks (WCAG-level `axe` violations
+  are blocking, not advisory), responsive design verification
+  (viewport matrix as `predicate_kind: "state_property"`), visual
+  regression awareness (snapshot updates are `Decision`s, not
+  rubber-stamps), component prop validation. Composes with
+  `behavioral-simulation` to verify the UI renders correctly for
+  all user states, not just the author's happy path. Covers
+  React / Vue / Svelte / Angular / Vanilla JS equally.
+- [`backend/`](backend/SKILL.md) — covers backend-specific
+  discipline: API contract validation (canonical home of
+  `method: "contract_validation"`), error handling patterns
+  (every error path checked, not just happy path), idempotency
+  checking (same request twice yields same result without
+  duplicate side effects), rate-limit awareness (429 +
+  `Retry-After` when limit exceeded, not 500), inter-service
+  resilience (bounded timeouts, bounded retries, circuit
+  breaker behavior). Covers REST / GraphQL / gRPC / async-event
+  equally.
+
 Each ships with a concrete procedure, tool integration section,
 validation criteria, and both a happy-path and a failure-mode
 example — per the quality bar in `CONTRIBUTING.md` and
@@ -107,8 +147,10 @@ is not the same as "an agent following it produces the claimed
 behavior." See `docs/evaluations/evaluation-strategy.md`'s core
 principle.
 
-The remaining ~3 skills (database, frontend, backend, mobile,
-security, release, incident-response — pick the most relevant to
-the project's actual needs) are long-term scope (ADR-0016) and
-are not started.
+The remaining ~4 skills (mobile, security, release,
+incident-response — pick the most relevant to the project's actual
+needs) are long-term scope (ADR-0016) and are not started. The
+`database` / `frontend` / `backend` skills, previously listed
+here as long-term, were authored as cross-cutting domain skills
+(see "Domain skills" section above).
 

@@ -1,0 +1,304 @@
+workflow: release
+schema_version: "1.0.0"
+description: >
+  Triggered when the user wants to ship a versioned artifact ("ship
+  this", "cut a release", "publish v1.4.0"). Distinct from
+  `change-request` (modify existing behavior — release bundles
+  already-made changes into a versioned artifact) and from
+  `feature-request` (add a new capability — release does not write
+  new code, it packages existing code). The workflow's job is to
+  (a) classify the release shape (major / minor / patch / hotfix /
+  dev-cut), (b) check readiness (tests green, changelog drafted,
+  no uncommitted changes, no open security advisories below the
+  declared fix-threshold, dependency versions frozen), (c) run the
+  full test suite as a release-bar (not just the developer-tight
+  suite), (d) update the changelog with the user-visible changes
+  since the last release, (e) tag the commit (irreversible-ish — a
+  published tag can be moved, but it leaves a fingerprint in any
+  consumer's lockfile that pointed at it), (f) publish to the
+  declared registry, (g) verify the published artifact is
+  installable and importable, (h) write the release report.
+  The `broad-refactor` safety gate fires at `tag` (tagging is
+  irreversible-ish — moving a published tag is technically possible
+  but operationally dangerous because consumers who pinned to the
+  tag have already pulled it).
+
+states:
+  - intake
+  - classify
+  - check-readiness
+  - run-tests
+  - update-changelog
+  - tag
+  - publish
+  - verify-release
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: check-readiness, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: check-readiness, to: run-tests, on: readiness_ok }
+  - { from: check-readiness, to: blocked, on: readiness_failed }
+  - { from: run-tests, to: update-changelog, on: tests_pass }
+  - { from: run-tests, to: blocked, on: tests_fail }
+  - { from: update-changelog, to: tag, on: changelog_updated }
+  - { from: update-changelog, to: blocked, on: changelog_ambiguous }
+  - { from: tag, to: publish, on: tag_created }
+  - { from: tag, to: blocked, on: tag_failed }
+  - { from: publish, to: verify-release, on: artifact_published }
+  - { from: publish, to: blocked, on: publish_failed }
+  # Chat-LLM capability transition: a chat-only agent (no shell_exec,
+  # no filesystem_write) cannot run the test suite, write the
+  # changelog, create a git tag, or push to a registry. Per
+  # constitution §3 + §8, transitions to blocked rather than
+  # fabricating the release. This is the chat-adapter case from
+  # CHAT-ENTRYPOINT.md — the run hands the prepared release plan
+  # back to the user, who can drive the remaining steps via a
+  # tool-using agent.
+  - { from: publish, to: blocked, on: requires_publish_capability }
+  - { from: verify-release, to: report, on: release_verified }
+  - { from: verify-release, to: blocked, on: release_unverified }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's release request verbatim — including the
+      target version (if specified), the channel (stable / next /
+      experimental), and any explicit scope ("only the API
+      package", "the whole monorepo"). Do not ask clarifying
+      questions here — that belongs in `classify` (per
+      question_economy below). Structurally, the most important
+      classification made here is: is this *actually* a release,
+      or is it a deploy? A release produces a versioned artifact
+      (tag + registry publication); a deploy pushes an artifact
+      to a runtime environment (a server, a Kubernetes namespace,
+      a Cloudflare Worker). If the user said "ship this to prod,"
+      that is `incident`-shaped if prod is currently broken, or a
+      future `deploy` workflow (post-MVP). `release` produces the
+      artifact; deploy consumes it.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine release shape (major / minor / patch / hotfix /
+      dev-cut) using semver conventions and Project Intelligence
+      (`discovery/schema/project-intelligence.schema.json`'s
+      `release.*` fields — version policy, registry, channel
+      matrix). May ask at most ONE necessary, specific,
+      decision-changing question if the shape cannot be determined
+      from inspection — typically "is this a hotfix (off the
+      last release branch) or a regular cut (off main)?" (the
+      answer changes the branch the tag is created on and the
+      readiness bar: hotfixes skip the changelog's full
+      revision history and instead document only the hotfix
+      delta). The `Decision` emitted here is the acceptance
+      decision (proceed with release shape X / reject — e.g. the
+      user requested v2.0.0 but the diff since v1.x contains no
+      breaking changes, so a major bump is unjustified; rescope
+      to v1.4.0).
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  check-readiness:
+    purpose: >
+      Verify the repository is in a releasable state. Emit a
+      `Trace` of `Event`s capturing each readiness check:
+      (a) working tree clean (no uncommitted changes — `git
+      status --porcelain` returns empty);
+      (b) the declared release branch is up to date with the
+      remote (`git fetch && git status -sb` shows no `behind`);
+      (c) no open security advisories below the declared
+      fix-threshold (per `security-problem`'s CVSS scoring —
+      any open advisory at CVSS >= the project's threshold must
+      be resolved before release; emit an `Event` per advisory
+      found, even if it's resolved-on-main-but-not-yet-tagged);
+      (d) dependency versions frozen for the release (no SNAPSHOT
+      / dev / latest tags in the lockfile);
+      (e) the project's declared test_runner is configured (per
+      Project Intelligence — if the project uses vitest, do not
+      run jest). If ANY check fails, transition to `blocked`
+      with `on: readiness_failed` and a precise gap citing the
+      failed check. Per `skills/tool-use-discipline/SKILL.md`,
+      each check is a tool invocation whose output becomes an
+      `Event.payload.finding` — no readiness assertion is made
+      from memory.
+    emits_evidence: [trace, event]
+    reads_memory: [known-failure, environment]
+
+  run-tests:
+    purpose: >
+      Run the FULL test suite as a release bar — not just the
+      developer-tight subset. The release bar typically includes
+      tests that are slow (integration, end-to-end, contract) and
+      are skipped during normal development (`--grep @release` or
+      equivalent per Project Intelligence). Emit a `Trace` with
+      one `Event` per test phase (unit / integration / contract /
+      end-to-end), `kind: "test_result"`, `payload.result:
+      "passed" | "failed"` + `payload.note` citing the count and
+      duration. Per `behavioral-verification`, a green test suite
+      is necessary but not sufficient — `verify-release` later
+      directly checks the published artifact is installable and
+      importable. If any phase fails, transition to `blocked`
+      with `on: tests_fail` and a precise gap citing the failing
+      test (file, name, assertion line) — never a vague "tests
+      failed."
+    emits_evidence: [trace, event]
+    reads_memory: [environment]
+
+  update-changelog:
+    purpose: >
+      Update the user-facing changelog with the changes since the
+      last release. The changelog is a release artifact, not a
+      commit log — `git log` is the source, but the changelog
+      rephrases commits into user-visible changes (added /
+      changed / deprecated / removed / fixed / security per the
+      Keep-a-Changelog convention). Emit an `Event` (`kind:
+      "file_change"`) recording the changelog diff, and a
+      `Decision` recording the changelog's structure choice
+      (grouped-by-section-per-Keep-a-Changelog vs flat-list-per-
+      commit; the choice is recorded so a future audit can
+      reconstruct the rationale). If the changelog cannot be
+      drafted unambiguously (two changes overlap, a deprecation
+      note is unclear, the user-facing impact of an internal
+      refactor is ambiguous), transition to `blocked` with `on:
+      changelog_ambiguous` and a precise gap.
+    emits_evidence: [event, decision]
+    reads_memory: [project]
+
+  tag:
+    purpose: >
+      Create the release tag. Per `constitution/safety-rules.md`,
+      tagging is a destructive-operation class: published tags
+      can be moved, but moving them leaves a fingerprint in any
+      consumer's lockfile that pointed at the original. The
+      `broad-refactor` safety gate fires here, requiring explicit
+      confirmation before the tag is created. Emit an `Event`
+      (`kind: "action"`) capturing the tag command (`git tag
+      -s v1.4.0 -m "..."` for signed tags, `git tag v1.4.0 -m
+      "..."` for unsigned; the choice is project policy per
+      Project Intelligence). If the tag fails to create (the
+      tag already exists, the signing key is missing, the
+      branch is detached), transition to `blocked` with `on:
+      tag_failed` and a precise gap.
+    emits_evidence: [event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold; tagging is irreversible-ish — published tags can be moved but leave fingerprints in consumers' lockfiles)
+
+  publish:
+    purpose: >
+      Publish the versioned artifact to the declared registry
+      (npm registry / PyPI / Docker Hub / GitHub Releases /
+      a custom artifact store per Project Intelligence). Emit
+      an `Event` (`kind: "action"`) capturing the publish command
+      (`npm publish --access public`, `twine upload dist/*`,
+      `docker push <repo>:<tag>`) and its output. If the publish
+      fails (network, auth, rate-limit, version-already-exists
+      in the registry), transition to `blocked` with `on:
+      publish_failed` and a precise gap. For chat-LLM agents
+      without `shell_exec` + `filesystem_write`, transition to
+      `blocked` with `on: requires_publish_capability` — the
+      prepared release plan (changelog, tag, publish command)
+      is handed back to the user, who can drive the remaining
+      steps via a tool-using agent.
+    emits_evidence: [event]
+    # capabilities_required declares shell_exec + filesystem_write
+    # for the whole workflow; publish specifically needs both
+    # (shell_exec to invoke the publish command, filesystem_write
+    # implicitly via the registry client which writes a .npmrc /
+    # .pypirc / config-during-publish).
+
+  verify-release:
+    purpose: >
+      Behavioral verification per ADR-0010 — the published
+      artifact must be installable and importable in a CLEAN
+      environment (not the dev tree). Emit a `Trace` with two
+      `Event`s: (1) install the artifact via the registry
+      (`npm install <pkg>@<version>` in a temp dir / `pip install
+      <pkg>==<version>` in a fresh venv / `docker pull
+      <repo>:<tag>`); (2) import it and call its declared public
+      API (`const { foo } = require('<pkg>'); foo();` — if the
+      import fails or the public API is missing, the release is
+      broken even if the publish succeeded). Emit an `Actual`
+      (what the published artifact actually does when installed
+      cleanly) and a `Validation` with `method:
+      "app_validation"` (this is a behavioral check on the
+      published artifact, not just "the publish command exited
+      0"). If the install or import fails, transition to
+      `blocked` with `on: release_unverified` and a precise gap
+      (the error message from the clean-env install).
+    emits_evidence: [trace, event, actual, validation]
+
+  report:
+    purpose: >
+      Summarize the release: the version, the channel, the
+      changelog (with a link to the published release notes),
+      the tag, the registry URL, and the clean-env verification
+      result. Must include the Decision Trace
+      (`docs/architecture.md`), not just "released." Writes a
+      `project` memory entry recording the release (version,
+      tag, date, channel) so a future workflow can confirm what
+      the latest released version is without re-deriving it from
+      git tags. If the release resolves any open security
+      advisories, also note the advisory IDs in the project
+      memory's `domain` field for the next security audit cycle.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous
+      after one question (`classify`), readiness failed
+      (`check-readiness` — uncommitted changes, behind remote,
+      open security advisory, dev-tagged dependency), tests fail
+      (`run-tests`), changelog ambiguous (`update-changelog`),
+      tag failed (`tag` — tag exists, signing key missing),
+      publish failed (`publish` — network/auth/rate-limit/
+      version-already-exists), release unverified
+      (`verify-release` — clean-env install or import failed),
+      or `requires_publish_capability` for chat LLMs without
+      `shell_exec`/`filesystem_write`. Each blocked transition
+      must surface a precise gap, never a vague "release failed"
+      — the user must be able to act on the blocked report
+      (resolve the uncommitted change, resolve the security
+      advisory, re-tag with a signing key, retry the publish
+      after a rate-limit wait).
+
+skills_required:
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+  - tool-use-discipline  # ADR-0019 — mandatory: each readiness check + the test result + the publish output must be a tool invocation, not a memory assertion
+  - recency-verification  # ADR-0019 — the declared registry's current publish protocol is time-sensitive (npm publish --provenance, twine 5+ requires API tokens)
+  - quality-gate  # ADR-0019 — runs after run-tests, before update-changelog (lint + typecheck on the release tag candidate)
+  # The release skill itself (skills/release/SKILL.md) drives the
+  # check-readiness, run-tests, update-changelog, tag, publish, and
+  # verify-release states. It is the dedicated skill authored
+  # alongside this workflow; per the convention, it is not
+  # duplicated in skills_required.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: tag
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if the
+    release shape cannot be determined from the version policy
+    (Project Intelligence `release.version_policy`) plus the diff
+    since the last release. One question is the budget because
+    release is mechanically driven by the repo's own state (clean
+    tree, tests pass, changelog draftable) rather than by
+    design choices the way `feature-request` or `change-request`
+    are. See docs/workflow-model.md "Question economy."

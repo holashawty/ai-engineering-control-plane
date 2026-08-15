@@ -1,0 +1,325 @@
+workflow: security-problem
+schema_version: "1.0.0"
+description: >
+  Triggered by a vulnerability report, suspicious access pattern, or
+  security-audit finding. Distinct from `bug-report` (functional
+  failure) and `incident` (production outage): a security problem
+  is a class of defect where the system's *confidentiality,
+  integrity, or availability* is at risk even when the system
+  behaves as the engineer wrote it. The system "works" — it returns
+  the right status codes, the right shapes, the right latency —
+  but it does so in a way that exposes data, escalates privilege,
+  or fails closed when it should fail open (or vice versa). The
+  workflow's job is to (a) assess severity with explicit
+  CVSS-style scoring, (b) investigate to confirm the vulnerability
+  is real and reachable (not a theoretical finding against an
+  unreachable code path), (c) propose a *mitigation* (not just a
+  "fix" — security work often involves layered defenses: an
+  immediate patch + a defense-in-depth guard + an audit-trail
+  improvement), and (d) verify the mitigation closes the
+  vulnerability without introducing a regression. Pairs with
+  `bug-report` and `incident` as the safety-sensitive triad: all
+  three converge on a code change, but `security-problem`'s
+  change carries an additional disclosure-and-timeline
+  consideration (CVE filing, advisory publication, coordinated
+  disclosure) that the other two do not. The `broad-refactor`
+  safety gate fires at `apply-mitigation` (security fixes are
+  sensitive: a wrong fix can silently reopen the vuln or break
+  authentication broadly).
+
+states:
+  - intake
+  - classify
+  - assess-severity
+  - investigate
+  - diagnose
+  - propose-mitigation
+  - apply-mitigation
+  - verify-mitigation
+  - regression-protect
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: assess-severity, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_two_questions }
+  - { from: assess-severity, to: investigate, on: severity_assessed }
+  - { from: assess-severity, to: blocked, on: severity_below_threshold }
+  - { from: investigate, to: diagnose, on: vulnerability_confirmed }
+  - { from: investigate, to: blocked, on: vulnerability_not_reachable }
+  - { from: investigate, to: blocked, on: no_evidence_found }
+  - { from: diagnose, to: propose-mitigation, on: root_cause_found }
+  - { from: diagnose, to: investigate, on: root_cause_invalid }
+  - { from: propose-mitigation, to: apply-mitigation, on: mitigation_approved }
+  - { from: apply-mitigation, to: verify-mitigation, on: mitigation_applied }
+  # Chat-LLM capability transition: an agent without filesystem_write
+  # cannot apply security mitigations. Per constitution §3 + §8,
+  # transitions to blocked rather than fabricating the patch. This
+  # is especially important for security work — a fabricated "fix"
+  # that leaves the vuln open while claiming it's closed is worse
+  # than no fix at all, because it suppresses the disclosure that
+  # would otherwise prompt human intervention.
+  - { from: apply-mitigation, to: blocked, on: requires_filesystem_write_capability }
+  - { from: verify-mitigation, to: regression-protect, on: mitigation_verified }
+  - { from: verify-mitigation, to: diagnose, on: mitigation_incomplete }
+  - { from: regression-protect, to: report, on: regression_added }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the vulnerability report verbatim — including the
+      reporter's identity (a security researcher, a bounty-program
+      submission, an internal audit, a SAST/DAST tool finding), the
+      reporter's preferred disclosure timeline (if any), and the
+      report's classification (is it embargoed, is a CVE already
+      filed, is this a public disclosure that arrived late). Do
+      not ask clarifying questions here — the two allowed
+      questions belong to `classify` and `assess-severity` (per
+      question_economy below). Structurally, the most important
+      classification made here is: is this *actually* a security
+      problem (a vulnerability in the system), or is it a
+      functional bug mislabeled as security (a 500 with data
+      leaked in the error message is a bug-report; an auth bypass
+      is a security-problem)? If the latter, route to `bug-report`.
+    emits_evidence: []
+    reads_memory: [project]
+
+  classify:
+    purpose: >
+      Determine the security class (authentication bypass,
+      authorization escalation, injection — SQL/NoSQL/command/XSS/
+      SSRF —, sensitive data exposure, CSRF, insecure deserialization,
+      dependency CVE, misconfiguration, missing rate-limit, secret
+      leak in logs/responses) using Project Intelligence plus the
+      report text. May ask at most ONE necessary, specific,
+      decision-changing question if the class cannot be determined
+      from inspection — typically "is the affected endpoint
+      authenticated, or public?" (the answer changes the severity
+      ceiling: an authenticated endpoint's vuln tops out at
+      authenticated-user impact, while a public endpoint's vuln
+      can extend to anyone who can reach it). The `Decision`
+      emitted here is the acceptance decision (proceed as
+      security-problem / reject as mis-routed bug-report / rescope
+      to incident if production is currently being exploited).
+    emits_evidence: [incident]
+    reads_memory: [project, known-failure]
+
+  assess-severity:
+    purpose: >
+      Score the vulnerability's severity using an explicit
+      CVSS-style vector, even if approximate. The vector's
+      components (Attack Vector: Network/Adjacent/Local/Physical;
+      Attack Complexity: Low/High; Privileges Required: None/Low/
+      High; User Interaction: None/Required; Scope: Changed/
+      Unchanged; Confidentiality Impact: None/Low/High; Integrity
+      Impact: None/Low/High; Availability Impact: None/Low/High)
+      are each justified by a one-line citation of the evidence
+      (the affected endpoint, the auth requirement, the data
+      touched). Emit the score as a `Decision` (`what:
+      "severity_assessment:CVSS:..."`) so the eventual `report`
+      state can cite the vector. May ask at most ONE necessary,
+      specific, decision-changing question — typically "is the
+      vulnerable endpoint reachable from the public internet, or
+      only from inside the VPC?" (the answer flips Attack Vector
+      between Network and Adjacent, which materially changes the
+      CVSS score). If the severity is below the project's
+      declared fix-threshold (e.g., CVSS < 4.0 = "informational,
+      fix at leisure"), transition to `blocked` with `on:
+      severity_below_threshold` — the workflow does not invest
+      investigate/diagnose/mitigate effort in sub-threshold
+      findings; they are recorded for the next security audit
+      cycle instead.
+    emits_evidence: [decision]
+    reads_memory: [environment]
+
+  investigate:
+    purpose: >
+      Confirm the vulnerability is real AND reachable. A
+      theoretical finding against an unreachable code path (a
+      dependency CVE in a library that is in the lockfile but
+      not in any code path the runtime actually executes) does
+      not justify a mitigation — confirming unreachability is
+      itself a valid `investigate` outcome. Emit `event`s
+      capturing: the affected code path (with file:line
+      citations), the request/input that triggers the vuln
+      (redacted if it contains secrets), the response/output
+      that demonstrates the exploit (redacted), and any
+      corroborating log evidence. Per `skills/recency-
+      verification/SKILL.md`, if the vuln involves a dependency
+      CVE, invoke `web_search` (or the project's
+      advisory-tracking tool) to confirm the CVE is current and
+      not already patched in the installed version. If the vuln
+      is NOT reachable (the affected code path is dead, or the
+      vulnerable dependency is locked but not loaded), transition
+      to `blocked` with `on: vulnerability_not_reachable` and a
+      precise gap citing the dead-code analysis. If no evidence
+      can be located either way, transition to `blocked` with
+      `on: no_evidence_found`.
+    emits_evidence: [trace, event]
+    reads_memory: [known-failure, environment]
+
+  diagnose:
+    purpose: >
+      Walk the debugging chain per `skills/systematic-debugging/
+      SKILL.md` Phase 3 — but with a security-specific twist:
+      the root cause is typically a *missing control* (no auth
+      check, no input validation, no rate-limit, no output
+      encoding) rather than a *wrong computation* (which is
+      bug-report's typical shape). The `Decision.why` field
+      should name the missing control explicitly. Emit a
+      `validation` (`method: "contract_validation"` if the
+      system has a security contract / invariant / policy that
+      was violated; `method: "manual_review"` if no explicit
+      contract exists and the diagnosis is by security-engineering
+      reasoning) comparing the `Actual` (the vulnerable behavior)
+      against the `Expected` (the security property that should
+      have held — confidentiality of PII, integrity of auth
+      state, availability under load).
+    emits_evidence: [decision, actual, validation]
+    reads_memory: [known-failure]
+
+  propose-mitigation:
+    purpose: >
+      Propose a *mitigation*, not just a "fix." Security work
+      typically involves layered defenses:
+      (1) the immediate patch (close the specific vuln),
+      (2) a defense-in-depth guard (e.g., adding input
+      validation at the framework boundary even though the
+      immediate patch is at the handler), and
+      (3) an audit-trail improvement (logging the rejected
+      attempts so future exploitation attempts are visible).
+      Each layer is a separate `Decision` (per
+      `systematic-debugging`'s defense-in-depth guidance),
+      and each layer's `alternatives` array records what was
+      considered and rejected. Per the AI-output validation
+      pattern, all three Decisions are `validated: false` until
+      `verify-mitigation` confirms behavior. The
+      `broad-refactor` safety gate is NOT evaluated here —
+      it is evaluated at `apply-mitigation`, when the actual
+      refactor surface becomes knowable (the defense-in-depth
+      guard at the framework boundary may trip the threshold).
+    emits_evidence: [decision]
+
+  apply-mitigation:
+    purpose: Apply the approved mitigation(s).
+    emits_evidence: [event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold; security fixes are sensitive — a wrong fix can silently reopen the vuln or break authentication broadly)
+
+  verify-mitigation:
+    purpose: >
+      Behavioral verification per ADR-0010 — a passing test suite
+      alone is NOT sufficient. For security work specifically,
+      the verification has TWO axes:
+      (a) the vuln is closed: re-run the original exploit
+      (the curl/command from `investigate`) and confirm the
+      system now refuses it (returns 401/403/400/sanitized
+      response as appropriate);
+      (b) no regression in legitimate flows: re-run the existing
+      auth/authorization test suite and confirm no legitimate
+      user is now blocked or has their privileges changed.
+      Emit a `Validation` per axis (or one combined `Validation`
+      with both axes cited in `evidence_refs`), with `method:
+      "app_validation"` for the exploit-rejection check and
+      `method: "unit_test"` allowed for the regression axis
+      (since the existing suite IS the regression check here).
+      A green suite alone does not earn `result: "match"` —
+      the direct exploit-rejection check is required.
+    emits_evidence: [expected, actual, validation]
+
+  regression-protect:
+    purpose: >
+      Add a regression test/invariant so this vulnerability class
+      cannot recur silently. Write the known-failure memory entry
+      (must reference the Incident id emitted at `classify`, per
+      `memory/schemas/known-failure.schema.json`). The
+      known-failure `symptom` should be the *exploit symptom*
+      (the observable behavior of the vuln, e.g., "auth bypass
+      returns 200 for unauthenticated request to /admin"), not
+      the root-cause description — so a future regression is
+      detected by behavior, not by code structure (which a
+      refactor could obscure).
+    emits_evidence: []
+    writes_memory: [known-failure]
+
+  report:
+    purpose: >
+      Summarize the vulnerability, the CVSS severity assessment,
+      the root cause, the layered mitigation, the verification
+      evidence chain, AND the disclosure-and-timeline
+      considerations: is a CVE already filed? Does this need
+      coordinated disclosure with downstream consumers? Is an
+      advisory publication needed? The report must include the
+      Decision Trace (docs/architecture.md), not just "fixed."
+      Writes a `project` memory entry recording the
+      vulnerability was found and resolved, with the CVSS
+      vector and the CVE id (if any) in the `domain` field
+      for future security audits to retrieve.
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous
+      after two questions (`classify`), severity below
+      threshold (`assess-severity`), vulnerability not
+      reachable (`investigate`), no evidence found
+      (`investigate`), or `requires_filesystem_write_capability`
+      for chat LLMs that cannot apply mitigations. The
+      `vulnerability_not_reachable` case is NOT a failure —
+      it is the workflow working correctly: confirming a
+      theoretical finding is unreachable saves the team from
+      patching a non-issue; the blocked state's report should
+      record the dead-code analysis so the next security audit
+      can skip the same finding. The
+      `requires_filesystem_write_capability` case for chat
+      LLMs is especially dangerous in security work — a
+      fabricated "fix" that leaves the vuln open while
+      claiming it's closed suppresses the disclosure that
+      would otherwise prompt human intervention; honest
+      fallback to blocked is mandatory.
+
+skills_required:
+  - systematic-debugging
+  - evidence-engineering
+  - behavioral-verification
+  - testing
+  - tool-use-discipline  # ADR-0019 — mandatory before reading the report, the code, or asserting a CVE's currency
+  - recency-verification  # ADR-0019 — dependency CVEs are time-sensitive: a CVE may have been patched in a version newer than the lockfile
+  - quality-gate  # ADR-0019 — runs after apply-mitigation, before verify-mitigation
+  # The security-problem skill itself (skills/security-problem/SKILL.md)
+  # drives the assess-severity, investigate, diagnose, and
+  # propose-mitigation states. It is the dedicated skill authored
+  # alongside this workflow; per the convention, it is not
+  # duplicated in skills_required because skills_required names
+  # skills whose existence is independent of this workflow.
+
+capabilities_required:
+  - filesystem_read
+  - filesystem_write
+  - shell_exec
+  - test_runner
+
+safety_gates:
+  - state: apply-mitigation
+    gate: broad-refactor
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, assess-severity]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and
+    `assess-severity` (up to 1), totaling 2 across the workflow.
+    Each must be necessary, specific, and decision-changing —
+    see docs/workflow-model.md "Question economy." The budget
+    matches `change-request`'s 2 because security work is
+    inherently ambiguous at two distinct points: the class of
+    vuln (is the affected endpoint authenticated?) and the
+    severity vector (is it reachable from the public internet?).
+    The budget is bounded, not unlimited — questions about
+    mitigation implementation details ("should I add a CSRF
+    token to this form?") are never permitted under this
+    budget; they belong to the propose-mitigation state's
+    design, not to question-asking.

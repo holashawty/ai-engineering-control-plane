@@ -310,3 +310,41 @@ each entry must additionally record:
   CHAT-ENTRYPOINT.md tells the chat LLM to check whether it has a
   code execution tool and select the appropriate adapter. No
   upstream code or prose was adapted or copied.
+
+- **`skills/database/SKILL.md` + `skills/frontend/SKILL.md` +
+  `skills/backend/SKILL.md`** — novel to AIECP. These three
+  cross-cutting domain skills are not tied to a specific workflow;
+  any workflow may cite them in its `skills_required` list when
+  the task touches that domain. Each follows `behavioral-verification/
+  SKILL.md`'s format (frontmatter + When-to-use + Procedure with
+  real evidence-schema citations + Tool integration + Validation
+  criteria + Examples with happy path and failure mode) and
+  produces Evidence Model artifacts (`Decision`/`Expected`/`Actual`/
+  `Validation`/`Trace`/`Event`/`Replay`) that `behavioral-verification`
+  then judges.
+  `database` covers migration safety (every migration is a `Decision`
+  with `validated: false` until verified), query validation, index
+  impact (before/after `EXPLAIN` as a `Trace`), connection pool
+  management under load, and irreversible-migration `Replay` against
+  a production-shaped snapshot; covers SQL / NoSQL / NewSQL equally.
+  `frontend` covers accessibility checks (WCAG-level `axe` violations
+  are blocking, not advisory), responsive design verification via
+  viewport matrix, visual regression awareness (snapshot updates are
+  `Decision`s, not rubber-stamps), component prop validation, and
+  composes with `behavioral-simulation` to verify rendering across
+  all user states; covers React / Vue / Svelte / Angular / Vanilla
+  JS equally. `backend` covers API contract validation (canonical
+  home of `method: "contract_validation"`), error handling patterns
+  across every error path, idempotency checking via retry
+  simulation, rate-limit awareness (429 + `Retry-After`), and
+  inter-service resilience (bounded timeouts, bounded retries,
+  circuit breaker); covers REST / GraphQL / gRPC / async-event
+  equally. The evidence-shape patterns (the four-property
+  `Expected` decomposition — `behavioral` + `invariant` +
+  `state_property` + protocol-specific property — and the
+  `method: "unit_test"` alone is insufficient rule) are
+  AIECP-original, derived from the Evidence Model entities in
+  `evidence/schema/*.json` and the AI-output validation pattern in
+  `docs/evidence-model.md`. No upstream code or prose was adapted
+  or copied.
+

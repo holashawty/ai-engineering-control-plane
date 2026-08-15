@@ -1,0 +1,347 @@
+workflow: discovery-refresh
+schema_version: "1.0.0"
+description: >
+  Triggered when `.aiecp/project-intelligence.json` exists but is
+  `stale: true` — i.e., repository structure or environment has
+  drifted since the prior `project-onboarding` run wrote the
+  document and the initial `project` + `environment` memory entries.
+  Distinct from `project-onboarding.sm.yaml` (which runs when the
+  document is MISSING, not stale): project-onboarding WRITES the
+  initial memory entries (new ids, `created_at` set, no
+  `updated_at`); discovery-refresh UPDATES those same entries in
+  place (same ids, `updated_at` bumped, fields that drifted
+  overwritten). Conflating the two cases would produce a different
+  memory-entry shape — a fresh `project` entry with a new id
+  versus an `updated_at` bump on the existing id — and a stale
+  `project` entry's `id` is what every downstream workflow's
+  `reads_memory: [project]` declaration points at, so creating a
+  fresh entry would orphan the prior one rather than refreshing it.
+  Discovery-refresh is also distinct from every other workflow in
+  the catalog because it is the only workflow that UPDATES
+  existing `project` AND `environment` memory entries in a
+  single run — `regression.sm.yaml` updates only `known-failure`
+  (one entry, one field: `regression_id`); `bug-report` /
+  `change-request` write new `known-failure` entries; every other
+  workflow writes a single new memory entry at its terminal
+  `report` state. Discovery-refresh writes TWO updated entries at
+  TWO dedicated pre-report states, mirroring project-onboarding's
+  two-state write shape but with UPDATE semantics rather than
+  CREATE semantics.
+
+states:
+  - intake
+  - classify
+  - run-discovery
+  - validate-discovery
+  - update-project-memory
+  - update-environment-memory
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: run-discovery, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_one_question }
+  - { from: run-discovery, to: validate-discovery, on: discovery_complete }
+  - { from: run-discovery, to: validate-discovery, on: discovery_complete_via_fallback }
+  - { from: run-discovery, to: blocked, on: discovery_failed }
+  - { from: validate-discovery, to: update-project-memory, on: discovery_valid }
+  - { from: validate-discovery, to: run-discovery, on: discovery_invalid_needs_rerun }
+  - { from: update-project-memory, to: update-environment-memory, on: project_memory_updated }
+  - { from: update-environment-memory, to: report, on: environment_memory_updated }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's discovery-refresh request verbatim. Do
+      not ask clarifying questions here — the one allowed question
+      belongs to `classify` (per `question_economy` below).
+      Structurally, the most important classification made here
+      is: is `.aiecp/project-intelligence.json` actually `stale:
+      true`, or has it simply been deleted / is missing? If the
+      latter (the document is missing, not stale), route to
+      `project-onboarding.sm.yaml` rather than running this
+      workflow — discovery-refresh against a non-existent prior
+      document would have no prior memory entries to UPDATE,
+      collapsing it into project-onboarding while losing the
+      CREATE-vs-UPDATE distinction. The acid test: does
+      `.aiecp/project-intelligence.json` exist on disk AND have
+      `stale: true`? If yes, this is discovery-refresh. If no
+      (missing OR stale:false), route to project-onboarding
+      (missing) or no workflow at all (stale:false — nothing
+      to refresh).
+    emits_evidence: []
+    reads_memory: [project, environment]
+
+  classify:
+    purpose: >
+      Determine refresh class (structure-changed, versions-drifted,
+      both) and rough scope. Unlike `project-onboarding`'s
+      `classify` (which classifies the onboarding class of a fresh
+      repo), `discovery-refresh`'s `classify` classifies the *kind
+      of drift* since the prior onboarding run: did the repo's
+      structure change (new language added, layer removed,
+      entrypoint moved — affects `project` memory's `stack` /
+      `layer` / `domain` fields), did the environment drift
+      (version bumps, runtime change — affects `environment`
+      memory's `runtime` / `versions` fields), or both? Reads the
+      existing `project` and `environment` memory entries plus the
+      (stale) `.aiecp/project-intelligence.json` to determine what
+      fields are likely to have drifted. May ask at most ONE
+      necessary, specific, decision-changing question if the
+      refresh class cannot be determined from inspection —
+      typically "did the runtime version change on purpose, or is
+      this drift from a dependency bump?" (the answer determines
+      whether `update-environment-memory` should overwrite the
+      `runtime` field or only the `versions` field). The
+      `Decision` emitted here is the acceptance decision (proceed
+      with refresh, scope = structure-changed / versions-drifted /
+      both).
+    emits_evidence: [decision]
+    reads_memory: [project, environment]
+
+  run-discovery:
+    purpose: >
+      Re-invoke `discovery/cli` (or the fallback procedure) to
+      produce a refreshed `.aiecp/project-intelligence.json`. Per
+      ADR-0021, the same two-path shape as `project-onboarding`'s
+      `run-discovery`:
+
+      1. **PRIMARY PATH — `discovery/cli` canonical tool:** Try
+         `node discovery/cli/dist/cli.js <repo-path>`. The
+         `dist/` directory is committed to the repo (per ADR-0021),
+         so this works without `npm install`. The CLI overwrites
+         the existing `.aiecp/project-intelligence.json` (setting
+         `stale: false` and bumping `generated_at`); this state
+         emits the *evidence trail* of what each detector found
+         on this refresh run, not the document itself. Transition
+         to `validate-discovery` on `discovery_complete`.
+
+      2. **FALLBACK PATH — text procedure** (per ADR-0021 +
+         `skills/project-onboarding/discovery-fallback.md`): If
+         the primary path fails, follow the discovery-fallback
+         procedure to produce a schema-valid refreshed document
+         directly via filesystem reads + version probes.
+         Transition to `validate-discovery` on
+         `discovery_complete_via_fallback`. The produced
+         document's `discovery_method` field is set to
+         `"chat-sandbox-fallback-procedure"` so the audit trail
+         distinguishes it from canonical-CLI-produced Project
+         Intelligence.
+
+      If neither path succeeds, transition to `blocked` with
+      `on: discovery_failed` — a precise gap, not a vague failure.
+
+      This state emits evidence per the path taken:
+      - PRIMARY PATH: one `Event` per detector (per ADR-0009's
+        pipeline: language, framework, build, test, entrypoint,
+        layer, integration, cicd), each with `kind: "action"` and
+        `source: "discovery/cli:<detector_name>"`.
+      - FALLBACK PATH: one `Event` per step of the
+        discovery-fallback procedure (8 steps), each with `kind:
+        "action"` and `source: "discovery-fallback:step-N"`.
+
+      Distinct from `project-onboarding`'s `run-discovery`: the
+      discovery here is a RE-RUN against a repo whose structure
+      has already been discovered once. The detector pipeline
+      runs the same way, but the produced document is compared
+      against the prior document in `validate-discovery` to
+      determine what actually drifted (rather than accepting the
+      fresh document as the first-ever Project Intelligence).
+    emits_evidence: [trace, event]
+
+  validate-discovery:
+    purpose: >
+      Validate the refreshed Project Intelligence against the
+      schema AND against the prior document to determine what
+      actually drifted. Per ADR-0009, each detector's output is a
+      fragment of Project Intelligence that must validate against
+      `discovery/schema/project-intelligence.schema.json`. Emit
+      an `Expected` describing what a schema-valid Project
+      Intelligence for this repo's class should contain (per the
+      prior `classify` decision: structure-changed expects
+      `project.stack` / `project.layer` to potentially differ
+      from the prior document; versions-drifted expects
+      `project.versions` to potentially differ), an `Actual`
+      describing what `discovery/cli` actually produced on this
+      refresh run, and a `Validation` with `method:
+      "contract_validation"` (this is a schema/contract check,
+      not a behavioral check — same method as
+      `project-onboarding`'s `validate-discovery`). May ask at
+      most ONE necessary, specific, decision-changing question
+      if the produced Project Intelligence is ambiguous in a way
+      the schema cannot adjudicate — typically "is the detected
+      test runner correct?" when the language detector found
+      both `pytest` and `unittest` and the schema accepts both.
+      Note: this state is NOT in `allowed_states` (only `classify`
+      is), so any question asked here would be a constitution
+      violation — the question budget for discovery-refresh is 1
+      total (in `classify`), not 2 (unlike project-onboarding's
+      classify + validate-discovery budget of 2). The lower budget
+      reflects that discovery-refresh starts from prior context
+      (the existing memory entries + the stale Project Intelligence),
+      so less ambiguity needs resolving than a fresh onboarding. If
+      the document fails schema validation OR a detector picked up
+      the wrong tool, transition back to `run-discovery` with `on:
+      discovery_invalid_needs_rerun`.
+    emits_evidence: [expected, actual, validation]
+
+  update-project-memory:
+    purpose: >
+      UPDATE the existing `project` memory entry in place (same
+      id, `updated_at` bumped, drifted fields overwritten). Per
+      `memory/schemas/project.schema.json`, the entry has an
+      optional `updated_at` field (null when first written by
+      `project-onboarding`, set to a date-time when the entry is
+      updated). This state activates that field: the entry's `id`,
+      `type`, `schema_version`, `created_at`, `source` all stay
+      as they were; `updated_at` is set to the current timestamp;
+      and whichever fields drifted per `validate-discovery`
+      (`stack`, `layer`, `domain`) are overwritten with the
+      refreshed values. Fields that did NOT drift are preserved
+      verbatim — the UPDATE is field-level, not entry-level, so
+      a refresh that detects no structural change leaves `stack` /
+      `layer` / `domain` untouched and only bumps `updated_at`
+      (recording that the refresh ran and confirmed no drift).
+      This is the structural inverse of `project-onboarding`'s
+      `write-project-memory`: that state CREATEs the initial
+      entry; this state UPDATEs it. Per `docs/memory-model.md`
+      ("Set on onboarding, versioned on structural change"), this
+      is the "versioned on structural change" step.
+    emits_evidence: []
+    writes_memory: [project]
+
+  update-environment-memory:
+    purpose: >
+      UPDATE the existing `environment` memory entry in place (same
+      id, refreshed `runtime` / `versions` fields). Per
+      `memory/schemas/environment.schema.json`, the entry has no
+      explicit `updated_at` field (unlike `project`); the refresh
+      is recorded by overwriting the `runtime` and `versions`
+      fields with the refreshed values from `discovery/cli`'s
+      version probes. REDACT any secret-shaped env var before
+      writing — same redaction rule as `project-onboarding`'s
+      `write-environment-memory`. The `id`, `type`,
+      `schema_version`, `created_at`, `source` all stay as they
+      were; only `runtime` / `versions` (and optionally `os` /
+      `arch` / `fingerprint_hash` if they drifted) are overwritten.
+      This entry is kept separate from `project` memory because
+      the two have different change rates (per
+      `docs/memory-model.md`): `project` is structural (slow-
+      changing), `environment` is fast-changing (refreshed on
+      every environment change). A discovery-refresh run that
+      detects only version drift (no structural change) would
+      leave `update-project-memory` as a no-op (only `updated_at`
+      bumped) while `update-environment-memory` overwrites
+      `versions` substantially — the two states are separate so
+      the structural vs. environment distinction is preserved in
+      the memory write pattern, not just in the schema.
+    emits_evidence: []
+    writes_memory: [environment]
+
+  report:
+    purpose: >
+      Summarize the refresh outcome: what was discovered on
+      re-run, what drifted since the prior onboarding (structure
+      changes, version drift, both, or neither — the
+      no-drift case is a valid refresh outcome, recording that
+      the prior memory entries are still current), what was
+      updated (the `.aiecp/project-intelligence.json` document
+      with `stale: false` + bumped `generated_at`, plus the
+      two updated memory entries), and what the next workflow to
+      run against this repo would be (now that the document is
+      fresh, the router can route intent — per
+      `workflows/_router.md`'s classification method step 1).
+      Must include the Decision Trace (`docs/architecture.md`),
+      not just "refreshed." Like `project-onboarding`'s `report`
+      state, this state writes NO new memory — the `project` and
+      `environment` entries were already updated by the preceding
+      two states. Writing a third here would duplicate the
+      entries this run just updated.
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous
+      after one question (`classify` — the kind of drift cannot
+      be determined from inspection + one clarifying question),
+      discovery failed (`run-discovery` — `discovery/cli` errored
+      AND the fallback procedure cannot complete because essential
+      marker files are missing), or discovery invalid after a
+      rerun (`validate-discovery` — the refreshed Project
+      Intelligence still doesn't validate against the schema, or
+      the detected tooling is wrong but the user cannot clarify
+      within the budget). Must surface a precise gap, never a
+      vague failure, per `docs/portability.md` failure modes.
+      The `discovery_failed` case is especially important: if
+      the refresh cannot complete, the prior stale document
+      remains on disk with `stale: true` — every downstream
+      workflow that reads it should treat it as untrusted per
+      the schema's `stale` field description, and the blocked
+      report should say so explicitly rather than silently
+      leaving the stale document in place.
+
+skills_required:
+  - evidence-engineering
+  - tool-use-discipline  # ADR-0019 — mandatory before re-reading the repo or asserting what drifted
+  - recency-verification  # ADR-0019 — version probes are time-sensitive; the refreshed versions must be probed, not recalled
+  # The discovery-refresh skill itself (skills/discovery-refresh/SKILL.md)
+  # drives the run-discovery, validate-discovery,
+  # update-project-memory, and update-environment-memory states.
+  # It is the dedicated skill authored alongside this workflow,
+  # analogous to how skills/project-onboarding/SKILL.md drives
+  # project-onboarding's states. Per the convention (see
+  # code-review.sm.yaml / project-onboarding.sm.yaml), it is
+  # not duplicated in skills_required because skills_required
+  # names skills whose existence is independent of this
+  # workflow.
+
+capabilities_required:
+  - filesystem_read   # read the repo + prior memory entries to detect drift
+  - filesystem_write  # write refreshed .aiecp/project-intelligence.json + UPDATED memory entries
+  - shell_exec        # run discovery/cli + version probes
+
+# No safety_gates declared. discovery-refresh writes only to
+# `.aiecp/` (the AIECP memory directory), never to source code.
+# The `broad-refactor` gate is not appropriate — refresh doesn't
+# refactor anything; it reads the repo and writes a refreshed
+# sibling metadata file. The `edit_source` gate is not
+# appropriate — no source files are edited. This is the same
+# "no gates because no source mutation" property that
+# `code-review.sm.yaml` and `project-onboarding.sm.yaml` declare
+# (see their `safety_gates` comment blocks); discovery-refresh
+# shares the no-source-mutation property for the same reason
+# as project-onboarding (discovery is read-only at the
+# source-code layer; the only writes are to `.aiecp/`). The
+# e2e driver at executor/examples/e2e-discovery-refresh/drive-run.mjs
+# asserts this by checking the run log has zero "gate-check"
+# entries and every `advance()` call returns `gateDecision:
+# undefined` (same pattern as the code-review and
+# project-onboarding e2e drivers).
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify]
+  rule: >
+    A question may only be asked in `classify`, and only if the
+    existing `project` + `environment` memory entries plus the
+    stale `.aiecp/project-intelligence.json` cannot resolve the
+    kind of drift (structure-changed vs. versions-drifted vs.
+    both). See `docs/workflow-model.md` "Question economy." The
+    budget is 1 (not 2 like `project-onboarding`'s) because
+    discovery-refresh starts from prior context — the existing
+    memory entries and the stale Project Intelligence document
+    reduce the ambiguity that a fresh onboarding faces. The one
+    legitimate question is "did the runtime version change on
+    purpose, or is this drift from a dependency bump?" (the
+    answer determines whether `update-environment-memory`
+    overwrites the `runtime` field or only the `versions` field).
+    The budget is bounded, not unlimited — questions about
+    implementation details ("should the refresh re-validate
+    against the schema?") are never permitted under this budget;
+    they are not decision-changing at the workflow level. If
+    the one allowed question is insufficient to resolve the
+    drift class, the correct outcome is `blocked` with a
+    precise gap, not a second question.

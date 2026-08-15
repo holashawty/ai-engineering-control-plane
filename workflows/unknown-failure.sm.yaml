@@ -1,0 +1,281 @@
+workflow: unknown-failure
+schema_version: "1.0.0"
+description: >
+  The fallback workflow (per `workflows/_router.md`'s classification
+  method step 3: "If no confident match → `unknown-failure` (fallback),
+  never silently guess a workflow"). Triggered when intent
+  classification cannot route the user's request to any of the
+  specific workflows (`bug-report`, `feature-request`, `change-request`,
+  `refactor`, `code-review`, `regression`, `performance-problem`,
+  `project-onboarding`, or the planned `user-complaint`,
+  `security-problem`, `release`, `incident`) with confidence. The
+  workflow's job is to triage the ambiguous request into the correct
+  target workflow, or — if no confident routing can be derived even
+  after the question budget is consumed — refuse safely via `blocked`
+  with a precise gap statement. Distinct from every other workflow in
+  the catalog because it produces no code change, no memory entry, and
+  no incident record: it is purely diagnostic. Its terminal `report`
+  state emits a `Decision` whose `what` field names the target
+  workflow to reroute to (e.g., `workflow_routed:bug-report`), or its
+  terminal `blocked` state surfaces the specific reason no routing
+  could be derived (vague intent after both allowed questions,
+  insufficient context even after `gather-context`, or no workflow
+  matched the gathered signals). This is the only workflow in the
+  catalog whose output is a routing decision rather than an applied
+  change — the structural inverse of `bug-report`'s `apply-fix` state,
+  which exists to make changes, where `route-or-block` exists to make
+  a routing recommendation the user (or the router) then acts on.
+
+states:
+  - intake
+  - classify
+  - gather-context
+  - triage
+  - route-or-block
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify, on: intent_classified }
+  - { from: classify, to: gather-context, on: class_known }
+  - { from: classify, to: blocked, on: intent_ambiguous_after_two_questions }
+  - { from: gather-context, to: triage, on: context_gathered }
+  - { from: gather-context, to: blocked, on: context_insufficient }
+  # Triage may determine that the gathered context is insufficient to
+  # weigh against the routing table — in that case the workflow
+  # returns to gather-context (not to classify) so the second allowed
+  # question can be consumed if it has not already been. This back-edge
+  # is the same shape as `bug-report`'s `diagnose -> locate-evidence`
+  # back-edge: a hypothesis that needs more evidence, not a fresh start.
+  - { from: triage, to: route-or-block, on: triage_complete }
+  - { from: triage, to: gather-context, on: context_insufficient_after_triage }
+  - { from: route-or-block, to: report, on: workflow_routed }
+  - { from: route-or-block, to: blocked, on: no_workflow_match }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's ambiguous request verbatim. Do not ask
+      clarifying questions here — the two allowed questions belong to
+      `classify` and `gather-context` (per `question_economy` below).
+      The router already routed here because no confident workflow
+      match was found at intent-classification time; this state's only
+      job is to record the request text so subsequent states can
+      re-derive intent with progressively more context. Structurally,
+      the most important classification made here is: is this *actually*
+      an ambiguous request, or did the router simply lack enough
+      signal at intake time? If the latter (the request becomes
+      unambiguous once the codebase is inspected), the workflow will
+      resolve itself quickly via `classify` and route correctly; if
+      the former (the request is genuinely vague even after
+      inspection), the workflow will end in `blocked` after consuming
+      the question budget. Either outcome is correct — the workflow
+      is the diagnostic, not a guess.
+    emits_evidence: []
+    reads_memory: [project, environment]
+
+  classify:
+    purpose: >
+      Attempt an initial signal classification using Project
+      Intelligence (discovery/schema/project-intelligence.schema.json)
+      plus the request text. Unlike other workflows' `classify` states
+      (which classify the *type* of work — bug vs. feature vs. refactor),
+      `unknown-failure`'s `classify` classifies the *signal shape*:
+      does the request look reactive (something broken → candidate
+      `bug-report` / `regression` / `user-complaint` / `incident`),
+      constructive (something to add → candidate `feature-request`),
+      behavior-modifying (something to change → candidate
+      `change-request`), behavior-preserving (cleanup → candidate
+      `refactor`), gatekeeping (review this → candidate `code-review`),
+      onboarding-shaped (no prior memory → candidate `project-onboarding`),
+      or cost-shaped (slow → candidate `performance-problem`). May ask
+      at most ONE necessary, specific, decision-changing question if
+      the signal shape cannot be determined from inspection — typically
+      "is this about something broken, or something you want to add?"
+      when the request text is genuinely ambiguous between reactive
+      and constructive intent. The `Decision` emitted here is the
+      acceptance decision (proceed to gather-context with a candidate
+      signal shape) or the rejection decision (transition to blocked
+      with `intent_ambiguous_after_two_questions` if the second
+      question, in `gather-context`, still does not resolve the
+      signal shape).
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure]
+
+  gather-context:
+    purpose: >
+      Gather corroborating context from the repo (recent commits, log
+      files, test outcomes, prior `known-failure` memory entries) that
+      would disambiguate the candidate signal shapes from `classify`.
+      Unlike `bug-report`'s `locate-evidence` (which assumes a defect
+      exists and looks for evidence of it), `gather-context` here is
+      *exploratory*: it looks for any signal that would tip the routing
+      decision toward a specific target workflow. Emit `event`s of
+      `kind: "observation"` for each piece of context found, with
+      `source` naming the inspection command (`git log --oneline -10`,
+      `rg -n <keyword>`, `ls .aiecp/memory/known-failure/`, etc.).
+      Wrap these in a `Trace` so the exploration sequence is citable
+      as a unit by `triage`. May ask at most ONE necessary, specific,
+      decision-changing question if the gathered context is still
+      ambiguous between two candidate workflows — typically "is this
+      about a regression of a previously-fixed bug, or a new symptom
+      that looks similar?" (the answer routes to `regression` vs.
+      `bug-report`). This is the second of the `max_questions: 2`
+      budget; combined with the first (in `classify`), the workflow's
+      total question budget is exhausted here. If context is
+      insufficient even after this question, transition to `blocked`
+      with `context_insufficient` and a precise gap statement naming
+      which two workflows could not be disambiguated and what
+      information would have resolved them.
+    emits_evidence: [trace, event]
+    reads_memory: [project, known-failure, environment]
+
+  triage:
+    purpose: >
+      Weigh the gathered context against the routing table in
+      `workflows/_router.md` to produce a candidate routing target.
+      Emit a `decision` (the candidate routing Decision, `validated:
+      false`, `result: "pending"`) whose `what` field names the
+      candidate target workflow in the form
+      `routing_candidate:<workflow-name>` (e.g.,
+      `routing_candidate:bug-report`), and whose `why` field cites
+      the specific `event`s from `gather-context`'s trace that
+      justify the candidate. If multiple candidates are equally
+      plausible, the `decision`'s `alternatives` array should name
+      each rejected candidate and why it was rejected — the
+      `route-or-block` state will then either pick the strongest
+      candidate or fall through to `blocked`. If triage determines
+      the gathered context is genuinely insufficient to weigh (e.g.,
+      the request names no surface the codebase owns, or the signal
+      shape conflicts across `event`s), transition back to
+      `gather-context` with `context_insufficient_after_triage` so
+      the second question can be consumed if it has not already
+      been. This back-edge is bounded by the question budget — the
+      workflow cannot loop forever because each pass through
+      `gather-context` either consumes the budget or transitions to
+      `blocked`.
+    emits_evidence: [decision]
+    reads_memory: [project]
+
+  route-or-block:
+    purpose: >
+      Either confirm the candidate routing target (emit a final
+      `Decision` with `what: "workflow_routed:<workflow-name>"`,
+      `validated: true`, `result: "accepted"`, `evidence_refs`
+      pointing at the `triage` Decision and the corroborating
+      `gather-context` events, then transition to `report` on
+      `workflow_routed`) OR — if no candidate survived triage with
+      sufficient confidence — transition to `blocked` with
+      `no_workflow_match` and a precise gap statement naming which
+      workflows were considered, why each was rejected, and what
+      information would have routed the request successfully. The
+      `Decision` emitted here is the workflow's primary output: the
+      `report` state summarizes it, but the `Decision` itself is
+      the routing artifact the router (or the user) will act on. A
+      `workflow_routed` Decision with no `evidence_refs` is a
+      hollow routing — same hollow-evidence failure mode
+      `evidence-engineering` step 2 exists to prevent across all
+      workflows. The route confirmation threshold is "the candidate
+      from `triage` has at least one corroborating `event` from
+      `gather-context` whose `payload.finding` directly supports
+      the routing" — a candidate with no corroboration is not a
+      route, it is a guess, and guessing is exactly the failure
+      mode the `unknown-failure` workflow exists to prevent.
+    emits_evidence: [decision]
+
+  report:
+    purpose: >
+      Summarize the routing outcome: the original ambiguous request,
+      the signal-shape classification from `classify`, the
+      corroborating context from `gather-context`'s trace, the
+      candidate from `triage`, the confirmed route from
+      `route-or-block`'s `workflow_routed` Decision, and the next
+      workflow the user (or the router) should run against this
+      request. Must include the Decision Trace (docs/architecture.md)
+      — not just "routed to bug-report" but the chain of evidence
+      that justified the routing. Writes NO new memory entry: this
+      workflow is diagnostic, and a routing outcome is not a fact
+      about the project worth persisting (the routed-to workflow's
+      own `report` state will write whatever memory is appropriate
+      for that workflow's outcome). Writing a `project` memory
+      entry here would duplicate or contradict the routed-to
+      workflow's eventual memory write.
+    writes_memory: []
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: intent ambiguous after
+      both allowed questions (`classify` + `gather-context` — the
+      request is too vague even with the full budget consumed),
+      context insufficient (`gather-context` — no corroborating
+      signal could be located in the repo), or no workflow match
+      (`route-or-block` — the candidate routing target(s) from
+      `triage` did not survive confirmation). Must surface a
+      precise gap, never a vague "could not route" — per
+      docs/portability.md failure modes, the blocked report
+      should name which workflows were considered, why each was
+      rejected, what information would have routed the request
+      successfully, and what the user should do next (provide more
+      detail, rephrase, or run a specific workflow manually if
+      they have a strong prior). The blocked report is the
+      artifact the user will read to decide whether to rephrase,
+      supply more context, or manually invoke a specific
+      workflow — it must be actionable, not just a refusal.
+
+skills_required:
+  - evidence-engineering  # the gather-context state's events + the triage/route-or-block decisions must be evidence-anchored, not asserted from memory
+  - tool-use-discipline  # ADR-0019 — mandatory before any code-reading or context-gathering; the routing decision must be derived from inspected signals, not recalled patterns
+  - recency-verification  # ADR-0019 — the request may reference a library version or API behavior that has shifted since onboarding; the routing decision must account for the current state
+  # The unknown-failure skill itself (skills/unknown-failure/SKILL.md)
+  # drives the classify, gather-context, triage, and route-or-block
+  # states. It is the dedicated skill authored alongside this
+  # workflow; per the convention (see bug-report.sm.yaml /
+  # code-review.sm.yaml), it is not duplicated in skills_required
+  # because skills_required names skills whose existence is
+  # independent of this workflow.
+
+capabilities_required:
+  - filesystem_read   # read repo + memory to gather routing context
+  - shell_exec         # run git log / rg / grep for context-gathering commands
+
+# No safety_gates declared. unknown-failure is purely diagnostic:
+# it reads the repo and prior memory, weighs signals, and emits a
+# routing Decision. It writes NO source code, NO memory entry, and
+# NO `.aiecp/project-intelligence.json`. The `broad-refactor` gate is
+# not appropriate — no refactor happens. The `edit_source` gate is
+# not appropriate — no source files are edited. This is the same
+# "no gates because no source mutation" property that
+# `code-review.sm.yaml` and `project-onboarding.sm.yaml` declare (see
+# their `safety_gates` comment blocks); unknown-failure shares the
+# no-source-mutation property for yet a different reason (it is
+# diagnostic-only at every layer, not just at the source-code layer —
+# it writes nothing at all). The e2e driver at
+# executor/examples/e2e-unknown-failure/drive-run.mjs asserts this
+# by checking the run log has zero "gate-check" entries and every
+# `advance()` call returns `gateDecision: undefined` (same pattern
+# as the code-review and project-onboarding e2e drivers).
+
+question_economy:
+  max_questions: 2
+  allowed_states: [classify, gather-context]
+  rule: >
+    Questions may only be asked in `classify` (up to 1) and
+    `gather-context` (up to 1), totaling 2 across the workflow.
+    Each must be necessary, specific, and decision-changing — see
+    docs/workflow-model.md "Question economy." The budget is 2
+    (not 1 like `bug-report`'s) because unknown-failure starts
+    from ambiguity by definition: the router already failed to
+    classify the request confidently, so the workflow's job is to
+    resolve that ambiguity with up to two targeted questions before
+    falling back to `blocked`. The budget is bounded, not unlimited
+    — questions about implementation details ("should the routing
+    Decision include a confidence score?") are never permitted
+    under this budget; they are not decision-changing at the
+    workflow level. If the two allowed questions are insufficient
+    to disambiguate the request, the correct outcome is `blocked`
+    with a precise gap, not a third question — the user must
+    rephrase or supply more context rather than consume an
+    unbounded interview.
