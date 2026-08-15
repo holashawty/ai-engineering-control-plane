@@ -102,6 +102,9 @@ def load_scenarios() -> list[dict]:
     if not SCENARIOS_DIR.exists():
         return scenarios
     for path in sorted(SCENARIOS_DIR.glob("*.yaml")) + sorted(SCENARIOS_DIR.glob("*.yml")):
+        # Skip files prefixed with _ (templates, not real scenarios)
+        if path.name.startswith("_"):
+            continue
         with open(path) as f:
             data = yaml.load(f, Loader=StrictLoader)
             if data and isinstance(data, list):

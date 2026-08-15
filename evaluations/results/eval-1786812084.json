@@ -1,0 +1,339 @@
+[
+  {
+    "scenario_id": "bug-report-happy-path",
+    "workflow": "bug-report",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 8,
+    "assertions_failed": 0,
+    "duration_ms": 161,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'report'",
+        "passed": true,
+        "detail": "actual: report"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "questions asked <= 0",
+        "passed": true,
+        "detail": "actual: 0"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      },
+      {
+        "description": "evidence kinds include {'decision', 'actual', 'validation', 'trace', 'replay', 'event', 'incident', 'expected'}",
+        "passed": true,
+        "detail": "actual: {'decision', 'actual', 'validation', 'trace', 'replay', 'event', 'incident', 'expected'}"
+      },
+      {
+        "description": "memory types include {'known-failure'}",
+        "passed": true,
+        "detail": "actual: {'known-failure'}"
+      },
+      {
+        "description": "evidence persisted to disk",
+        "passed": true,
+        "detail": "on disk: ['actual', 'decision', 'event', 'expected', 'incident', 'replay', 'trace', 'validation']"
+      },
+      {
+        "description": "log entries >= 10",
+        "passed": true,
+        "detail": "actual: 30"
+      }
+    ]
+  },
+  {
+    "scenario_id": "bug-report-question-economy-exceeded",
+    "workflow": "bug-report",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 3,
+    "assertions_failed": 0,
+    "duration_ms": 99,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'classify'",
+        "passed": true,
+        "detail": "actual: classify"
+      },
+      {
+        "description": "questions asked <= 1",
+        "passed": true,
+        "detail": "actual: 1"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "bug-report-wrong-state-question",
+    "workflow": "bug-report",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 2,
+    "assertions_failed": 0,
+    "duration_ms": 141,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'intake'",
+        "passed": true,
+        "detail": "actual: intake"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "bug-report-safety-gate-blocks",
+    "workflow": "bug-report",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 2,
+    "assertions_failed": 0,
+    "duration_ms": 205,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'propose-fix'",
+        "passed": true,
+        "detail": "actual: propose-fix"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "bug-report-blocked-cannot-reproduce",
+    "workflow": "bug-report",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 3,
+    "assertions_failed": 0,
+    "duration_ms": 206,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'blocked'",
+        "passed": true,
+        "detail": "actual: blocked"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "code-review-happy-path",
+    "workflow": "code-review",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 6,
+    "assertions_failed": 0,
+    "duration_ms": 198,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'report'",
+        "passed": true,
+        "detail": "actual: report"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "questions asked <= 0",
+        "passed": true,
+        "detail": "actual: 0"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      },
+      {
+        "description": "evidence kinds include {'decision', 'actual', 'validation', 'trace', 'event', 'expected'}",
+        "passed": true,
+        "detail": "actual: {'decision', 'actual', 'validation', 'trace', 'event', 'expected'}"
+      },
+      {
+        "description": "log entries >= 5",
+        "passed": true,
+        "detail": "actual: 15"
+      }
+    ]
+  },
+  {
+    "scenario_id": "code-review-no-safety-gate",
+    "workflow": "code-review",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 3,
+    "assertions_failed": 0,
+    "duration_ms": 115,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'report'",
+        "passed": true,
+        "detail": "actual: report"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "code-review-blocked-binary-diff",
+    "workflow": "code-review",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 3,
+    "assertions_failed": 0,
+    "duration_ms": 75,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'blocked'",
+        "passed": true,
+        "detail": "actual: blocked"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "feature-request-happy-path",
+    "workflow": "feature-request",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 6,
+    "assertions_failed": 0,
+    "duration_ms": 189,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'report'",
+        "passed": true,
+        "detail": "actual: report"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "questions asked <= 0",
+        "passed": true,
+        "detail": "actual: 0"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      },
+      {
+        "description": "evidence kinds include {'decision', 'actual', 'validation', 'trace', 'event', 'expected'}",
+        "passed": true,
+        "detail": "actual: {'decision', 'actual', 'validation', 'trace', 'event', 'expected'}"
+      },
+      {
+        "description": "log entries >= 8",
+        "passed": true,
+        "detail": "actual: 24"
+      }
+    ]
+  },
+  {
+    "scenario_id": "feature-request-safety-gate-blocks",
+    "workflow": "feature-request",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 2,
+    "assertions_failed": 0,
+    "duration_ms": 74,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'implement'",
+        "passed": true,
+        "detail": "actual: implement"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  },
+  {
+    "scenario_id": "feature-request-blocked-design-infeasible",
+    "workflow": "feature-request",
+    "tier": "workflow",
+    "passed": true,
+    "assertions_passed": 3,
+    "assertions_failed": 0,
+    "duration_ms": 88,
+    "error": null,
+    "assertions": [
+      {
+        "description": "final state is 'blocked'",
+        "passed": true,
+        "detail": "actual: blocked"
+      },
+      {
+        "description": "workflow reached a terminal state",
+        "passed": true,
+        "detail": "isTerminal: True"
+      },
+      {
+        "description": "no WorkflowViolation errors",
+        "passed": true,
+        "detail": "none"
+      }
+    ]
+  }
+]
