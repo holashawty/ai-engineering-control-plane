@@ -310,60 +310,356 @@ what you can and cannot do:
 
 ---
 
-## The evidence protocol (how to emit evidence as text)
+## Protocol reference (CRITICAL — read this before emitting any block)
 
-When you would normally call `emitEvidence(kind, data)` in a
-tool-using agent, instead emit a fenced code block in your text
-response with this exact format:
+### Block format rules
 
-````markdown
-```aiecp:evidence
-kind: trace
-data:
-  id: trace-locate-1
-  started_at: 2026-08-14T10:32:00Z
-  event_refs:
-    - event-grep-result
+**EVERY block MUST start with ` ```aiecp:<type> ` where `<type>` is one of:**
+`evidence`, `memory`, `advance`, `question`, `confirm`.
+
+**` ```aiecp ` WITHOUT the colon and type is INVALID.** The parser
+will NOT find your block. You MUST write ` ```aiecp:evidence ` or
+` ```aiecp:memory ` or ` ```aiecp:advance ` etc.
+
+### Block type reference
+
+| Block type | Fence header | Body format | Purpose |
+|---|---|---|---|
+| Evidence | `aiecp:evidence` | `kind:` + `data:` | Emit an Evidence Model entity |
+| Memory | `aiecp:memory` | `type:` + `data:` | Write a typed Memory entry |
+| Advance | `aiecp:advance` | `on:` | Transition the workflow state |
+| Question | `aiecp:question` | `text:` | Ask the user (subject to question_economy) |
+| Confirm | `aiecp:confirm` | `gate:` + `reason:` (both optional) | Authorize safety-gated transition (chat-sandbox only, per ADR-0023) |
+
+### Evidence kinds and their REQUIRED fields
+
+Every `aiecp:evidence` block has `kind:` (the evidence kind) and
+`data:` (the entity body). The `data:` object MUST contain ALL
+required fields listed below — the schema rejects blocks with
+missing fields.
+
+| Kind | Required fields in `data:` |
+|---|---|
+| `incident` | `id`, `observed_at`, `environment_fingerprint_ref`, `expected_ref`, `actual_ref`, `severity`, `status` |
+| `trace` | `id`, `started_at`, `event_refs` |
+| `event` | `id`, `trace_ref`, `ts`, `kind`, `source` |
+| `decision` | `id`, `trace_ref`, `what`, `why`, `validated` |
+| `expected` | `id`, `source_ref`, `predicate` |
+| `actual` | `id`, `expected_ref`, `observed_value`, `observation_ref` |
+| `validation` | `id`, `expected_ref`, `actual_ref`, `result`, `method` |
+| `replay` | `id`, `original_trace_ref`, `result`, `environment_fingerprint_ref` |
+
+**ID pattern:** All IDs MUST match `^<kind>-[a-zA-Z0-9_-]+$` (e.g.,
+`trace-locate-1`, `event-grep-result`). Spaces are NOT allowed.
+
+**Key field name reminders (LLMs get these WRONG often):**
+- `event`: use `ts` (ISO datetime), NOT `timestamp`
+- `decision`: use `what` and `why`, NOT `summary`
+- `actual`: use `observed_value`, NOT `observation`
+- `known-failure` memory: use `fix`, NOT `fix_applied`
+
+### Memory types and their REQUIRED fields
+
+Every `aiecp:memory` block has `type:` (the memory type) and
+`data:` (the entity body). ALL memory entries require `id`, `type`,
+`schema_version`, `created_at`, `source` as base fields.
+
+| Type | Additional required fields |
+|---|---|
+| `project` | `stack`, `layer` |
+| `environment` | `runtime`, `versions` |
+| `known-failure` | `incident_ref`, `symptom`, `root_cause`, `fix` |
+| `decision` | `stack`, `layer` |
+
+For `known-failure`, `type` MUST be `"known-failure"`, `schema_version`
+MUST be `"1.0.0"`, and `incident_ref` MUST reference an Incident
+entity you emitted earlier.
+
+### Safety gate confirmation (aiecp:confirm)
+
+**For chat-sandbox adapter ONLY (per ADR-0023):** when your
+workflow reaches a safety-gated transition, you MUST emit an
+`aiecp:confirm` block BEFORE the `aiecp:advance` block:
+
+````
+```aiecp:confirm
+gate: broad-refactor
+reason: "user asked to fix the bug, proceeding with patch"
 ```
 ````
 
-The first line is always ` ```aiecp:evidence `. The body is YAML
-with two keys: `kind` (one of `incident`, `trace`, `event`,
-`decision`, `expected`, `actual`, `validation`, `replay`) and
-`data` (the entity body, matching the schema in
-`evidence/schema/<kind>.schema.json`).
+Both fields are optional but recommended. Place immediately before
+the `aiecp:advance` that crosses the gate.
 
-To transition the workflow state:
+**For chat (pure-text) adapter:** `aiecp:confirm` is not needed —
+safety gates are auto-confirmed because you cannot write files.
 
-````markdown
+### Complete worked example (bug-report workflow)
+
+Below is a COMPLETE example showing every block. Copy this pattern,
+fill in your own values.
+
+**intake -> classify:**
+````
+```aiecp:advance
+on: intent_classified
+```
+````
+
+**classify -> locate-evidence:**
+````
+```aiecp:evidence
+kind: incident
+data:
+  id: incident-shipping-1
+  observed_at: 2026-08-15T10:00:00Z
+  environment_fingerprint_ref: env-fp-1
+  expected_ref: expected-heavy-5kg
+  actual_ref: actual-light-5kg
+  severity: medium
+  status: open
+```
+
 ```aiecp:advance
 on: class_known
 ```
 ````
 
-To ask a question (subject to `question_economy`):
+**locate-evidence -> reproduce:**
+````
+```aiecp:evidence
+kind: trace
+data:
+  id: trace-locate-1
+  started_at: 2026-08-15T10:00:30Z
+  event_refs:
+    - event-code-read
+```
 
-````markdown
-```aiecp:question
-text: "Is this affecting all users or a subset?"
+```aiecp:evidence
+kind: event
+data:
+  id: event-code-read
+  trace_ref: trace-locate-1
+  ts: 2026-08-15T10:00:35Z
+  kind: observation
+  source: "shipping.py:47"
+  payload:
+    finding: "if weight_kg > 5 contradicts docstring"
+```
+
+```aiecp:evidence
+kind: trace
+data:
+  id: trace-repro-1
+  started_at: 2026-08-15T10:01:00Z
+  event_refs:
+    - event-pytest-before
+```
+
+```aiecp:evidence
+kind: event
+data:
+  id: event-pytest-before
+  trace_ref: trace-repro-1
+  ts: 2026-08-15T10:01:10Z
+  kind: test_result
+  source: "python3 -m pytest test_shipping.py -v"
+  payload:
+    result: "2 failed, 5 passed"
+```
+
+```aiecp:advance
+on: evidence_located
 ```
 ````
 
-To write a memory entry:
+**reproduce -> diagnose:**
+````
+```aiecp:evidence
+kind: decision
+data:
+  id: decision-root-cause-1
+  trace_ref: trace-repro-1
+  what: "root_cause_candidate:strict_gt_instead_of_gte"
+  why: "weight_kg > 5 is False when weight_kg == 5.0"
+  validated: false
+  root_cause: false
+  result: pending
+```
 
-````markdown
+```aiecp:evidence
+kind: expected
+data:
+  id: expected-heavy-5kg
+  source_ref: "shipping.py docstring"
+  predicate: "calculate_shipping_cost(5.0) must return 15.0"
+```
+
+```aiecp:evidence
+kind: actual
+data:
+  id: actual-light-5kg
+  expected_ref: expected-heavy-5kg
+  observed_value: "returned 8.0 instead of 15.0"
+  observation_ref: event-pytest-before
+```
+
+```aiecp:evidence
+kind: validation
+data:
+  id: validation-diagnose-1
+  expected_ref: expected-heavy-5kg
+  actual_ref: actual-light-5kg
+  result: mismatch
+  method: app_validation
+```
+
+```aiecp:advance
+on: root_cause_found
+```
+````
+
+**diagnose -> propose-fix -> apply-fix (chat-sandbox: NEEDS aiecp:confirm):**
+````
+```aiecp:evidence
+kind: decision
+data:
+  id: decision-propose-fix-1
+  trace_ref: trace-repro-1
+  what: "ai_proposal:change_gt_to_gte"
+  why: "minimal fix: change > to >= on line 47"
+  validated: false
+  result: pending
+```
+
+```aiecp:confirm
+gate: broad-refactor
+reason: "user asked to fix the bug"
+```
+
+```aiecp:advance
+on: fix_approved
+```
+
+```aiecp:evidence
+kind: decision
+data:
+  id: decision-apply-fix-1
+  trace_ref: trace-repro-1
+  what: "ai_proposal:apply_patch"
+  why: "changed weight_kg > 5 to weight_kg >= 5"
+  validated: false
+  result: pending
+```
+
+```aiecp:evidence
+kind: event
+data:
+  id: event-file-change-1
+  trace_ref: trace-repro-1
+  ts: 2026-08-15T10:02:00Z
+  kind: file_change
+  source: "shipping.py"
+  payload:
+    before: "if weight_kg > 5:"
+    after: "if weight_kg >= 5:"
+```
+
+```aiecp:confirm
+gate: broad-refactor
+reason: "fix applied, proceeding to verify"
+```
+
+```aiecp:advance
+on: fix_applied
+```
+````
+
+**apply-fix -> verify -> regression-protect -> replay -> report:**
+````
+```aiecp:evidence
+kind: event
+data:
+  id: event-pytest-after
+  trace_ref: trace-repro-1
+  ts: 2026-08-15T10:02:30Z
+  kind: test_result
+  source: "python3 -m pytest test_shipping.py -v"
+  payload:
+    result: "7 passed"
+```
+
+```aiecp:evidence
+kind: actual
+data:
+  id: actual-after-fix
+  expected_ref: expected-heavy-5kg
+  observed_value: "calculate_shipping_cost(5.0) == 15.0"
+  observation_ref: event-pytest-after
+```
+
+```aiecp:evidence
+kind: validation
+data:
+  id: validation-verify-1
+  expected_ref: expected-heavy-5kg
+  actual_ref: actual-after-fix
+  result: match
+  method: app_validation
+```
+
+```aiecp:advance
+on: behavior_verified
+```
+
 ```aiecp:memory
 type: known-failure
 data:
-  id: mem-known-failure-login-race-1
-  ...
-```
+  id: mem-known-failure-shipping-1
+  type: known-failure
+  schema_version: "1.0.0"
+  created_at: 2026-08-15T10:03:00Z
+  source: chat-sandbox-run-1
+  incident_ref: incident-shipping-1
+  symptom: "5kg charged LIGHT instead of HEAVY"
+  root_cause: "strict > instead of >= at 5kg boundary"
+  fix: "changed to weight_kg >= 5"
 ```
 
-The user (or `scripts/validate-chat-output.mjs`) parses these blocks
-out of your response and feeds them to the real executor. You are
-doing the same work a tool-using agent does — the protocol is just
-text-encoding instead of function-calling.
+```aiecp:advance
+on: regression_added
+```
+
+```aiecp:evidence
+kind: replay
+data:
+  id: replay-1
+  original_trace_ref: trace-repro-1
+  result: matches_expected
+  environment_fingerprint_ref: env-fp-1
+```
+
+```aiecp:advance
+on: replay_matches
+```
+````
+
+**At this point the workflow is in `report` (terminal). DO NOT emit
+any more `aiecp:advance` blocks.**
+
+### Common mistakes (DO NOT make these)
+
+1. **Using `aiecp` instead of `aiecp:evidence`** — the parser will
+   NOT find your block. ALWAYS include the colon and type.
+2. **Missing `trace_ref` and `ts` on events** — both are required.
+3. **Using `summary` instead of `what` on decisions** — use `what` and `why`.
+4. **Using `observation` instead of `observed_value` on actuals** — use `observed_value`.
+5. **Missing `type`, `schema_version`, `created_at`, `source` on memory** — all required.
+6. **Using `fix_applied` instead of `fix` on known-failure memory** — the field is `fix`.
+7. **Emitting `on: report`** — `report` is terminal, reached via `on: replay_matches`.
+8. **Forgetting `aiecp:confirm` before safety-gated transitions (chat-sandbox)**.
+9. **Not walking the full workflow** — start at `intake`, walk every state.
 
 ---
 

@@ -100,6 +100,15 @@ function parseYaml(body) {
 }
 
 function parseBlocks(text) {
+  // Check for bare ```aiecp blocks (common LLM mistake — missing colon:type)
+  const bareAiecpCount = (text.match(/```aiecp\n/g) || []).length;
+  if (bareAiecpCount > 0) {
+    console.error(`WARNING: Found ${bareAiecpCount} block(s) with \`\`\`aiecp (no colon:type).`);
+    console.error(`These will NOT be parsed. Use \`\`\`aiecp:evidence, \`\`\`aiecp:memory,`);
+    console.error(`\`\`\`aiecp:advance, \`\`\`aiecp:question, or \`\`\`aiecp:confirm instead.`);
+    console.error(`See CHAT-ENTRYPOINT.md "Protocol reference" for correct format.\n`);
+  }
+
   const blocks = [];
   let match;
   let idx = 0;
