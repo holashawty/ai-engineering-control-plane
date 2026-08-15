@@ -400,6 +400,22 @@ don't silently reorder.
       constitution §3 + §8 honest-fallback clause made operational:
       an agent without `filesystem_write` (chat LLMs) transitions
       to `blocked` rather than fabricating the fix.
+- [x] Toy shipping-bug test fixture — `executor/examples/toy-shipping-bug/`
+      created. A deliberately-buggy Python module
+      (`shipping.py` with `>` instead of `>=`) + test suite
+      (`test_shipping.py` with 7 tests, 2 of which fail until the
+      bug is fixed) + README documenting how to test with a
+      chat-sandbox LLM. This fixture exists so chat-sandbox LLMs
+      (ChatGPT Code Interpreter, etc.) have a REAL source file in
+      the repo to test the FULL bug-report workflow against,
+      including `apply-fix` → `verify` → `regression-protect` →
+      `replay` → `report` — the states that previously couldn't be
+      tested because no real source file existed. The 3rd ChatGPT
+      test (2026-08-14) correctly blocked at "requires target source
+      file" because the user's pasted snippet wasn't in the repo;
+      this fixture fixes that structural gap. Verified locally:
+      `python3 -m pytest test_shipping.py -v` shows 2 failures
+      before the fix, 7 passes after.
 - [x] ADR-0020 — Chat LLMs are not all the same: pure-text vs
       sandboxed-code-execution. The original `chat` adapter
       (commit `ff4afbc`) assumed all chat LLMs have zero
@@ -533,13 +549,12 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, ADR-0020 (chat-sandbox adapter) added
-after real ChatGPT test found catch-22 in chat adapter capability
-model. Chat LLMs now split into pure-text (chat) and sandbox
-(chat-sandbox) adapters — the latter can drive project-onboarding
-within its sandbox. CHAT-ENTRYPOINT.md gains Step 0
-self-identification + Step 0.5 router pre-condition check. 9 e2e
-drivers (chat-adapter now 56/56 with chat-sandbox scenario),
-27/27 adapters/agents self-test, 4 agent adapters (was 3), 20
-ADRs (was 19). Next priority: real chat-sandbox LLM session
-(ChatGPT Code Interpreter) via patron's home setup.*
+*Last updated: 2026-08-14, toy-shipping-bug fixture added for
+end-to-end chat-sandbox testing. The 3rd ChatGPT test correctly
+blocked at "requires target source file" because no real source
+existed — this fixture fixes that. Now chat-sandbox LLMs can test
+the FULL bug-report workflow (intake → ... → apply-fix → verify →
+regression-protect → replay → report) against a real buggy Python
+file in the repo. 22 ADRs, 9 e2e drivers, 325+ assertions, 4
+agent adapters. Next priority: patron runs the 4th ChatGPT test
+against this fixture — full end-to-end, including apply-fix.*

@@ -381,6 +381,31 @@ doğrulayabilir.
 | README upstream repo listesi | yok | 7 upstream repo link listesi (NOTICE + README) |
 | Spec templates | yok | **8** (5 verbatim from spec-kit + 3 AIECP-original) |
 | Live-session test altyapısı | yok | `scripts/chat-harness.mjs` (8 workflow destekli) |
+| Toy test fixture (chat-sandbox için) | yok | `executor/examples/toy-shipping-bug/` (gerçek Python + failing test) |
+
+### Toy shipping-bug test fixture — 3. ChatGPT test'in bulgusu üzerine
+
+- **Commit:** (bu commit, henüz push edilmedi)
+- **3. ChatGPT testi ne buldu?** ChatGPT çok disiplinli davrandı:
+  - `calculate_shipping_cost` fonksiyonunun repoda HİÇ VAR OLMADIĞINI tespit etti
+  - Var olmayan dosyaya fix uygulamayı REDDETTİ (sahte dosya yolu uydurmadı)
+  - Workflow'u dürüstçe `blocked: requires target source file` durumuna soktu
+  - Bug'ı standalone test etti ama "uyguladım" demedi, "aday, doğrulanmamış" dedi
+- **Süper zeka'nın değerlendirmesi:** "Bu, üç transkript arasında gördüğüm en disiplinli çıktı... framework'ün eksikliği değil. Sorun: toy-shipping senaryosu tasarım gereği repo'da olmayan bir fonksiyon üzerine kurulu."
+- **Benim çözümüm (3. seçenek):** `executor/examples/toy-shipping-bug/` altında kalıcı bir toy fixture ekle:
+  - `shipping.py` — `calculate_shipping_cost` fonksiyonu, `>` yerine `>=` bug'ı (tıpkı e2e-membership-bug'deki gibi off-by-one)
+  - `test_shipping.py` — 7 test (5 PASSED, 2 FAILED before fix; 7 PASSED after fix)
+  - `README.md` — senaryo açıklaması + ChatGPT test prompt'u
+- **Doğrulama:**
+  - BEFORE fix: `python3 -m pytest test_shipping.py -v` → 2 failed, 5 passed
+  - AFTER fix (`>` → `>=`): 7 passed, 0 failed
+  - Fix revert edildi (toy fixture bug'lı kalmalı)
+- **Önemi:** Bu, ChatGPT'nin 4. testi için altyapı. Patron'un evinde:
+  1. ChatGPT'ye repoyu zip olarak yükle
+  2. "executor/examples/toy-shipping-bug/shipping.py'deki bug'ı fix et" de
+  3. ChatGPT CHAT-ENTRYPOINT-SANDBOX.md'yi okuyup full workflow'u yürütecek
+  4. apply-fix → verify → regression-protect → replay → report zinciri TAM test edilebilecek
+- **Patron'un vizyonu:** "sistem doğru çalışmıyorsa düzeltme aşamasına geçeriz" — 3. test framework'ün değil, test senaryosunun kusurunu ortaya çıkardı. Bu fixture o kusuru düzeltiyor.
 
 ## Kalan açık noktalar (kontrolcüye hatırlatma)
 

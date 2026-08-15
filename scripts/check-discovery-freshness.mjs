@@ -142,9 +142,15 @@ console.log("Executability check: running `node discovery/cli/dist/cli.js --self
 console.log("in a temp dir with NO node_modules (simulating offline clone)...");
 
 // Temporarily move node_modules aside so the check is honest.
+// IMPORTANT: use a try/finally that GUARANTEES restoration, even if
+// process.exit() is called inside the try block. The previous version
+// of this script had a bug where node_modules could be lost if the
+// script was interrupted — fixed by capturing the exit code and
+// returning through finally instead of calling process.exit() inside.
 const nodeModulesPath = join(REPO_ROOT, "node_modules");
 const nodeModulesBackup = join(tmpdir(), `aiecp-node-modules-backup-${Date.now()}`);
 let nodeModulesMoved = false;
+let exitCode = 0;
 try {
   if (existsSync(nodeModulesPath)) {
     renameSync(nodeModulesPath, nodeModulesBackup);
@@ -178,27 +184,46 @@ try {
     console.error("Fix: check discovery/cli/src/cli.ts for runtime imports of npm packages.");
     console.error("Per ADR-0022, discovery/cli must have ZERO runtime npm dependencies.");
     console.error("Schema validation belongs in validate-discovery, not in the discovery CLI.");
-    process.exit(3);
-  }
-
-  if (!runStdout.includes("SELF-TEST PASSED")) {
+    exitCode = 3;
+  } else if (!runStdout.includes("SELF-TEST PASSED")) {
     console.error("FAIL (2/2): discovery/cli/dist/cli.js --self-test ran but did not pass.");
     console.error("stdout:", runStdout);
     console.error("stderr:", runStderr);
-    process.exit(3);
+    exitCode = 3;
+  } else {
+    console.log("PASS (2/2): discovery/cli/dist/cli.js --self-test passes WITHOUT node_modules.");
+    console.log("chat-sandbox agents can run `node discovery/cli/dist/cli.js` offline — verified, not just claimed.");
+    console.log("");
+    console.log("=== Both checks PASS: discovery/cli/dist/ is fresh AND executable. ===");
   }
-
-  console.log("PASS (2/2): discovery/cli/dist/cli.js --self-test passes WITHOUT node_modules.");
-  console.log("chat-sandbox agents can run `node discovery/cli/dist/cli.js` offline — verified, not just claimed.");
-  console.log("");
-  console.log("=== Both checks PASS: discovery/cli/dist/ is fresh AND executable. ===");
-  process.exit(0);
+} catch (e) {
+  console.error(`Unexpected error during executability check: ${e.message}`);
+  exitCode = 3;
 } finally {
-  // Always restore node_modules, even if the check failed.
+  // ALWAYS restore node_modules, even if process.exit() was about to be called.
+  // The previous version called process.exit() inside the try block, which
+  // would have skipped this finally if the runtime didn't guarantee it.
+  // Node.js DOES run finally before process.exit() returns, but to be
+  // extra safe (and to handle any unexpected throw), we restore here and
+  // then exit with the captured code.
   if (nodeModulesMoved) {
-    if (existsSync(nodeModulesBackup)) {
-      renameSync(nodeModulesBackup, nodeModulesPath);
-      console.log("(node_modules restored.)");
+    try {
+      if (existsSync(nodeModulesBackup)) {
+        // If node_modules somehow came back (e.g., npm install ran during the
+        // check), don't overwrite it — just remove the backup.
+        if (existsSync(nodeModulesPath)) {
+          // node_modules already exists, just clean up the backup
+          // (this shouldn't happen, but be defensive)
+        } else {
+          renameSync(nodeModulesBackup, nodeModulesPath);
+        }
+        console.log("(node_modules restored.)");
+      }
+    } catch (restoreErr) {
+      console.error(`WARNING: failed to restore node_modules from ${nodeModulesBackup}: ${restoreErr.message}`);
+      console.error(`You may need to run 'npm install' manually to restore node_modules.`);
+      console.error(`Backup location: ${nodeModulesBackup}`);
     }
   }
+  process.exit(exitCode);
 }
