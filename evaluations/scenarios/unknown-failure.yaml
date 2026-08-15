@@ -1,0 +1,90 @@
+# Unknown-failure workflow eval scenarios
+
+- id: unknown-failure-happy-path
+  workflow: unknown-failure
+  tier: workflow
+  description: "Happy path: full unknown-failure workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-uf-classify-1
+        trace_ref: trace-eval-uf-1
+        what: "signal_shape:reactive"
+        why: "request mentions something broken — candidate bug-report"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-uf-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-uf-gather-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-uf-git-log
+          - event-eval-uf-test-outcome
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-uf-git-log
+        trace_ref: trace-eval-uf-gather-1
+        ts: "2026-08-15T10:00:31Z"
+        kind: observation
+        source: "git log --oneline -10"
+        payload:
+          finding: "recent commit abc123 touched membership"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-uf-test-outcome
+        trace_ref: trace-eval-uf-gather-1
+        ts: "2026-08-15T10:00:32Z"
+        kind: test_result
+        source: "pytest"
+        payload:
+          finding: "test_membership.py has 1 failing test on boundary"
+    - action: advance
+      on: context_gathered
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-uf-triage-1
+        trace_ref: trace-eval-uf-gather-1
+        what: "routing_candidate:bug-report"
+        why: "failing test + recent code change = bug-report shape"
+        validated: false
+        result: pending
+        evidence_refs:
+          - event-eval-uf-git-log
+          - event-eval-uf-test-outcome
+    - action: advance
+      on: triage_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-uf-route-1
+        trace_ref: trace-eval-uf-gather-1
+        what: "workflow_routed:bug-report"
+        why: "candidate bug-report has corroboration from failing test + recent commit"
+        validated: true
+        result: accepted
+        evidence_refs:
+          - decision-eval-uf-triage-1
+          - event-eval-uf-test-outcome
+    - action: advance
+      on: workflow_routed
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

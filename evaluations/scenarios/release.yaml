@@ -1,0 +1,188 @@
+# Release workflow eval scenarios
+
+- id: release-happy-path
+  workflow: release
+  tier: workflow
+  description: "Happy path: full release workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rl-classify-1
+        trace_ref: trace-eval-rl-1
+        what: "acceptance:proceed"
+        why: "ship v1.4.0 — minor bump, additive changes only"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rl-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rl-readiness-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-rl-git-status
+          - event-eval-rl-deps-frozen
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-git-status
+        trace_ref: trace-eval-rl-readiness-1
+        ts: "2026-08-15T10:00:31Z"
+        kind: observation
+        source: "git status --porcelain"
+        payload:
+          finding: "working tree clean"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-deps-frozen
+        trace_ref: trace-eval-rl-readiness-1
+        ts: "2026-08-15T10:00:32Z"
+        kind: observation
+        source: "package-lock.json"
+        payload:
+          finding: "all dependency versions are pinned"
+    - action: advance
+      on: readiness_ok
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rl-tests-1
+        started_at: "2026-08-15T10:01:00Z"
+        event_refs:
+          - event-eval-rl-test-result
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-test-result
+        trace_ref: trace-eval-rl-tests-1
+        ts: "2026-08-15T10:01:30Z"
+        kind: test_result
+        source: "npm test"
+        payload:
+          result: "passed — 50 tests"
+    - action: advance
+      on: tests_pass
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-changelog-1
+        trace_ref: trace-eval-rl-readiness-1
+        ts: "2026-08-15T10:02:00Z"
+        kind: file_change
+        source: "CHANGELOG.md"
+        payload:
+          change: "added v1.4.0 section with user-visible changes"
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rl-changelog-1
+        trace_ref: trace-eval-rl-readiness-1
+        what: "changelog:keepachangelog_format"
+        why: "grouped-by-section per Keep-a-Changelog convention"
+        validated: true
+        result: accepted
+    - action: advance
+      on: changelog_updated
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-tag-1
+        trace_ref: trace-eval-rl-readiness-1
+        ts: "2026-08-15T10:02:30Z"
+        kind: action
+        source: "git tag v1.4.0 -m 'Release v1.4.0'"
+        payload:
+          finding: "tag v1.4.0 created"
+    - action: advance
+      on: tag_created
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-publish-1
+        trace_ref: trace-eval-rl-readiness-1
+        ts: "2026-08-15T10:03:00Z"
+        kind: action
+        source: "npm publish --access public"
+        payload:
+          finding: "artifact published to npm registry"
+    - action: advance
+      on: artifact_published
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rl-verify-1
+        started_at: "2026-08-15T10:03:30Z"
+        event_refs:
+          - event-eval-rl-install
+          - event-eval-rl-import
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-install
+        trace_ref: trace-eval-rl-verify-1
+        ts: "2026-08-15T10:03:35Z"
+        kind: action
+        source: "npm install pkg@1.4.0"
+        payload:
+          finding: "clean-env install succeeded"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rl-import
+        trace_ref: trace-eval-rl-verify-1
+        ts: "2026-08-15T10:03:40Z"
+        kind: action
+        source: "require('pkg')"
+        payload:
+          finding: "import succeeded, public API present"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-rl-verify-1
+        expected_ref: expected-eval-rl-1
+        observed_value: "artifact installable and importable in clean env"
+        observation_ref: event-eval-rl-import
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-rl-1
+        source_ref: "specs/spec.md#public-api"
+        predicate: "published artifact exports its declared public API"
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-rl-verify-1
+        expected_ref: expected-eval-rl-1
+        actual_ref: actual-eval-rl-verify-1
+        result: match
+        method: app_validation
+    - action: advance
+      on: release_verified
+    - action: writeMemory
+      type: project
+      data:
+        id: mem-project-eval-rl-1
+        type: project
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:04:00Z"
+        source: eval-release-run-1
+        stack: ["typescript"]
+        layer: ["backend", "cli"]
+        domain: "released v1.4.0 — minor bump, additive changes only"
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

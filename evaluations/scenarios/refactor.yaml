@@ -1,0 +1,135 @@
+# Refactor workflow eval scenarios
+
+- id: refactor-happy-path
+  workflow: refactor
+  tier: workflow
+  description: "Happy path: full refactor workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rf-classify-1
+        trace_ref: trace-eval-rf-1
+        what: "acceptance:proceed"
+        why: "behavior-preserving refactor request"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rf-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rf-baseline-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-rf-test-baseline
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rf-test-baseline
+        trace_ref: trace-eval-rf-baseline-1
+        ts: "2026-08-15T10:00:35Z"
+        kind: test_result
+        source: "pytest"
+        payload:
+          result: "12 passed"
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-rf-baseline-1
+        source_ref: "tests/test_membership.py"
+        predicate: "baseline test suite passes with 12 tests"
+    - action: advance
+      on: baseline_captured
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rf-design-1
+        trace_ref: trace-eval-rf-baseline-1
+        what: "design:extract_helper_function"
+        why: "extract parseExpiryDate into a pure helper"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-rf-structure-1
+        source_ref: "architecture.md#module-map"
+        predicate: "parseExpiryDate is a pure helper exported from src/membership/parsing.ts"
+    - action: advance
+      on: refactor_design_approved
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rf-implement-1
+        trace_ref: trace-eval-rf-baseline-1
+        what: "ai_proposal:apply_patch"
+        why: "extract parseExpiryDate into src/membership/parsing.ts"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rf-file-change-1
+        trace_ref: trace-eval-rf-baseline-1
+        ts: "2026-08-15T10:01:30Z"
+        kind: file_change
+        source: "src/membership/parsing.ts"
+        payload:
+          change: "extracted parseExpiryDate helper"
+    - action: advance
+      on: implementation_complete
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-rf-verify-1
+        expected_ref: expected-eval-rf-baseline-1
+        observed_value: "12 passed (unchanged from baseline)"
+        observation_ref: event-eval-rf-test-baseline
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-rf-verify-1
+        expected_ref: expected-eval-rf-baseline-1
+        actual_ref: actual-eval-rf-verify-1
+        result: match
+        method: replay_comparison
+    - action: advance
+      on: equivalence_verified
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rf-doc-change-1
+        trace_ref: trace-eval-rf-baseline-1
+        ts: "2026-08-15T10:02:30Z"
+        kind: file_change
+        source: "docs/architecture.md"
+        payload:
+          change: "updated module map to reflect new parsing.ts module"
+    - action: advance
+      on: documentation_complete
+    - action: writeMemory
+      type: project
+      data:
+        id: mem-project-eval-rf-1
+        type: project
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:03:00Z"
+        source: eval-refactor-run-1
+        stack: ["python"]
+        layer: ["backend"]
+        domain: "membership service — parseExpiryDate extracted as pure helper"
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

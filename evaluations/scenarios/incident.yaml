@@ -1,0 +1,179 @@
+# Incident workflow eval scenarios
+
+- id: incident-happy-path
+  workflow: incident
+  tier: workflow
+  description: "Happy path: full incident workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: incident
+      data:
+        id: incident-eval-in-1
+        observed_at: "2026-08-15T10:00:00Z"
+        environment_fingerprint_ref: env-fp-eval-in-1
+        expected_ref: expected-eval-in-1
+        actual_ref: actual-eval-in-1
+        severity: high
+        status: open
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-in-impact-1
+        trace_ref: trace-eval-in-1
+        what: "severity:SEV2"
+        why: "partial outage — /checkout 500 rate 30% for last 15 min"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-in-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs: []
+    - action: advance
+      on: impact_assessed
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-in-triage-1
+        started_at: "2026-08-15T10:01:00Z"
+        event_refs:
+          - event-eval-in-deploy-log
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-in-deploy-log
+        trace_ref: trace-eval-in-triage-1
+        ts: "2026-08-15T10:01:05Z"
+        kind: log_line
+        source: "git log --since='2 hours ago'"
+        payload:
+          finding: "deploy commit abc123 shipped 45 min before alert fired"
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-in-trigger-1
+        trace_ref: trace-eval-in-triage-1
+        what: "proximate_trigger:deploy_abc123"
+        why: "deploy abc123 correlates with incident start time"
+        validated: true
+        result: accepted
+        evidence_refs:
+          - event-eval-in-deploy-log
+    - action: advance
+      on: proximate_trigger_identified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-in-mitigate-1
+        trace_ref: trace-eval-in-triage-1
+        what: "mitigation:rollback_to_abc122"
+        why: "rollback to previous-good deploy to stop bleeding"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-in-rollback-1
+        trace_ref: trace-eval-in-triage-1
+        ts: "2026-08-15T10:02:00Z"
+        kind: action
+        source: "kubectl rollout undo deployment/checkout"
+        payload:
+          finding: "rolled back to revision abc122"
+    - action: advance
+      on: mitigation_applied
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-in-verify-1
+        started_at: "2026-08-15T10:02:30Z"
+        event_refs:
+          - event-eval-in-slo-recover
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-in-slo-recover
+        trace_ref: trace-eval-in-verify-1
+        ts: "2026-08-15T10:03:00Z"
+        kind: observation
+        source: "prometheus"
+        payload:
+          finding: "error rate dropped from 30% to 0.1%; p99 latency back to 80ms"
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-in-1
+        source_ref: "specs/spec.md#checkout-slo"
+        predicate: "POST /checkout returns 200 at p99 < 200ms"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-in-1
+        expected_ref: expected-eval-in-1
+        observed_value: "POST /checkout p99 80ms, error rate 0.1% post-rollback"
+        observation_ref: event-eval-in-slo-recover
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-in-verify-1
+        expected_ref: expected-eval-in-1
+        actual_ref: actual-eval-in-1
+        result: match
+        method: app_validation
+    - action: advance
+      on: mitigation_verified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-in-postmortem-1
+        trace_ref: trace-eval-in-triage-1
+        what: "root_cause:null_check_missing_in_pricing_calc"
+        why: "deploy abc123 introduced a pricing-calc change that did not null-check the discount field"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-in-postmortem-doc-1
+        trace_ref: trace-eval-in-triage-1
+        ts: "2026-08-15T10:04:00Z"
+        kind: action
+        source: "docs/postmortems/2026-08-15-checkout-rollback.md"
+        payload:
+          finding: "postmortem document written"
+    - action: advance
+      on: postmortem_complete
+    - action: writeMemory
+      type: known-failure
+      data:
+        id: mem-known-failure-eval-in-1
+        type: known-failure
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:05:00Z"
+        source: eval-incident-run-1
+        incident_ref: incident-eval-in-1
+        symptom: "POST /checkout 500 rate 30% — SEV2 partial outage"
+        root_cause: "null_check_missing in pricing calc introduced by deploy abc123"
+        fix: "rollback to abc122; permanent fix: add null-check and regression test"
+    - action: writeMemory
+      type: project
+      data:
+        id: mem-project-eval-in-1
+        type: project
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:05:30Z"
+        source: eval-incident-run-1
+        stack: ["typescript"]
+        layer: ["backend"]
+        domain: "checkout service — SEV2 incident on 2026-08-15, postmortem at docs/postmortems/2026-08-15-checkout-rollback.md"
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

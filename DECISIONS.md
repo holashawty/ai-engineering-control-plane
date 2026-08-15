@@ -15,6 +15,7 @@ Every framework-level decision — especially anything touching
   in.
 - **Tradeoffs:** We accept dependence on Anthropic's spec evolution.
   Mitigated by keeping our *semantic* model above the format.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0002 — Adopt spec-kit's spec/plan/tasks/constitution family for Specification
 - **Decision:** Reuse spec-kit's document family with extensions
@@ -23,6 +24,7 @@ Every framework-level decision — especially anything touching
 - **Reason:** Battle-tested; clean SPEC↔IMPL separation; familiar shape.
 - **Tradeoffs:** spec-kit is opinionated about IDE integration. We use
   only the *document family*, not any CLI.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0003 — Do not ship a competing agent runtime
 - **Decision:** AIECP is a *control plane*, not a runtime. OpenHands,
@@ -32,6 +34,7 @@ Every framework-level decision — especially anything touching
   does it well; agent-portability requires neutrality.
 - **Tradeoffs:** Some features (sandboxed execution, browser) require a
   runtime — provided by adapter, not core.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0004 — Build the Evidence Model from scratch
 - **Decision:** No upstream has a semantic evidence model. We build one.
@@ -42,6 +45,7 @@ Every framework-level decision — especially anything touching
   be agent- and stack-independent.
 - **Tradeoffs:** Schema design is hard; must be validated against ≥3 real
   bug scenarios per concept before Phase 5.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0005 — Single-agent + workflow state machines, not multi-agent orchestration
 - **Decision:** One agent + explicit workflow SMs. No MetaGPT/CrewAI/
@@ -53,6 +57,7 @@ Every framework-level decision — especially anything touching
 - **Tradeoffs:** Some complex tasks may benefit from role specialization.
   Mitigated by skills + workflow stages giving role-like behavior without
   agent multiplicity.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0006 — Native entrypoints are generated, never hand-edited
 - **Decision:** `AGENTS.md`, `CLAUDE.md`, `.cursor/rules`,
@@ -63,6 +68,7 @@ Every framework-level decision — especially anything touching
   mode.
 - **Tradeoffs:** Slight friction on first setup. Generation step must be
   idempotent and reviewable.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0007 — Memory is typed, validated, and small
 - **Decision:** Eight memory types (project / architecture / decision /
@@ -74,6 +80,7 @@ Every framework-level decision — especially anything touching
   auditable.
 - **Tradeoffs:** Higher authoring discipline. Mitigated by helper skills
   that propose memory updates for review.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0008 — Constitutional self-improvement only
 - **Decision:** The agent may *propose* framework changes; it may never
@@ -83,6 +90,7 @@ Every framework-level decision — especially anything touching
 - **Reason:** Self-improvement that bypasses review is a security and
   reliability hazard.
 - **Tradeoffs:** Slower framework evolution. Acceptable.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0009 — Detector-driven Project Discovery (no per-stack enumeration)
 - **Decision:** Discovery is a pipeline of detectors (language,
@@ -92,6 +100,7 @@ Every framework-level decision — especially anything touching
 - **Alternatives:** Big if/else over stacks.
 - **Reason:** Enumeration rots; detectors are independently extensible.
 - **Tradeoffs:** More interfaces to maintain. Acceptable.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0010 — Behavioral Verification is distinct from unit testing
 - **Decision:** A passing test suite is *technical* success. *Verified*
@@ -102,6 +111,7 @@ Every framework-level decision — especially anything touching
   pass technical tests. This is a primary reason the framework exists.
 - **Tradeoffs:** Higher authoring cost. Mitigated by skills that
   scaffold behavioral assertions.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0011 — Safety gates on destructive operations
 - **Decision:** The constitution enumerates destructive classes (prod
@@ -112,12 +122,14 @@ Every framework-level decision — especially anything touching
 - **Reason:** Autonomy must not mean unrestricted mutation.
 - **Tradeoffs:** Friction on legitimate operations. Mitigated by a
   policy file that pre-authorizes specific scoped operations.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0012 — JSON as default evidence serialization, but schema is the contract
 - **Decision:** Schemas are JSON Schema; instances serialize as JSON by
   default. Other serializations (YAML, protobuf, msgpack) are adapters.
 - **Alternatives:** Lock to JSON only.
 - **Reason:** Maximum tooling compatibility; preserves optionality.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0013 — License: MIT with NOTICE
 - **Decision:** MIT for the framework. `NOTICE` attributes reused
@@ -128,6 +140,7 @@ Every framework-level decision — especially anything touching
 - **Tradeoffs:** No patent retaliation clause. Acceptable for a
   methodology framework; revisit if a vendored component requires
   Apache-2.0 compatibility.
+- **Status:** Decided 2026-08-11. Active.
 
 ## ADR-0014 — Autonomy is leveled and explicitly policy-gated
 - **Decision:** Define explicit autonomy levels (L0 Observe → L5
@@ -179,6 +192,7 @@ Every framework-level decision — especially anything touching
   one; the wide surface can be built once the slice is proven correct.
 - **Tradeoffs:** Slower perceived breadth early on. Accepted — see
   `docs/implementation-roadmap.md` MVP definition.
+- **Status:** Decided 2026-08-14. Active. MVP vertical slice expanded to 14/14 workflows (was 8 at decision time).
 
 ## ADR-0017 — Tooling language: Node.js/TypeScript for the CLI, Python for the eval harness
 - **Decision:** All dev-facing tooling that a host project installs and

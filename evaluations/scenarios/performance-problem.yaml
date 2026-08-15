@@ -1,0 +1,163 @@
+# Performance-problem workflow eval scenarios
+
+- id: performance-problem-happy-path
+  workflow: performance-problem
+  tier: workflow
+  description: "Happy path: full performance-problem workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-pp-classify-1
+        trace_ref: trace-eval-pp-1
+        what: "acceptance:proceed"
+        why: "latency complaint — /items endpoint slow under load"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-pp-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-pp-baseline-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-pp-baseline-metric
+        environment_fingerprint_ref: env-fp-eval-pp-1
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-pp-baseline-metric
+        trace_ref: trace-eval-pp-baseline-1
+        ts: "2026-08-15T10:00:35Z"
+        kind: test_result
+        source: "load-test"
+        payload:
+          metrics:
+            p99_latency_ms: 850
+            throughput_rps: 50
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-pp-baseline-1
+        source_ref: "specs/spec.md#items-endpoint-slo"
+        predicate: "GET /items responds in <200ms at p99 under 100 RPS"
+    - action: advance
+      on: baseline_captured
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-pp-profile-1
+        started_at: "2026-08-15T10:01:00Z"
+        event_refs:
+          - event-eval-pp-profile-finding
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-pp-profile-finding
+        trace_ref: trace-eval-pp-profile-1
+        ts: "2026-08-15T10:01:05Z"
+        kind: observation
+        source: "py-spy"
+        payload:
+          finding: "get_items() makes N+1 queries per item — total 95% wall time"
+    - action: advance
+      on: profile_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-pp-bottleneck-1
+        trace_ref: trace-eval-pp-profile-1
+        what: "bottleneck:n_plus_one_query_in_get_items"
+        why: "per-item DB query dominates wall time"
+        validated: false
+        result: pending
+        evidence_refs:
+          - event-eval-pp-profile-finding
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-pp-target-1
+        source_ref: "specs/spec.md#items-endpoint-slo"
+        predicate: "p99 latency < 200ms after replacing N+1 query with JOIN"
+    - action: advance
+      on: bottleneck_identified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-pp-optimize-1
+        trace_ref: trace-eval-pp-profile-1
+        what: "ai_proposal:apply_patch"
+        why: "replace per-item query with a JOIN"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-pp-file-change-1
+        trace_ref: trace-eval-pp-profile-1
+        ts: "2026-08-15T10:02:00Z"
+        kind: file_change
+        source: "src/api/items.py"
+        payload:
+          change: "replaced per-item query with JOIN"
+    - action: advance
+      on: optimization_applied
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-pp-verify-1
+        expected_ref: expected-eval-pp-target-1
+        observed_value: "p99 latency 95ms, throughput 110 RPS, tests pass"
+        observation_ref: event-eval-pp-file-change-1
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-pp-verify-1
+        expected_ref: expected-eval-pp-target-1
+        actual_ref: actual-eval-pp-verify-1
+        result: match
+        method: replay_comparison
+        evidence_refs:
+          - event-eval-pp-baseline-metric
+          - event-eval-pp-file-change-1
+    - action: advance
+      on: improvement_verified
+    - action: writeMemory
+      type: known-failure
+      data:
+        id: mem-known-failure-eval-pp-1
+        type: known-failure
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:03:00Z"
+        source: eval-performance-problem-run-1
+        incident_ref: incident-eval-pp-1
+        symptom: "p99 latency on /items > 200ms under 100 RPS"
+        root_cause: "N+1 query in get_items()"
+        fix: "replaced per-item query with JOIN"
+    - action: emitEvidence
+      kind: incident
+      data:
+        id: incident-eval-pp-1
+        observed_at: "2026-08-15T10:00:00Z"
+        environment_fingerprint_ref: env-fp-eval-pp-1
+        expected_ref: expected-eval-pp-baseline-1
+        actual_ref: actual-eval-pp-verify-1
+        severity: high
+        status: closed
+    - action: advance
+      on: regression_added
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

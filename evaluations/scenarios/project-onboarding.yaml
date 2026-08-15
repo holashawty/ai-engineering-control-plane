@@ -1,0 +1,123 @@
+# Project-onboarding workflow eval scenarios
+
+- id: project-onboarding-happy-path
+  workflow: project-onboarding
+  tier: workflow
+  description: "Happy path: full project-onboarding workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-po-classify-1
+        trace_ref: trace-eval-po-1
+        what: "acceptance:proceed"
+        why: "fresh repository — no prior .aiecp/project-intelligence.json"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-po-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-po-discovery-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-po-detector-language
+          - event-eval-po-detector-framework
+          - event-eval-po-detector-test
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-po-detector-language
+        trace_ref: trace-eval-po-discovery-1
+        ts: "2026-08-15T10:00:31Z"
+        kind: action
+        source: "discovery/cli:language"
+        payload:
+          finding: "language detected: python"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-po-detector-framework
+        trace_ref: trace-eval-po-discovery-1
+        ts: "2026-08-15T10:00:32Z"
+        kind: action
+        source: "discovery/cli:framework"
+        payload:
+          finding: "framework detected: flask"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-po-detector-test
+        trace_ref: trace-eval-po-discovery-1
+        ts: "2026-08-15T10:00:33Z"
+        kind: action
+        source: "discovery/cli:test"
+        payload:
+          finding: "test_system detected: pytest"
+    - action: advance
+      on: discovery_complete
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-po-pi-1
+        source_ref: "discovery/schema/project-intelligence.schema.json"
+        predicate: "project-intelligence.json is schema-valid for a single-language Python repo"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-po-pi-1
+        expected_ref: expected-eval-po-pi-1
+        observed_value: "project-intelligence.json validates against schema"
+        observation_ref: event-eval-po-detector-test
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-po-pi-1
+        expected_ref: expected-eval-po-pi-1
+        actual_ref: actual-eval-po-pi-1
+        result: match
+        method: contract_validation
+    - action: advance
+      on: discovery_valid
+    - action: writeMemory
+      type: project
+      data:
+        id: mem-project-eval-po-1
+        type: project
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:01:30Z"
+        source: eval-project-onboarding-run-1
+        stack: ["python"]
+        layer: ["backend"]
+        domain: "Flask API service"
+    - action: advance
+      on: project_memory_written
+    - action: writeMemory
+      type: environment
+      data:
+        id: mem-environment-eval-po-1
+        type: environment
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T10:02:00Z"
+        source: eval-project-onboarding-run-1
+        runtime: "python3.11"
+        versions:
+          pytest: "8.1.2"
+          flask: "3.0.0"
+    - action: advance
+      on: environment_memory_written
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

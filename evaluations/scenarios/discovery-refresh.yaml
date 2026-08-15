@@ -1,0 +1,124 @@
+# Discovery-refresh workflow eval scenarios
+
+- id: discovery-refresh-happy-path
+  workflow: discovery-refresh
+  tier: workflow
+  description: "Happy path: full discovery-refresh workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-dr-classify-1
+        trace_ref: trace-eval-dr-1
+        what: "acceptance:proceed"
+        why: "project-intelligence.json is stale — refresh needed"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-dr-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-dr-discovery-1
+        started_at: "2026-08-15T10:00:30Z"
+        event_refs:
+          - event-eval-dr-detector-language
+          - event-eval-dr-detector-framework
+          - event-eval-dr-detector-test
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-dr-detector-language
+        trace_ref: trace-eval-dr-discovery-1
+        ts: "2026-08-15T10:00:31Z"
+        kind: action
+        source: "discovery/cli:language"
+        payload:
+          finding: "language detected: python (unchanged from prior)"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-dr-detector-framework
+        trace_ref: trace-eval-dr-discovery-1
+        ts: "2026-08-15T10:00:32Z"
+        kind: action
+        source: "discovery/cli:framework"
+        payload:
+          finding: "framework detected: flask (unchanged from prior)"
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-dr-detector-test
+        trace_ref: trace-eval-dr-discovery-1
+        ts: "2026-08-15T10:00:33Z"
+        kind: action
+        source: "discovery/cli:test"
+        payload:
+          finding: "test_system detected: pytest (unchanged from prior)"
+    - action: advance
+      on: discovery_complete
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-dr-pi-1
+        source_ref: "discovery/schema/project-intelligence.schema.json"
+        predicate: "refreshed project-intelligence.json is schema-valid"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-dr-pi-1
+        expected_ref: expected-eval-dr-pi-1
+        observed_value: "refreshed project-intelligence.json validates against schema"
+        observation_ref: event-eval-dr-detector-test
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-dr-pi-1
+        expected_ref: expected-eval-dr-pi-1
+        actual_ref: actual-eval-dr-pi-1
+        result: match
+        method: contract_validation
+    - action: advance
+      on: discovery_valid
+    - action: writeMemory
+      type: project
+      data:
+        id: mem-project-eval-dr-1
+        type: project
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T09:00:00Z"
+        updated_at: "2026-08-15T10:01:30Z"
+        source: eval-discovery-refresh-run-1
+        stack: ["python"]
+        layer: ["backend"]
+        domain: "Flask API service — refreshed"
+    - action: advance
+      on: project_memory_updated
+    - action: writeMemory
+      type: environment
+      data:
+        id: mem-environment-eval-dr-1
+        type: environment
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T09:00:30Z"
+        source: eval-discovery-refresh-run-1
+        runtime: "python3.11"
+        versions:
+          pytest: "8.2.0"
+          flask: "3.0.1"
+    - action: advance
+      on: environment_memory_updated
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5

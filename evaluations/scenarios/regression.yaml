@@ -1,0 +1,178 @@
+# Regression workflow eval scenarios
+
+- id: regression-happy-path
+  workflow: regression
+  tier: workflow
+  description: "Happy path: full regression workflow from intake to terminal state"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rg-classify-1
+        trace_ref: trace-eval-rg-1
+        what: "acceptance:proceed"
+        why: "symptom matches prior known-failure mem-known-failure-eval-rg-prior-1"
+        validated: true
+        result: accepted
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rg-1
+        started_at: "2026-08-15T10:00:00Z"
+        event_refs: []
+    - action: advance
+      on: class_known
+    - action: emitEvidence
+      kind: expected
+      data:
+        id: expected-eval-rg-prior-1
+        source_ref: "mem-known-failure-eval-rg-prior-1"
+        predicate: "boundary bug symptom: returns 8.0 at boundary where 15.0 expected"
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-rg-current-1
+        expected_ref: expected-eval-rg-prior-1
+        observed_value: "symptom matches: boundary check uses > instead of >="
+        observation_ref: event-eval-rg-match
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rg-match
+        trace_ref: trace-eval-rg-1
+        ts: "2026-08-15T10:00:30Z"
+        kind: observation
+        source: "memory:known-failure"
+        payload:
+          finding: "matched prior known-failure entry"
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-rg-match-1
+        expected_ref: expected-eval-rg-prior-1
+        actual_ref: actual-eval-rg-current-1
+        result: match
+        method: manual_review
+    - action: advance
+      on: known_failure_matched
+    - action: emitEvidence
+      kind: trace
+      data:
+        id: trace-eval-rg-reintroduction-1
+        started_at: "2026-08-15T10:00:45Z"
+        event_refs:
+          - event-eval-rg-commit-reintroduced
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rg-commit-reintroduced
+        trace_ref: trace-eval-rg-reintroduction-1
+        ts: "2026-08-15T10:00:46Z"
+        kind: observation
+        source: "git log --oneline -10"
+        payload:
+          finding: "commit abc123 reverted boundary check from >= to >"
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rg-reintroduction-1
+        trace_ref: trace-eval-rg-reintroduction-1
+        what: "reintroduction:commit_abc123"
+        why: "commit abc123 reverted the >= fix"
+        validated: true
+        result: accepted
+    - action: advance
+      on: reintroduction_identified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rg-rediagnose-1
+        trace_ref: trace-eval-rg-reintroduction-1
+        what: "root_cause_candidate:boundary_check_reverted"
+        why: "prior fix at commit def456 changed > to >=, but did not add a regression test; commit abc123 reverted without noticing the absence of coverage"
+        validated: false
+        root_cause: true
+        result: pending
+    - action: advance
+      on: root_cause_found
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rg-refix-1
+        trace_ref: trace-eval-rg-reintroduction-1
+        what: "ai_proposal:apply_patch"
+        why: "restore >= and add regression test covering boundary"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-eval-rg-refix-change-1
+        trace_ref: trace-eval-rg-reintroduction-1
+        ts: "2026-08-15T10:01:30Z"
+        kind: file_change
+        source: "shipping.py"
+        payload:
+          before: ">"
+          after: ">="
+    - action: advance
+      on: fix_applied
+    - action: emitEvidence
+      kind: actual
+      data:
+        id: actual-eval-rg-verify-1
+        expected_ref: expected-eval-rg-prior-1
+        observed_value: "boundary now returns 15.0"
+        observation_ref: event-eval-rg-refix-change-1
+    - action: emitEvidence
+      kind: validation
+      data:
+        id: validation-eval-rg-verify-1
+        expected_ref: expected-eval-rg-prior-1
+        actual_ref: actual-eval-rg-verify-1
+        result: match
+        method: app_validation
+    - action: advance
+      on: behavior_verified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-eval-rg-update-kf-1
+        trace_ref: trace-eval-rg-reintroduction-1
+        what: "regression_recorded"
+        why: "updated prior known-failure entry with regression_id"
+        validated: true
+        result: accepted
+    - action: writeMemory
+      type: known-failure
+      data:
+        id: mem-known-failure-eval-rg-prior-1
+        type: known-failure
+        schema_version: "1.0.0"
+        created_at: "2026-08-15T09:00:00Z"
+        source: eval-regression-run-1
+        incident_ref: incident-eval-rg-1
+        symptom: "boundary bug — returns 8.0 at boundary where 15.0 expected"
+        root_cause: "> instead of >="
+        fix: "changed to >= and added regression test"
+        regression_id: "regression-eval-rg-1"
+    - action: emitEvidence
+      kind: incident
+      data:
+        id: incident-eval-rg-1
+        observed_at: "2026-08-15T10:00:00Z"
+        environment_fingerprint_ref: env-fp-eval-rg-1
+        expected_ref: expected-eval-rg-prior-1
+        actual_ref: actual-eval-rg-current-1
+        severity: medium
+        status: closed
+    - action: advance
+      on: known_failure_updated
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    min_log_entries: 5
