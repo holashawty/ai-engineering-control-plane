@@ -176,6 +176,7 @@ function parseBlocks(text) {
 }
 
 function main() {
+  const strictHint = process.argv.includes("--strict-hint");
   const text = readInput();
   const validator = makeValidator();
 
@@ -190,6 +191,21 @@ function main() {
   }
 
   console.log(`Found ${blocks.length} aiecp block(s):\n`);
+
+  // Map of evidence kind / memory type → CHAT-ENTRYPOINT.md anchor
+  const TEMPLATE_HINTS = {
+    incident: "CHAT-ENTRYPOINT.md#incident-template",
+    trace: "CHAT-ENTRYPOINT.md#trace-template",
+    event: "CHAT-ENTRYPOINT.md#event-template",
+    decision: "CHAT-ENTRYPOINT.md#decision-template",
+    expected: "CHAT-ENTRYPOINT.md#expected-template",
+    actual: "CHAT-ENTRYPOINT.md#actual-template",
+    validation: "CHAT-ENTRYPOINT.md#validation-template",
+    replay: "CHAT-ENTRYPOINT.md#replay-template",
+    "known-failure": "CHAT-ENTRYPOINT.md#known-failure-template",
+    project: "CHAT-ENTRYPOINT.md#project-template",
+    environment: "CHAT-ENTRYPOINT.md#environment-template",
+  };
 
   let pass = 0;
   let fail = 0;
@@ -214,6 +230,9 @@ function main() {
       } else {
         console.log(`  FAIL #${b.index}  ${label}`);
         console.log(`       ${result.errors}`);
+        if (strictHint && TEMPLATE_HINTS[b.parsed.kindOrType]) {
+          console.log(`       HINT: See ${TEMPLATE_HINTS[b.parsed.kindOrType]} for the correct template with all required fields.`);
+        }
         fail++;
       }
     } else if (b.kind === "memory") {
@@ -224,10 +243,13 @@ function main() {
       } else {
         console.log(`  FAIL #${b.index}  ${label}`);
         console.log(`       ${result.errors}`);
+        if (strictHint && TEMPLATE_HINTS[b.parsed.kindOrType]) {
+          console.log(`       HINT: See ${TEMPLATE_HINTS[b.parsed.kindOrType]} for the correct template with all required fields.`);
+        }
         fail++;
       }
     } else {
-      // advance + question: syntax already validated during parsing
+      // advance + question + confirm: syntax already validated during parsing
       console.log(`  OK   #${b.index}  ${label}`);
       pass++;
     }
@@ -236,6 +258,11 @@ function main() {
   console.log(`\n=== Results: ${pass} passed, ${fail} failed (of ${blocks.length} total) ===`);
   if (fail > 0) {
     console.error("VALIDATION FAILED");
+    if (strictHint) {
+      console.error("Use --strict-hint to see template references for each failed block (already shown above).");
+    } else {
+      console.error("Tip: run with --strict-hint to see template references for each failed block.");
+    }
     process.exit(1);
   }
   console.log("VALIDATION PASSED");

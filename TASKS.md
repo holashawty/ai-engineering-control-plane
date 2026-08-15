@@ -254,6 +254,70 @@ Bu grupta Claude "görev yapmaz", **denetler ve yönlendirir:**
 
 ---
 
+## AIECP PROJESİ — Z.AI AGENT İÇİN KALICI ÇALIŞMA PRENSİPLERİ
+
+Bu bölüm, her görevde tekrar tekrar aynı şeyleri söylememek için
+kalıcı bir referanstır. Tüm agent'lar (Z.ai, Claude, süper zeka)
+bu prensiplere uymak zorundadır.
+
+### 1. İDDİA ETME, KANITLA
+
+"X çalışıyor" demeden önce X'i gerçekten çalıştır ve çıktısını göster.
+Sayı iddia ediyorsan (örn. "74/74 test geçti") bu sayının nereden
+geldiğini gösterebilmelisin. "npm test çalıştırdım, 27/27 PASS verdi"
+demek yeterli değil — komutun tam çıktısını göster.
+
+### 2. HER GERÇEK TEST BİR BUG BULABİLİR — BU BAŞARISIZLIK DEĞİL
+
+Şimdiye kadarki 5 canlı LLM testi 6 gerçek sorun buldu (3 catch-22,
+1 broken fix, 1 security gap, 1 schema-vocabulary mismatch). Her
+biri düzeltildi ve framework güçlendi. Bunu böyle raporlamaya devam
+et — gizleme, abartma yapma. "17/30 blok FAIL verdi, işte nedenleri"
+demek "30/30 PASS verdi" demekten daha değerli.
+
+### 3. BRANCH + PUSH DISİPLİNİ
+
+Kod/mimari değişikliği gerektiren her görevi ayrı bir feature
+branch'te yap, doğrudan main'e push etme. Kontrolcü (Claude) diff'i
+inceleyip onaylayana kadar bekle. İstisna: küçük dokümantasyon
+düzeltmileri veya typo fix'leri doğrudan main'e push edilebilir.
+
+### 4. HER ŞEMA DEĞİŞİKLİĞİ BİR ADR GEREKTİRİR
+
+`constitution/change-policy.md`'ye göre: `evidence/schema/*`,
+`memory/schemas/*`, `discovery/schema/*`,
+`constitution/*.schema.json` dosyalarına dokunmadan önce mutlaka
+yeni bir ADR yaz. Şema değişikliği = mimari karar = ADR.
+
+### 5. REGRESYON TESTİ OLMADAN GÜVENLİK/DAVRANIŞ DÜZELTMESİ TAMAMLANMAMIŞ SAYILIR
+
+Bir bug düzelttiğinde, o bug'ın regresyonunu yakalayacak bir test
+eklemeden "tamamlandı" deme. Bug fix + regression test = tamamlandı.
+Bug fix without regression test = yarım kaldı.
+
+### 6. DOKÜMANTASYON = KOD KADAR ÖNEMLİ
+
+CHAT-ENTRYPOINT*.md gibi LLM-yönelik dosyalar, gerçek bir LLM'in
+(chat veya IDE) hiç ek açıklama almadan doğru davranmasını sağlamalı.
+Belirsiz/eksik örnek = gelecekte bulunacak bir bug demektir. Grok
+live test #5 bunu kanıtladı: "summary" yerine "what" kullanılacağı
+yeterince net yazılmamıştı, 17 blok FAIL verdi.
+
+### 7. STATUS.md VE NOTICE HER OTURUM SONUNDA GÜNCEL KALSIN
+
+Ne yapıldı, ne yapılmadı, hangi upstream'den ne alındı — hepsi
+güncel olmalı. STATUS.md footer'ı her commit'te güncellenmeli.
+
+### 8. GERÇEK VERİYLE TEST ET, UYDURMA SENARYO DEĞİL
+
+Mümkün olduğunda gerçek bir LLM oturumunun (chat veya agent)
+ürettiği transkripti test fixture'ı olarak kullan — scripted/sentetik
+test verisi, gerçek bir LLM'in yapacağı hataları asla tam olarak
+taklit edemez (tam bu session'da 3 kez kanıtlandı: ChatGPT catch-22,
+Grok schema mismatch, subagent simülasyon bypass).
+
+---
+
 ## 2026-08-14 handoff notu (Z.ai Agent → sonraki agent / kontrolcü)
 
 Bu commit (B1 + A1-in-STATUS + tüm dokümantasyon güncellemeleri)

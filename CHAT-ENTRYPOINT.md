@@ -331,49 +331,251 @@ will NOT find your block. You MUST write ` ```aiecp:evidence ` or
 | Question | `aiecp:question` | `text:` | Ask the user (subject to question_economy) |
 | Confirm | `aiecp:confirm` | `gate:` + `reason:` (both optional) | Authorize safety-gated transition (chat-sandbox only, per ADR-0023) |
 
-### Evidence kinds and their REQUIRED fields
+### Evidence kinds — COMPLETE templates with ALL required fields
 
-Every `aiecp:evidence` block has `kind:` (the evidence kind) and
-`data:` (the entity body). The `data:` object MUST contain ALL
-required fields listed below — the schema rejects blocks with
-missing fields.
+Every `aiecp:evidence` block has `kind:` and `data:`. The `data:`
+object MUST contain ALL required fields — the schema rejects missing
+fields. Also, `additionalProperties: false` means you CANNOT add
+fields not listed in the schema. Do NOT invent your own field names.
 
-| Kind | Required fields in `data:` |
-|---|---|
-| `incident` | `id`, `observed_at`, `environment_fingerprint_ref`, `expected_ref`, `actual_ref`, `severity`, `status` |
-| `trace` | `id`, `started_at`, `event_refs` |
-| `event` | `id`, `trace_ref`, `ts`, `kind`, `source` |
-| `decision` | `id`, `trace_ref`, `what`, `why`, `validated` |
-| `expected` | `id`, `source_ref`, `predicate` |
-| `actual` | `id`, `expected_ref`, `observed_value`, `observation_ref` |
-| `validation` | `id`, `expected_ref`, `actual_ref`, `result`, `method` |
-| `replay` | `id`, `original_trace_ref`, `result`, `environment_fingerprint_ref` |
+**ID pattern:** All IDs MUST match `^<kind>-[a-zA-Z0-9_-]+$`.
+Spaces and special characters are NOT allowed.
 
-**ID pattern:** All IDs MUST match `^<kind>-[a-zA-Z0-9_-]+$` (e.g.,
-`trace-locate-1`, `event-grep-result`). Spaces are NOT allowed.
+#### incident template
 
-**Key field name reminders (LLMs get these WRONG often):**
-- `event`: use `ts` (ISO datetime), NOT `timestamp`
-- `decision`: use `what` and `why`, NOT `summary`
-- `actual`: use `observed_value`, NOT `observation`
-- `known-failure` memory: use `fix`, NOT `fix_applied`
+ZORUNLU alanlar: `id`, `observed_at`, `environment_fingerprint_ref`, `expected_ref`, `actual_ref`, `severity`, `status`
+YASAK: `additionalProperties: false` — sadece yukarıdaki alanlar + `schema_version`, `reported_by`, `summary`, `trace_refs`, `decision_refs`, `regression_of` (opsiyonel). Başka alan ekleme.
 
-### Memory types and their REQUIRED fields
+````markdown
+```aiecp:evidence
+kind: incident
+data:
+  id: incident-shipping-boundary-2026-08-15
+  observed_at: 2026-08-15T10:00:00Z
+  environment_fingerprint_ref: env-fp-1
+  expected_ref: expected-heavy-5kg
+  actual_ref: actual-light-5kg
+  severity: medium
+  status: open
+```
+````
 
-Every `aiecp:memory` block has `type:` (the memory type) and
-`data:` (the entity body). ALL memory entries require `id`, `type`,
-`schema_version`, `created_at`, `source` as base fields.
+`severity` degerleri: `low`, `medium`, `high`, `critical`.
+`status` degerleri: `open`, `reproducing`, `diagnosing`, `fix-proposed`, `fix-applied`, `verified`, `closed`, `wontfix`.
 
-| Type | Additional required fields |
-|---|---|
-| `project` | `stack`, `layer` |
-| `environment` | `runtime`, `versions` |
-| `known-failure` | `incident_ref`, `symptom`, `root_cause`, `fix` |
-| `decision` | `stack`, `layer` |
+#### trace template
 
-For `known-failure`, `type` MUST be `"known-failure"`, `schema_version`
-MUST be `"1.0.0"`, and `incident_ref` MUST reference an Incident
-entity you emitted earlier.
+ZORUNLU alanlar: `id`, `started_at`, `event_refs`
+`event_refs` bir array'dir — bu trace'e ait event ID'lerinin listesi.
+
+````markdown
+```aiecp:evidence
+kind: trace
+data:
+  id: trace-locate-1
+  started_at: 2026-08-15T10:00:30Z
+  event_refs:
+    - event-code-read
+    - event-pytest-before
+```
+````
+
+#### event template
+
+ZORUNLU alanlar: `id`, `trace_ref`, `ts`, `kind`, `source`
+
+> **SIK YAPILAN HATA (Grok live test #5):** `timestamp` kullanma — `ts` kullan.
+> `trace_ref` unutma — her event bir trace'e referans vermek ZORUNDA.
+> `kind` field'i evidence block'taki `kind:` ile KARIŞTIRMA — bu, event'in kendi `kind` field'idir (action, observation, log_line, test_result, vs.).
+
+````markdown
+```aiecp:evidence
+kind: event
+data:
+  id: event-code-read
+  trace_ref: trace-locate-1
+  ts: 2026-08-15T10:00:35Z
+  kind: observation
+  source: "shipping.py:47"
+  payload:
+    finding: "if weight_kg > 5 contradicts docstring"
+```
+````
+
+`kind` degerleri (event'in kendi kind field'i): `action`, `observation`, `log_line`, `test_result`, `user_message`, `agent_message`, `state_read`, `state_write`, `network_call`, `file_change`, `error`.
+`payload` opsiyonel ama önerilir — event'in içeriğini taşır.
+
+#### decision template
+
+ZORUNLU alanlar: `id`, `trace_ref`, `what`, `why`, `validated`
+
+> **SIK YAPILAN HATA (Grok live test #5):** `summary` kullanma — `what` ve `why` kullan.
+> `what` = ne karar verildi (string). `why` = neden (string).
+> `trace_ref` unutma — her decision bir trace'e referans vermek ZORUNDA.
+
+````markdown
+```aiecp:evidence
+kind: decision
+data:
+  id: decision-root-cause-1
+  trace_ref: trace-repro-1
+  what: "root_cause_candidate:strict_gt_instead_of_gte"
+  why: "weight_kg > 5 is False when weight_kg == 5.0"
+  validated: false
+  root_cause: false
+  result: pending
+```
+````
+
+`validated`: boolean (true/false). AI proposal'lar her zaman `false` ile başlar.
+`root_cause`: boolean. Root cause olarak doğrulandığında `true` yapılır.
+`result`: `pending`, `accepted`, `rejected`, `superseded`.
+
+#### expected template
+
+ZORUNLU alanlar: `id`, `source_ref`, `predicate`
+
+> **SIK YAPILAN HATA (Grok live test #5):** `claim` kullanma — `predicate` kullan.
+
+````markdown
+```aiecp:evidence
+kind: expected
+data:
+  id: expected-heavy-5kg
+  source_ref: "shipping.py docstring"
+  predicate: "calculate_shipping_cost(5.0) must return 15.0"
+```
+````
+
+`predicate_kind` opsiyonel: `exact_value`, `invariant`, `state_property`, `behavioral` (default: `behavioral`).
+
+#### actual template
+
+ZORUNLU alanlar: `id`, `expected_ref`, `observed_value`, `observation_ref`
+
+> **SIK YAPILAN HATA (Grok live test #5):** `observation` kullanma — `observed_value` kullan.
+> `observation_ref` unutma — bir event ID'sine referans vermek ZORUNDA.
+
+````markdown
+```aiecp:evidence
+kind: actual
+data:
+  id: actual-light-5kg
+  expected_ref: expected-heavy-5kg
+  observed_value: "returned 8.0 instead of 15.0"
+  observation_ref: event-pytest-before
+```
+````
+
+#### validation template
+
+ZORUNLU alanlar: `id`, `expected_ref`, `actual_ref`, `result`, `method`
+
+````markdown
+```aiecp:evidence
+kind: validation
+data:
+  id: validation-diagnose-1
+  expected_ref: expected-heavy-5kg
+  actual_ref: actual-light-5kg
+  result: mismatch
+  method: app_validation
+```
+````
+
+`result` degerleri: `match`, `mismatch`, `inconclusive`.
+`method` degerleri: `app_validation`, `contract_validation`, `unit_test`, `manual_review`, `replay_comparison`.
+Chat LLM'ler genelde `manual_review` kullanır (kod çalıştıramadıkları için). Chat-sandbox `app_validation` kullanabilir.
+
+#### replay template
+
+ZORUNLU alanlar: `id`, `original_trace_ref`, `result`, `environment_fingerprint_ref`
+
+````markdown
+```aiecp:evidence
+kind: replay
+data:
+  id: replay-1
+  original_trace_ref: trace-repro-1
+  result: matches_expected
+  environment_fingerprint_ref: env-fp-1
+```
+````
+
+`result` degerleri: `matches_expected`, `diverges`, `error`.
+
+### Memory types — COMPLETE templates with ALL required fields
+
+Every `aiecp:memory` block has `type:` and `data:`. ALL memory
+entries require `id`, `type`, `schema_version`, `created_at`,
+`source` as base fields. `additionalProperties: false` — sadece
+şemadaki alanları kullan.
+
+#### known-failure template (en sık kullanılan)
+
+ZORUNLU alanlar: `id`, `type`, `schema_version`, `created_at`, `source`, `incident_ref`, `symptom`, `root_cause`, `fix`
+
+> **SIK YAPILAN HATA (Grok live test #5):**
+> - `fix_applied` kullanma — `fix` kullan.
+> - `type` alanını unutma — `"known-failure"` olmalı.
+> - `schema_version` unutma — `"1.0.0"` olmalı.
+> - `created_at` unutma — ISO 8601 datetime olmalı.
+> - `source` unutma — hangi workflow run'ından geldiğini belirt.
+> - `incident_ref` unutma — bir Incident entity ID'sine referans vermek ZORUNDA.
+
+````markdown
+```aiecp:memory
+type: known-failure
+data:
+  id: mem-known-failure-shipping-1
+  type: known-failure
+  schema_version: "1.0.0"
+  created_at: 2026-08-15T10:03:00Z
+  source: chat-sandbox-run-1
+  incident_ref: incident-shipping-boundary-2026-08-15
+  symptom: "5kg charged LIGHT instead of HEAVY"
+  root_cause: "strict > instead of >= at 5kg boundary"
+  fix: "changed to weight_kg >= 5"
+```
+````
+
+#### project template
+
+ZORUNLU alanlar: `id`, `type`, `schema_version`, `created_at`, `source`, `stack`, `layer`
+
+````markdown
+```aiecp:memory
+type: project
+data:
+  id: mem-project-aiecp-1
+  type: project
+  schema_version: "1.0.0"
+  created_at: 2026-08-15T10:00:00Z
+  source: project-onboarding-run-1
+  stack: ["typescript", "python"]
+  layer: ["backend", "cli", "monorepo"]
+```
+````
+
+#### environment template
+
+ZORUNLU alanlar: `id`, `type`, `schema_version`, `created_at`, `source`, `runtime`, `versions`
+
+````markdown
+```aiecp:memory
+type: environment
+data:
+  id: mem-env-sandbox-1
+  type: environment
+  schema_version: "1.0.0"
+  created_at: 2026-08-15T10:00:00Z
+  source: project-onboarding-run-1
+  runtime: "python3.12"
+  versions:
+    python: "3.12.13"
+    pytest: "9.0.2"
+```
+````
 
 ### Safety gate confirmation (aiecp:confirm)
 

@@ -531,6 +531,52 @@ async function scenario() {
     check("(e) already-terminal: 'already-terminal' violation present", terminalStdout.includes("already-terminal"));
     check("(e) already-terminal: clear message about terminal state", terminalStdout.includes("terminal") && terminalStdout.includes("cannot advance"));
 
+    // ------------------------------------------------------------------
+    // Scenario 11: Grok live test #5 regression — common LLM mistakes
+    // ------------------------------------------------------------------
+    console.log("\n--- Scenario 11: Grok live test #5 regression (common mistakes) ---");
+
+    // This fixture contains the SAME mistakes Grok made in a real live
+    // test (2026-08-15): timestamp instead of ts, summary instead of
+    // what/why, claim instead of predicate, observation instead of
+    // observed_value, fix_applied instead of fix, missing trace_ref,
+    // missing required memory fields. The validator must catch ALL of them.
+    const GROK_MISTAKES_PATH = join(REPO_ROOT, "scripts", "test-responses", "grok-live-test-5-common-mistakes.md");
+
+    let grokExit = 0;
+    let grokStdout = "";
+    try {
+      grokStdout = execFileSync("node", [
+        join(REPO_ROOT, "scripts", "validate-chat-output.mjs"),
+        GROK_MISTAKES_PATH, "--strict-hint",
+      ], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    } catch (e) {
+      grokExit = e.status ?? 1;
+      grokStdout = (e.stdout ?? "").toString() + (e.stderr ?? "").toString();
+    }
+
+    // The validator MUST fail (Grok's output has schema violations)
+    check("(a) Grok mistakes: validator exits non-zero", grokExit !== 0);
+    check("(b) Grok mistakes: VALIDATION FAILED reported", grokStdout.includes("VALIDATION FAILED"));
+    check("(c) Grok mistakes: 5 blocks found", grokStdout.includes("Found 5 aiecp block"));
+    check("(d) Grok mistakes: 5 blocks FAILED (all have errors)", grokStdout.includes("5 failed"));
+    check("(e) Grok mistakes: 0 blocks passed", grokStdout.includes("0 passed"));
+
+    // Check that the validator caught the specific field name mistakes
+    check("(f) Grok mistakes: event missing trace_ref caught", grokStdout.includes("trace_ref") || grokStdout.includes("'required'"));
+    check("(g) Grok mistakes: decision missing what/why caught", grokStdout.includes("'required'") || grokStdout.includes("missing"));
+    check("(h) Grok mistakes: actual missing observed_value caught", grokStdout.includes("'required'") || grokStdout.includes("missing"));
+    check("(i) Grok mistakes: known-failure missing type/schema_version caught", grokStdout.includes("'required'") || grokStdout.includes("missing"));
+
+    // Check that --strict-hint provided template references
+    check("(j) Grok mistakes: --strict-hint provides event template hint", grokStdout.includes("event-template") || grokStdout.includes("HINT"));
+    check("(k) Grok mistakes: --strict-hint provides decision template hint", grokStdout.includes("decision-template") || grokStdout.includes("HINT"));
+    check("(l) Grok mistakes: --strict-hint provides actual template hint", grokStdout.includes("actual-template") || grokStdout.includes("HINT"));
+    check("(m) Grok mistakes: --strict-hint provides known-failure template hint", grokStdout.includes("known-failure-template") || grokStdout.includes("HINT"));
+
+    // Check that --strict-hint is mentioned in the tip
+    check("(n) Grok mistakes: --strict-hint tip present in output", grokStdout.includes("--strict-hint"));
+
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -559,6 +605,7 @@ async function scenario() {
   console.log("- ADR-0023: chat-sandbox with aiecp:confirm block PASSES (explicit authorization)");
   console.log("- ADR-0023: chat (pure-text) still auto-confirms (backward compat)");
   console.log("- ADR-0023: already-terminal violation correctly caught (extra block past terminal)");
+  console.log("- Grok live test #5 regression: all common LLM mistakes detected + --strict-hint hints provided");
 }
 
 scenario().catch((err) => {
