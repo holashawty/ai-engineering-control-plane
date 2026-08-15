@@ -24,6 +24,7 @@
 import { chatAdapter } from "../../../adapters/agents/dist/chat/adapter.js";
 import { chatSandboxAdapter } from "../../../adapters/agents/dist/chat-sandbox/adapter.js";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -415,6 +416,121 @@ async function scenario() {
     check("chat and chat-sandbox have distinct sandboxed_code_execution declarations", pureChatCaps.sandboxed_code_execution === false && sandboxCaps.sandboxed_code_execution === true);
     check("chat and chat-sandbox have distinct ids", chatAdapter.id !== chatSandboxAdapter.id);
 
+    // ------------------------------------------------------------------
+    // Scenario 10: ADR-0023 — safety gate authorization for chat-sandbox
+    // ------------------------------------------------------------------
+    console.log("\n--- Scenario 10: ADR-0023 safety gate authorization ---");
+
+    // Use the REAL simulated chat response file (not the SIMULATED_CHAT_RESPONSE
+    // constant, which is a short example for validator tests, not a full
+    // workflow walkthrough). The real file at scripts/test-responses/
+    // chat-llm-simulated-bug-report.md walks the full bug-report workflow
+    // including safety-gated transitions (fix_approved → apply-fix,
+    // fix_applied → verify).
+    const FULL_RESPONSE_PATH = join(REPO_ROOT, "scripts", "test-responses", "chat-llm-simulated-bug-report.md");
+    const fullResponse = readFileSync(FULL_RESPONSE_PATH, "utf-8");
+
+    // Test (a): chat-sandbox WITHOUT authorization — safety gate must BLOCK
+    let authFailExit = 0;
+    let authFailStdout = "";
+    try {
+      authFailStdout = execFileSync("node", [
+        join(REPO_ROOT, "scripts", "chat-harness.mjs"),
+        "bug-report", FULL_RESPONSE_PATH,
+        "--adapter", "chat-sandbox",
+      ], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    } catch (e) {
+      authFailExit = e.status ?? 1;
+      authFailStdout = (e.stdout ?? "").toString() + (e.stderr ?? "").toString();
+    }
+    check("(a) chat-sandbox without auth: harness exits non-zero", authFailExit !== 0);
+    check("(a) chat-sandbox without auth: VERDICT is FAIL", authFailStdout.includes("VERDICT: FAIL"));
+    check("(a) chat-sandbox without auth: 'NOT authorized' message present", authFailStdout.includes("NOT authorized"));
+    check("(a) chat-sandbox without auth: 'safety-gate-not-authorized' violation present", authFailStdout.includes("safety-gate-not-authorized") || authFailStdout.includes("safety gate NOT authorized"));
+
+    // Test (b): chat-sandbox WITH --user-prompt containing "fix" — must PASS
+    const promptFile = join(tmpDir, "user-prompt.txt");
+    await writeFile(promptFile, "fix the boundary bug in shipping.py");
+    let authPassExit = 0;
+    let authPassStdout = "";
+    try {
+      authPassStdout = execFileSync("node", [
+        join(REPO_ROOT, "scripts", "chat-harness.mjs"),
+        "bug-report", FULL_RESPONSE_PATH,
+        "--adapter", "chat-sandbox",
+        "--user-prompt", promptFile,
+      ], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    } catch (e) {
+      authPassExit = e.status ?? 1;
+      authPassStdout = (e.stdout ?? "").toString() + (e.stderr ?? "").toString();
+    }
+    check("(b) chat-sandbox with --user-prompt 'fix': harness exits 0", authPassExit === 0);
+    check("(b) chat-sandbox with --user-prompt 'fix': VERDICT is PASS", authPassStdout.includes("VERDICT: PASS"));
+    check("(b) chat-sandbox with --user-prompt 'fix': 'authorized: user prompt' present", authPassStdout.includes("authorized: user prompt"));
+
+    // Test (c): chat-sandbox WITH aiecp:confirm block — must PASS
+    // Insert an aiecp:confirm block before the fix_approved advance
+    const confirmResponse = fullResponse.replace(
+      "```aiecp:advance\non: fix_approved\n```",
+      "```aiecp:confirm\ngate: broad-refactor\nreason: \"user asked to fix the bug, proceeding with patch\"\n```\n\n```aiecp:advance\non: fix_approved\n```"
+    );
+    const confirmFile = join(tmpDir, "sandbox-with-confirm.md");
+    await writeFile(confirmFile, confirmResponse);
+    let confirmExit = 0;
+    let confirmStdout = "";
+    try {
+      confirmStdout = execFileSync("node", [
+        join(REPO_ROOT, "scripts", "chat-harness.mjs"),
+        "bug-report", confirmFile,
+        "--adapter", "chat-sandbox",
+      ], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    } catch (e) {
+      confirmExit = e.status ?? 1;
+      confirmStdout = (e.stdout ?? "").toString() + (e.stderr ?? "").toString();
+    }
+    check("(c) chat-sandbox with aiecp:confirm: harness exits 0", confirmExit === 0);
+    check("(c) chat-sandbox with aiecp:confirm: VERDICT is PASS", confirmStdout.includes("VERDICT: PASS"));
+    check("(c) chat-sandbox with aiecp:confirm: 'explicit aiecp:confirm' message present", confirmStdout.includes("authorized: explicit aiecp:confirm"));
+    check("(c) chat-sandbox with aiecp:confirm: confirm block was parsed", confirmStdout.includes("explicit confirmation recorded"));
+
+    // Test (d): chat (pure-text) still auto-confirms — backward compat
+    let pureChatExit = 0;
+    let pureChatStdout = "";
+    try {
+      pureChatStdout = execFileSync("node", [
+        join(REPO_ROOT, "scripts", "chat-harness.mjs"),
+        "bug-report", FULL_RESPONSE_PATH,
+        "--adapter", "chat",
+      ], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    } catch (e) {
+      pureChatExit = e.status ?? 1;
+      pureChatStdout = (e.stdout ?? "").toString() + (e.stderr ?? "").toString();
+    }
+    check("(d) chat (pure-text) auto-confirm: harness exits 0", pureChatExit === 0);
+    check("(d) chat (pure-text) auto-confirm: VERDICT is PASS", pureChatStdout.includes("VERDICT: PASS"));
+    check("(d) chat (pure-text) auto-confirm: 'auto-confirmed' present", pureChatStdout.includes("auto-confirmed"));
+    check("(d) chat (pure-text) auto-confirm: 'gate moot' reason present", pureChatStdout.includes("gate moot"));
+
+    // Test (e): already-terminal violation (4th ChatGPT test's extra block bug)
+    const alreadyTerminalResponse = fullResponse + "\n```aiecp:advance\non: replay_matches\n```\n";
+    const alreadyTerminalFile = join(tmpDir, "already-terminal.md");
+    await writeFile(alreadyTerminalFile, alreadyTerminalResponse);
+    let terminalExit = 0;
+    let terminalStdout = "";
+    try {
+      terminalStdout = execFileSync("node", [
+        join(REPO_ROOT, "scripts", "chat-harness.mjs"),
+        "bug-report", alreadyTerminalFile,
+        "--adapter", "chat",
+      ], { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] });
+    } catch (e) {
+      terminalExit = e.status ?? 1;
+      terminalStdout = (e.stdout ?? "").toString() + (e.stderr ?? "").toString();
+    }
+    check("(e) already-terminal: harness exits non-zero (extra block fails)", terminalExit !== 0);
+    check("(e) already-terminal: 'already-terminal' violation present", terminalStdout.includes("already-terminal"));
+    check("(e) already-terminal: clear message about terminal state", terminalStdout.includes("terminal") && terminalStdout.includes("cannot advance"));
+
   } finally {
     await rm(tmpDir, { recursive: true, force: true });
   }
@@ -438,6 +554,11 @@ async function scenario() {
   console.log("- Validator rejects input with no aiecp blocks at all");
   console.log("- Validator supports stdin input (for piping chat LLM responses)");
   console.log("- Protocol is expressive enough for a full bug-report workflow run (5+ evidence kinds)");
+  console.log("- ADR-0023: chat-sandbox without auth FAILS (security gap closed)");
+  console.log("- ADR-0023: chat-sandbox with --user-prompt authorization PASSES");
+  console.log("- ADR-0023: chat-sandbox with aiecp:confirm block PASSES (explicit authorization)");
+  console.log("- ADR-0023: chat (pure-text) still auto-confirms (backward compat)");
+  console.log("- ADR-0023: already-terminal violation correctly caught (extra block past terminal)");
 }
 
 scenario().catch((err) => {

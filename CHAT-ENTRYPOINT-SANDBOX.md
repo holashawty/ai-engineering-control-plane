@@ -211,6 +211,44 @@ Transition states:
 on: class_known
 ```
 
+### Safety gate confirmation (per ADR-0023 — IMPORTANT)
+
+When your workflow reaches a safety-gated transition (e.g.,
+`fix_approved` → `apply-fix` in bug-report, or `design_approved` →
+`implement` in feature-request), you MUST emit an `aiecp:confirm`
+block BEFORE the `aiecp:advance` block. This is because your
+chat-sandbox adapter has `filesystem_write=true` (per ADR-0020) —
+you CAN actually write files, so the safety gate is a REAL
+authorization boundary, not a moot check.
+
+The `aiecp:confirm` block tells the harness (and the user) that
+you are explicitly authorizing the gated action:
+
+```aiecp:confirm
+gate: broad-refactor
+reason: "user asked to fix the bug, proceeding with patch"
+```
+
+Optional fields:
+- `gate`: which gate (e.g., `broad-refactor`). If omitted, the
+  confirmation applies to the next gated advance.
+- `reason`: why you are confirming. Should reference the user's
+  original prompt or the evidence that justifies the action.
+
+**If you do NOT emit `aiecp:confirm` before a gated transition:**
+the harness will FAIL with `safety-gate-not-authorized`. The user
+can also authorize via the `--user-prompt` argument (if their
+original prompt contained authorization keywords like "fix",
+"düzelt", "apply", "uygula"), but emitting `aiecp:confirm` yourself
+is the cleaner, more explicit approach.
+
+**When to emit `aiecp:confirm`:** before every `aiecp:advance`
+that crosses a safety gate. The workflow's `.sm.yaml` declares
+which states have gates (look for `safety_gates:` in the workflow
+definition). For `bug-report`, the gated transitions are
+`fix_approved` (at `propose-fix`) and `fix_applied` (at
+`apply-fix`).
+
 Ask questions (subject to question_economy):
 
 ```aiecp:question
