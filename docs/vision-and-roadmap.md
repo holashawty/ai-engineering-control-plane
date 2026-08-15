@@ -7,6 +7,14 @@ Bu doküman, AIECP'nin mevcut durumunu, 2026 AI manzarasındaki
 yerini, eksikliklerini ve gelecek vizyonunu kapsar. Patron'un
 soru ve vizyonlerine doğrudan cevap verir.
 
+**Bağımsız denetim notu (2026-08-15):** Bu belge, kontrolcü (Claude)
+tarafından bağımsız olarak denetlendi — bkz.
+[`docs/controller-audit-and-roadmap-2026.md`](controller-audit-and-roadmap-2026.md).
+Çoğu iddia doğrulandı; bir iddia (satır ~22, "IDE agent'ları (AutoClaw)
+gerçek WorkflowRun API'sini çağırabiliyor") **doğrulanamadı** — repoda
+bu iddiayı destekleyen hiçbir test kaydı yok. Bu satırı düzeltene kadar
+"henüz test edilmedi" olarak okuyun.
+
 ---
 
 ## 1. Proje Amacına Ulaştı mı?
