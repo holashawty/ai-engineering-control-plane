@@ -1,6 +1,6 @@
 # Skills (Agent Skills format)
 
-**Status: 20 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend).**
+**Status: 28 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend) + 2 new-verification (visual-regression, self-healing).**
 
 All skills are written as real, procedural Agent Skills
 (`SKILL.md` + YAML frontmatter, per ADR-0001), not placeholders.
@@ -153,6 +153,41 @@ needs) are long-term scope (ADR-0016) and are not started. The
 `database` / `frontend` / `backend` skills, previously listed
 here as long-term, were authored as cross-cutting domain skills
 (see "Domain skills" section above).
+
+## Verification skills (patron-driven)
+
+These two skills are not tied to a specific workflow — they
+are verification-layer skills that any workflow may cite in its
+`skills_required` list at the `verify` state when the change
+touched visual output or test infrastructure. Each follows
+`behavioral-verification/SKILL.md`'s format (frontmatter +
+When-to-use + Procedure with real evidence-schema citations +
+Tool integration + Validation criteria + Examples with happy
+path and failure mode) and produces Evidence Model artifacts
+(`Decision`/`Expected`/`Actual`/`Validation`/`Trace`/`Event`)
+that `behavioral-verification` then judges.
+
+- [`visual-regression/`](visual-regression/SKILL.md) — covers
+  pixel-level visual regression: capture baseline screenshots
+  before the change, capture after, compute pixel-diff, and emit
+  `Actual` + `Validation` with `method: "app_validation"` only if
+  the diff is below threshold. Integrates with Playwright's
+  `toHaveScreenshot()` (built-in) and BackstopJS (standalone,
+  MIT-licensed). Directly addresses the patron's stated pain
+  point ("asset bozulmaları, visual regression") in Phaser /
+  Electron / embedded-browser asset pipelines.
+- [`self-healing/`](self-healing/SKILL.md) — covers selector /
+  locator drift recovery: when a test fails with "element not
+  found," search the rendered DOM for the closest matching
+  element, update the test file with the healed selector, re-run.
+  Cites the Playwright Healer pattern (75%+ success per web
+  research 2026-08-15). Directly addresses the patron's stated
+  pain point ("gömülü tarayıcıdan selector toplayamıyor") — the
+  full solution to embedded-browser selector collection failures.
+
+The two skills compose: a `self-healing` recovery (selector
+updated) should be followed by a `visual-regression` capture to
+confirm the healed selector still finds the right element visually.
 
 ## Skill Authoring Conventions
 

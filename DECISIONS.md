@@ -156,8 +156,12 @@ Every framework-level decision — especially anything touching
   workflows.
 - **Tradeoffs:** Adds one more schema/config surface. Justified because
   it directly implements ADR-0011 rather than leaving it as prose.
-- **Status:** Scheduled for Phase 1 finalization (see
-  `docs/implementation-roadmap.md`).
+- **Status:** Decided 2026-08-11. Active. Scheduled for Phase 1
+  finalization (see `docs/implementation-roadmap.md`). CSA (Cloud
+  Security Alliance) Ocak 2026'da AI ajanları için yayınladığı
+  resmi L0-L5 otonomi seviyeleri standardıyla neredeyse birebir
+  örtüşmektedir — bu paralellik, AIECP'nin tasarım kararlarının
+  endüstri standardıyla uyumlu olduğunu doğrulamaktadır.
 
 ## ADR-0015 — Project Intelligence is a persistent, first-class artifact
 - **Decision:** Introduce a machine-readable, persistent project model

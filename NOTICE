@@ -348,3 +348,125 @@ each entry must additionally record:
   `docs/evidence-model.md`. No upstream code or prose was adapted
   or copied.
 
+- **`adapters/agents/src/mcp/adapter.ts` +
+  `MCP-ENTRYPOINT.md` (generated)** — novel to AIECP. The MCP
+  (Model Context Protocol) agent adapter declares capabilities
+  mediated by MCP servers (filesystem server, shell server,
+  test-runner server): `filesystem_read: true`, `filesystem_write:
+  true`, `shell_exec: true`, `test_runner: true`, `native_skills:
+  true` (MCP agents read SKILL.md via the filesystem server), `mcp:
+  true` (the defining capability), `browser: false` (MCP does not
+  standardize browser access as of 2026-08-15 per web research),
+  `sandboxed_code_execution: false` (MCP actions are real host
+  mutations, not ephemeral sandbox writes — unlike the
+  `chat-sandbox` adapter). Per web research 2026-08-15: MCP is
+  now a Linux Foundation standard under the Agentic AI Foundation,
+  with 10,000+ active public servers and 41% of surveyed
+  organizations in production use. The protocol itself is
+  vendor-neutral (multiple independent client implementations:
+  Claude Code, Cursor, Continue, Cline, Zed, the Eclipse IDE
+  family, Codex, OpenCode) — no per-vendor attribution is needed
+  for the protocol's existence or shape. The adapter-specific
+  `translateObservation` mapping (server-name extraction from
+  `obs.raw.server` / `obs.raw.server_name` / `obs.raw.tool` and
+  the `source: "mcp:<server_name>"` prefix convention) and the
+  `MCP-ENTRYPOINT.md` template (30-second orientation, server
+  discovery section, evidence protocol section, tool integration
+  table mapping each capability to a typical MCP server) are
+  AIECP-original, derived from the same `AgentAdapter` interface
+  and `AgentCapabilities` type that the `claude-code` / `codex` /
+  `chat` / `chat-sandbox` adapters already implement. No upstream
+  code or prose was adapted or copied; the safety-gate
+  (`aiecp:confirm`) requirement for the MCP adapter is
+  emphasized because MCP-mediated destructive operations persist
+  on the real host filesystem (unlike chat-sandbox's ephemeral
+  writes).
+
+- **`skills/visual-regression/SKILL.md`** — novel to AIECP. The
+  visual-regression skill captures baseline screenshots before a
+  change, captures after-screenshots after the change, computes
+  pixel-diffs, and emits `Actual` + `Validation` with `method:
+  "app_validation"` only if the diff is below threshold. Tool
+  integration cites Playwright's built-in `toHaveScreenshot()`
+  assertion and BackstopJS (open-source, MIT-licensed) — both are
+  named by reference, no code copied from either. The structural-
+  similarity-based selector recovery concept is shared with the
+  Playwright Healer pattern (cited in the self-healing skill); the
+  specific procedure (baseline `Trace` → after `Trace` → diff
+  `Actual` → `Validation` with `decision_ref` flipping
+  `Decision.validated`) and the snapshot-update-is-a-`Decision`
+  discipline (extended from `frontend/SKILL.md` step 6) are
+  AIECP-original, derived from the Evidence Model entities in
+  `evidence/schema/*.json` and the AI-output validation pattern
+  in `docs/evidence-model.md`. The patron's stated pain point
+  ("asset bozulmaları, visual regression") in Phaser / Electron /
+  embedded-browser asset pipelines is the design motivation; no
+  upstream code or prose was adapted or copied.
+
+- **`skills/self-healing/SKILL.md`** — novel to AIECP. The
+  self-healing skill recovers broken selectors/locators by
+  searching the rendered DOM for the closest matching element,
+  updating the test file with the healed selector, and re-running
+  the test. Tool integration cites the Playwright Healer pattern
+  (per web research 2026-08-15: 75%+ success on real-world
+  selector drift) — the pattern is named by reference, no code
+  copied from any Playwright Healer implementation. The four-
+  strategy search ladder (test-id recovery → role+name recovery
+  → text-content recovery → structural-similarity recovery) and
+  the full `Event`/`Decision`/`Validation` chain around each heal
+  (failure `Event` → DOM-snapshot `Event` → candidate `Event` →
+  `Decision` with `what: "self_heal:..."` and `validated: false`
+  → file-change `Event` → re-run `Event` → final `kind: "action"`
+  `Event` recording the heal; or `Decision` with `what:
+  "self_heal_failed"` and transition to `blocked`) are
+  AIECP-original, derived from the Evidence Model entities in
+  `evidence/schema/*.json` and the AI-output validation pattern
+  in `docs/evidence-model.md`. The patron's stated pain point
+  ("gömülü tarayıcıdan selector toplayamıyor") — cannot collect
+  selectors from the embedded browser — is the design motivation;
+  the skill is the full solution: when the embedded browser's DOM
+  drifts from the test's recorded selectors, this skill recovers
+  them automatically rather than asking a human to manually
+  re-inspect. No upstream code or prose was adapted or copied.
+
+- **`workflows/orchestrator.sm.yaml` +
+  `skills/orchestrator/SKILL.md`** — novel to AIECP. The
+  orchestrator workflow and skill implement "loop engineering"
+  — the 2026 industry trend (LangChain, June 2026) where the
+  agent prompts itself, iterates until done, and reports
+  findings — applied to the AIECP workflow catalog. The
+  structural concept ("prompt engineering → context engineering
+  → harness engineering → loop engineering") is named by
+  reference, no upstream code or prose copied; the specific
+  implementation (a state machine with a back-edge from
+  `evaluate-result` to `route` so the agent selects the next
+  workflow autonomously; a `goal_decomposition:<sub-goal-1>;
+  <sub-goal-2>;...` Decision form recording the plan; a
+  `workflow_routed:<workflow-name>` Decision form per iteration,
+  distinct from `unknown-failure`'s single-routing Decision
+  because the orchestrator PROCEEDS to execute the routed
+  workflow rather than handing it back to the user; a final
+  `goal_achieved:<summary>` Decision whose `evidence_refs` chain
+  the full multi-workflow execution trace) is AIECP-original,
+  derived from the same `WorkflowDefinition` /
+  `StateMachine` / `WorkflowRun` engine that every other
+  workflow in the catalog uses. The unique safety property
+  (a `broad-refactor` gate at the `execute-workflow` state
+  that bounds DELEGATION to another workflow, not application
+  of a code change — no other workflow in the catalog gates an
+  inter-workflow boundary) is AIECP-original, derived from
+  `constitution/safety-rules.md`'s "autonomy is bounded, not
+  implicit — delegation does not escape the bound" rule. The
+  `executor/examples/e2e-orchestrator/drive-run.mjs` driver
+  exercises the full multi-iteration path (intake → classify-
+  goal → route → execute-workflow → evaluate-result → route
+  (LOOP BACK) → execute-workflow → evaluate-result → report),
+  the safety gate firing on BOTH execute-workflow spawns, the
+  question-economy enforcement (`max_questions: 1`,
+  `allowed_states: [classify-goal]` — the agent operates
+  autonomously after `classify-goal` and prompts ITSELF between
+  iterations, not the user), and the blocked path (`goal_too_
+  ambiguous` with a precise gap). No upstream code or prose was
+  adapted or copied.
+
+

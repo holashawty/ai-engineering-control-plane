@@ -3,9 +3,21 @@
 **"Bu repo'yu alsınlar, hiç hata yapmadan, kendi kendine loop içinde
 çalışsın, goal noktasına kadar gelsin."**
 
+> **Not (kontrolcü düzeltmesi):** Bu belgedeki "IDE agent'ları
+> (AutoClaw) gerçek WorkflowRun API'sini çağırabiliyor" iddiası,
+> patron'un bizzat AutoClaw IDE ile yaptığı test sonucudur — ancak
+> test transkripti repoya commit edilmemiştir. Kontrolcü
+> (Claude) bu iddiayı repoda kanıt bulamadığı için işaretlemiştir.
+> Patron tarafından doğrulanmıştır: AutoClaw testi gerçekten yapıldı,
+> çıktı patron'a iletilmiş ama repoya kaydedilmemiştir. Gelecekteki
+> IDE testleri transkript olarak `scripts/test-responses/` altına
+> kaydedilmelidir.
+
 Bu doküman, AIECP'nin mevcut durumunu, 2026 AI manzarasındaki
 yerini, eksikliklerini ve gelecek vizyonunu kapsar. Patron'un
-soru ve vizyonlerine doğrudan cevap verir.
+soru ve vizyonlerine doğrudan cevap verir. Kontrolcü tarafından
+bağımsız denetlenmiştir — bkz.
+`docs/controller-audit-and-roadmap-2026.md`.
 
 **Bağımsız denetim notu (2026-08-15):** Bu belge, kontrolcü (Claude)
 tarafından bağımsız olarak denetlendi — bkz.

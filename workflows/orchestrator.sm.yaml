@@ -1,0 +1,425 @@
+workflow: orchestrator
+schema_version: "1.0.0"
+description: >
+  Implements "loop engineering" — the 2026 trend (LangChain, June
+  2026) where the agent prompts itself, iterates until done, and
+  reports findings — applied to the AIECP workflow catalog. The
+  orchestrator takes a user's high-level goal (typically a
+  multi-intent request that spans multiple workflows — "fix the
+  shipping bug AND add a feature for batch labels," "make the
+  release pass AND clean up the test suite afterward") and
+  autonomously routes through multiple workflows in a loop until
+  the goal is met or blocked. This is structurally distinct from
+  every other workflow in the catalog:
+
+    - bug-report, feature-request, refactor, change-request,
+      performance-problem, regression, code-review, release,
+      incident, security-problem, user-complaint each address ONE
+      shape of work (reactive, constructive, behavior-preserving,
+      behavior-modifying, cost-shaped, prior-context-aware,
+      gatekeeping, release-shaped, alert-shaped, vulnerability-
+      shaped, complaint-shaped). They run once and terminate.
+    - unknown-failure routes ONE ambiguous request to ONE target
+      workflow (or refuses safely). It runs once and terminates,
+      producing a routing Decision rather than an applied change.
+    - project-onboarding and discovery-refresh run discovery once
+      and write/refresh memory. They run once and terminate.
+
+  The orchestrator is the ONLY workflow in the catalog whose
+  state graph contains a back-edge from a post-execution state
+  (evaluate-result) to a pre-execution state (route). That back-
+  edge is the loop: after one workflow completes, the orchestrator
+  evaluates whether the original goal is fully met; if not, it
+  routes to the NEXT workflow that contributes to the goal and
+  loops. This is the "prompt itself, iterate until done" pattern
+  — the agent does not return to the user between workflows.
+
+  Distinct from `unknown-failure`: unknown-failure triages a
+  SINGLE ambiguous intent into one target workflow (or refuses).
+  The orchestrator takes a goal that is too LARGE for any one
+  workflow — typically a multi-intent request like "fix this bug
+  and add that feature" — and decomposes it into a sequence of
+  workflows, executing each one. Where `unknown-failure`'s
+  terminal `report` state emits a `workflow_routed:<workflow>`
+  Decision (and exits), the orchestrator's `route` state emits
+  the same `workflow_routed:<workflow>` Decision but then
+  PROCEEDS to execute that workflow (via `execute-workflow`)
+  rather than handing it back to the user. The orchestrator's
+  `report` state emits a `goal_achieved:<summary>` Decision
+  summarizing the FULL chain of executed workflows, not a
+  single-workflow routing.
+
+  Safety model: the orchestrator itself does not directly modify
+  source code — it spawns other workflows that do. But each
+  spawn is gated by the broad-refactor safety gate at
+  `execute-workflow`, because the orchestrator is about to
+  execute another workflow that may modify code (bug-report's
+  apply-fix, feature-request's implement, refactor's implement,
+  change-request's migrate). The gate is the same
+  broad-refactor → edit_source mapping used by bug-report at
+  propose-fix, feature-request at implement, refactor at
+  implement, and change-request at migrate — proving the gate is
+  workflow-agnostic. Here it gates an INTER-workflow boundary
+  rather than an INTRA-workflow transition: the orchestrator is
+  the only workflow in the catalog whose safety gate fires on a
+  transition whose purpose is to delegate to another workflow,
+  not to apply a code change in the current workflow.
+
+  Question economy: budget is 1 (not 2 like unknown-failure's,
+  not 0 like code-review's). The one allowed question is in
+  `classify-goal` — the only state where a question is decision-
+  changing. After `classify-goal`, the orchestrator operates
+  autonomously: it does NOT ask the user between workflow
+  executions (the whole point of "loop engineering" is that the
+  agent prompts ITSELF, not the user, between iterations). If
+  the orchestrator cannot determine whether the goal is met
+  after a workflow completes, it transitions to `blocked` with
+  a precise gap, not to a fourth question.
+
+states:
+  - intake
+  - classify-goal
+  - route
+  - execute-workflow
+  - evaluate-result
+  - report
+  - blocked
+
+initial_state: intake
+terminal_states: [report, blocked]
+
+transitions:
+  - { from: intake, to: classify-goal, on: intent_classified }
+  - { from: classify-goal, to: route, on: goal_classified }
+  - { from: classify-goal, to: blocked, on: goal_too_ambiguous }
+  - { from: route, to: execute-workflow, on: workflow_selected }
+  - { from: route, to: blocked, on: no_workflow_matches }
+  - { from: execute-workflow, to: evaluate-result, on: workflow_complete }
+  - { from: execute-workflow, to: blocked, on: workflow_failed }
+  # LOOP BACK EDGE — the structural feature that makes this
+  # workflow distinct from every other in the catalog. After a
+  # workflow completes and its result is evaluated, if the
+  # original goal is not yet met, the orchestrator routes to the
+  # NEXT workflow that contributes to the goal. This is "loop
+  # engineering": the agent prompts ITSELF to select and execute
+  # the next workflow, rather than returning to the user between
+  # workflows. The back-edge is bounded by the goal-decomposition
+  # produced in classify-goal (a finite list of sub-goals), so
+  # the loop cannot run forever — each pass through `route`
+  # either selects a workflow that contributes to a remaining
+  # sub-goal, or transitions to `report` (goal achieved) or
+  # `blocked` (goal unachievable with the available workflows).
+  - { from: evaluate-result, to: route, on: goal_not_yet_met }
+  - { from: evaluate-result, to: report, on: goal_achieved }
+  - { from: evaluate-result, to: blocked, on: goal_unachievable }
+
+state_detail:
+  intake:
+    purpose: >
+      Capture the user's high-level goal verbatim. Do not ask
+      clarifying questions here — the one allowed question belongs
+      to `classify-goal` (per `question_economy` below). The most
+      important classification made here is structural: is this
+      request actually a multi-workflow goal (in which case the
+      orchestrator is the correct workflow), or is it a single-
+      workflow request that the router should have routed to a
+      specific workflow directly? If the latter, the
+      orchestrator's `classify-goal` state will detect this and
+      emit a `workflow_routed:<single-workflow>` Decision that
+      short-circuits to a single `execute-workflow` pass (one
+      workflow → one `evaluate-result` → `report`) — the
+      orchestrator does not refuse a single-workflow goal, it
+      just runs it as the degenerate one-iteration case of the
+      loop. The acid test for whether the orchestrator is the
+      correct workflow: does the request name more than one
+      distinct intent ("fix X AND add Y", "release this AND
+      clean up Z", "audit A, B, and C")? If yes, the orchestrator
+      decomposes it. If no, the router should have routed to the
+      specific workflow directly; classify-goal will surface this
+      rather than silently running a single-workflow loop.
+    emits_evidence: []
+    reads_memory: [project, known-failure]
+
+  classify-goal:
+    purpose: >
+      Decompose the goal into an ordered list of sub-goals, each
+      of which is addressable by ONE workflow from the routing
+      table in `workflows/_router.md`. The decomposition is the
+      orchestrator's analytical core: a goal like "fix the
+      shipping bug and add a feature for batch labels" decomposes
+      into [bug-report(shipping), feature-request(batch-labels)];
+      a goal like "make the release pass and clean up the test
+      suite" decomposes into [release, refactor(test-suite)];
+      a goal like "audit the auth path for security and
+      performance" decomposes into [security-problem(auth),
+      performance-problem(auth)]. Emit a `Decision` recording the
+      decomposition: `what:
+      "goal_decomposition:<sub-goal-1>;<sub-goal-2>;..."`,
+      `validated: false` (the decomposition is a plan, not a
+      verified outcome — it is `accepted` only when every sub-
+      goal's workflow terminates in `report`, which `evaluate-
+      result` confirms), `result: "pending"`, `alternatives`
+      naming any sub-goal-ordering alternatives considered (e.g.,
+      "fix bug before adding feature" vs. "add feature first,
+      then fix bug" — the ordering may matter when one workflow's
+      output is another's input). The `evidence_refs` array
+      points at the inspection events that informed the
+      decomposition (recent commits, prior known-failures, the
+      Project Intelligence document). May ask at most ONE
+      necessary, specific, decision-changing question — typically
+      "should the bug be fixed before the feature is added, or
+      can they proceed in parallel?" when the decomposition is
+      clear but the ordering is not. This is the ONLY allowed
+      question in the entire orchestrator run; after `classify-
+      goal`, the agent operates autonomously (the "loop" in
+      "loop engineering" is the agent prompting ITSELF between
+      iterations, not asking the user). If the goal cannot be
+      decomposed even after the one allowed question (the request
+      is too vague to identify even one workflow that
+      contributes), transition to `blocked` with
+      `goal_too_ambiguous` and a precise gap naming what
+      information would have made the goal decomposable.
+    emits_evidence: [decision]
+    reads_memory: [project, known-failure, environment]
+
+  route:
+    purpose: >
+      Select the next workflow to execute, from the remaining
+      sub-goals in the decomposition. Emit a `Decision` naming
+      the target workflow in the form
+      `workflow_routed:<workflow-name>` (e.g.,
+      `workflow_routed:bug-report`), `validated: true`,
+      `result: "accepted"`. This is the same `what` form
+      `unknown-failure`'s `route-or-block` state emits — but
+      where `unknown-failure` then transitions to `report` (hand
+      the routing back to the user), the orchestrator transitions
+      to `execute-workflow` (proceed to run the workflow). The
+      `Decision.evidence_refs` MUST contain (a) the
+      `classify-goal` decomposition Decision id (the plan this
+      routing is executing against), AND (b) the most recent
+      `evaluate-result` Decision id (the result of the prior
+      iteration, if any — the FIRST iteration has no prior
+      result, so the `evidence_refs` contains only the
+      decomposition Decision). A routing Decision with no
+      `evidence_refs` is a hollow routing, the same hollow-
+      evidence failure mode `evidence-engineering` step 2
+      exists to prevent across all workflows. If no workflow
+      matches the next sub-goal (the sub-goal names a workflow
+      not yet implemented, per `workflows/_router.md`'s Status
+      column, OR the sub-goal is genuinely unaddressable by any
+      workflow in the catalog), transition to `blocked` with
+      `no_workflow_matches` and a precise gap naming which sub-
+      goal could not be addressed and what workflow would have
+      addressed it (if planned but unimplemented) or that no
+      workflow in the catalog addresses this kind of sub-goal
+      (if the gap is structural, not just temporal).
+    emits_evidence: [decision]
+
+  execute-workflow:
+    purpose: >
+      Simulate running the workflow selected by `route`. In the
+      real system, this state would spawn a child `WorkflowRun`
+      of the target workflow (bug-report, feature-request,
+      refactor, etc.), pass it the sub-goal extracted from the
+      decomposition, wait for it to terminate, and propagate its
+      terminal state and emitted evidence into the orchestrator's
+      own evidence chain. In the MVP executor (which has no
+      cross-workflow spawning yet — see `STATUS.md`), this state
+      is exercised by the e2e driver through a script that
+      simulates the child workflow's outcome: the driver emits
+      the evidence the child would have emitted (a `Decision`
+      recording the child's terminal outcome, an `Event`
+      recording what the child did, optionally a `Validation` if
+      the child workflow was a verification workflow like
+      bug-report or refactor) and then advances on
+      `workflow_complete` or `workflow_failed`. The
+      `safety_gate: broad-refactor` declaration here is the
+      key safety property: each spawn of a code-modifying child
+      workflow (bug-report's apply-fix, feature-request's
+      implement, refactor's implement, change-request's migrate)
+      is gated before the spawn proceeds. The orchestrator is
+      the ONLY workflow in the catalog whose safety gate fires
+      on an INTER-workflow boundary (spawning another workflow)
+      rather than on an INTRA-workflow transition (one state
+      within a single workflow moving to the next). This is the
+      correct place for the gate: the orchestrator's own code
+      does not modify source, but it CAUSES other workflows to
+      modify source, and "causes" must be gated just as
+      "applies" is gated, per `constitution/safety-rules.md`
+      ("autonomy is bounded, not implicit" — delegation does
+      not escape the bound).
+    emits_evidence: [decision, event]
+    safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold; capability edit_source per executor/src/run.ts GATE_TO_CAPABILITY map)
+
+  evaluate-result:
+    purpose: >
+      Evaluate whether the original goal (from `classify-goal`'s
+      decomposition) is fully met after the just-executed
+      workflow. Emit a `Decision` recording the evaluation:
+      `what: "goal_evaluation:<achieved|not_yet_met|
+      unachievable>"`, `validated: false` (the evaluation is
+      the orchestrator's self-assessment, not a verified
+      outcome — `validated: true` would require an external
+      Validation, which is the child workflow's
+      responsibility, not the orchestrator's), `result:
+      "pending"`. The `evidence_refs` array MUST contain (a)
+      the `route` Decision id that selected the just-executed
+      workflow (the routing being evaluated), AND (b) the
+      `execute-workflow` Decision id (the child workflow's
+      outcome being evaluated). The three possible outcomes:
+
+        - `goal_achieved` — ALL sub-goals in the decomposition
+          have been addressed by workflows that terminated in
+          `report` (not `blocked`). Transition to `report`.
+        - `goal_not_yet_met` — at least one sub-goal remains
+          unaddressed. Transition BACK to `route` (the LOOP
+          BACK EDGE — the structural feature that makes this
+          workflow distinct from every other in the catalog).
+        - `goal_unachievable` — the just-executed workflow
+          terminated in `blocked`, AND the blocked state's
+          gap names a sub-goal that cannot be addressed by any
+          remaining workflow in the catalog. Transition to
+          `blocked`.
+
+      The back-edge to `route` is bounded by the
+      decomposition's finite sub-goal count: each pass through
+      `route` consumes one sub-goal (the one whose workflow was
+      just executed), so the loop runs at most N+1 times (N
+      sub-goals + 1 final evaluation that confirms `goal_achieved`).
+      An infinite loop is structurally impossible because
+      `route` only selects a workflow for a REMAINING sub-goal,
+      and the set of remaining sub-goals strictly decreases per
+      iteration. If `route` selects the same workflow twice for
+      the same sub-goal (the workflow terminated in `blocked`
+      but the sub-goal is still addressable by a different
+      workflow), that is allowed — but `evaluate-result` MUST
+      cite the prior `blocked` outcome in its `Decision.why`
+      when transitioning back to `route` so the loop does not
+      silently retry the same workflow forever.
+    emits_evidence: [decision]
+
+  report:
+    purpose: >
+      Summarize the orchestrator's run: the original goal, the
+      decomposition from `classify-goal`, the sequence of
+      workflows executed (one per loop iteration), each
+      workflow's outcome (terminal `report` or `blocked`), and
+      the final goal-achievement status. Emit a final
+      `Decision` with `what: "goal_achieved:<summary>"`,
+      `validated: true`, `result: "accepted"`, and
+      `evidence_refs` pointing at the chain of routing +
+      execute-workflow + evaluate-result Decisions across all
+      iterations. Must include the Decision Trace
+      (docs/architecture.md) — not just "goal achieved" but
+      the chain of evidence that justifies the achievement.
+      Writes a `project` memory entry recording the orchestrator
+      run (the goal, the decomposition, the chain of workflows
+      executed) so future runs against the same repo can cite
+      the prior decomposition rather than re-deriving it. This
+      is structurally distinct from every other workflow's
+      memory write: bug-report writes a `known-failure` entry
+      about a single incident; project-onboarding writes the
+      initial `project`+`environment` entries; the orchestrator
+      writes a `project` entry recording a MULTI-WORKFLOW
+      execution chain, which is a different shape of memory
+      fact (a coordination history, not a single-workflow
+      outcome).
+    writes_memory: [project]
+
+  blocked:
+    purpose: >
+      Terminal failure state. Reached when: the goal is too
+      ambiguous to decompose even after the one allowed question
+      (`classify-goal` — the request names no recognizable
+      intent, even after inspection), no workflow matches the
+      next sub-goal (`route` — the sub-goal names a workflow
+      not yet implemented, OR no workflow in the catalog
+      addresses this kind of sub-goal), a child workflow
+      failed catastrophically (`execute-workflow` — the child
+      WorkflowRun itself crashed rather than terminating in
+      `report` or `blocked`, which is an executor-level
+      failure distinct from the child's own `blocked`), or
+      the goal is unachievable with the available workflows
+      (`evaluate-result` — the decomposition's remaining
+      sub-goals cannot be addressed by any workflow in the
+      catalog, even after the just-executed workflow's `blocked`
+      outcome is recorded). Must surface a precise gap, never
+      a vague failure, per `docs/portability.md` failure modes.
+      The blocked report should name which sub-goal could not
+      be addressed, which workflows were considered for it, why
+      each was rejected, and what the user should do next
+      (rephrase the goal, supply more context, manually invoke
+      a specific workflow, or wait for a planned workflow to
+      ship). The blocked report is the artifact the user will
+      read to decide whether to rephrase or manually intervene
+      — it must be actionable, not just a refusal.
+
+skills_required:
+  - evidence-engineering  # every routing + evaluate-result Decision must be evidence-anchored, not asserted from memory
+  - tool-use-discipline  # ADR-0019 — mandatory before any code-reading or workflow-selection; the decomposition must be derived from inspected signals, not recalled patterns
+  - recency-verification  # ADR-0019 — the goal may reference a library version or API behavior that has shifted since onboarding; the decomposition must account for the current state
+  - diverse-thinking  # the decomposition may benefit from a different cognitive stance when the goal is large or the ordering is unclear; switches stance after the first decomposition if the alternatives are equally plausible
+  # The orchestrator skill itself (skills/orchestrator/SKILL.md)
+  # drives the classify-goal, route, execute-workflow, and
+  # evaluate-result states. It is the dedicated skill authored
+  # alongside this workflow; per the convention (see
+  # bug-report.sm.yaml / unknown-failure.sm.yaml), it is not
+  # duplicated in skills_required because skills_required names
+  # skills whose existence is independent of this workflow.
+
+capabilities_required:
+  - filesystem_read   # read repo + memory to decompose the goal and route each sub-goal
+  - filesystem_write  # spawn child workflows that modify code (the orchestrator's own writes are only the terminal `project` memory entry, but it CAUSES child workflows to write source)
+  - shell_exec         # run context-gathering commands for the decomposition + spawn child workflows
+  - test_runner        # child workflows (bug-report's verify, refactor's verify-equivalence, feature-request's test) require this; the orchestrator declares it so child spawns inherit the capability
+
+safety_gates:
+  - state: execute-workflow
+    gate: broad-refactor
+  # The orchestrator's own code does not modify source — it
+  # spawns child workflows that do. But "causes" is gated just
+  # as "applies" is gated, per constitution/safety-rules.md
+  # ("autonomy is bounded, not implicit" — delegation does not
+  # escape the bound). The gate at execute-workflow is the
+  # inter-workflow boundary: each spawn of a code-modifying
+  # child workflow is gated before the spawn proceeds. The gate
+  # uses the same broad-refactor -> edit_source mapping as
+  # bug-report's propose-fix, feature-request's implement,
+  # refactor's implement, and change-request's migrate —
+  # proving the gate is workflow-agnostic. Here it gates an
+  # INTER-workflow boundary rather than an INTRA-workflow
+  # transition, which is the orchestrator's UNIQUE safety
+  # property: no other workflow in the catalog declares a gate
+  # whose purpose is to bound delegation to another workflow.
+  # The e2e driver at executor/examples/e2e-orchestrator/drive-
+  # run.mjs asserts this by attempting an un-confirmed advance
+  # out of execute-workflow (rejected with
+  # safety-gate-needs-confirmation), then proceeding via
+  # advanceWithConfirmation.
+
+question_economy:
+  max_questions: 1
+  allowed_states: [classify-goal]
+  rule: >
+    A question may only be asked in `classify-goal`, and only if
+    Project Intelligence + Discovery + Memory + the request text
+    genuinely cannot resolve the goal decomposition or the sub-
+    goal ordering. See docs/workflow-model.md "Question economy."
+    The budget is 1 (not 2 like `unknown-failure`'s, not 0 like
+    `code-review`'s) because the orchestrator operates
+    autonomously after `classify-goal` — the entire point of
+    "loop engineering" (LangChain, June 2026) is that the agent
+    prompts ITSELF between iterations, not the user. If the one
+    allowed question is insufficient to decompose the goal, the
+    correct outcome is `blocked` with `goal_too_ambiguous` and
+    a precise gap, not a second question — the user must
+    rephrase or supply more context rather than consume an
+    unbounded interview. The single legitimate question is
+    typically about sub-goal ordering ("should the bug be fixed
+    before the feature is added?"), not about the decomposition
+    itself (the decomposition should be derivable from
+    inspection of the codebase + the request text). Questions
+    about implementation details ("should the routing Decision
+    include a confidence score?") are never permitted under
+    this budget; they are not decision-changing at the workflow
+    level.

@@ -50,7 +50,9 @@ target routing for post-MVP workflows and are not yet backed by an
 | Vulnerability report, suspicious access pattern | `security-problem` | **MVP — implemented** |
 | "ship this", "cut a release" | `release` | **MVP — implemented** |
 | Production alert, on-call page | `incident` | **MVP — implemented** |
+| `.aiecp/project-intelligence.json` exists but is `stale: true` | `discovery-refresh` | **MVP — implemented** |
 | Intent doesn't match any row above with confidence | `unknown-failure` | **MVP — implemented** (fallback) — must triage into another workflow or refuse safely |
+| Multi-intent request: "fix X AND add Y", "release this AND clean up Z", multi-step goal spanning 2+ workflows above | `orchestrator` | **MVP — implemented** — "loop engineering" (LangChain, June 2026): chains workflows in a loop (bug-report → feature-request → …) until the goal is met or blocked; the agent prompts ITSELF between iterations rather than returning to the user. Distinct from `unknown-failure` (which triages a single ambiguous intent into one target); the orchestrator drives multi-workflow autonomous execution. Safety-gated at `execute-workflow` (broad-refactor) on every spawn — delegation is gated just as application is gated. Proof: `executor/examples/e2e-orchestrator/`. |
 
 ## Classification method (MVP)
 

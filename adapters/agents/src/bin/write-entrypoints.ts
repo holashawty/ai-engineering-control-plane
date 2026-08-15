@@ -7,24 +7,28 @@ import { claudeCodeAdapter } from "../claude-code/adapter.js";
 import { codexAdapter } from "../codex/adapter.js";
 import { chatAdapter } from "../chat/adapter.js";
 import { chatSandboxAdapter } from "../chat-sandbox/adapter.js";
+import { mcpAdapter } from "../mcp/adapter.js";
 
 const ADAPTERS = {
   "claude-code": claudeCodeAdapter,
   codex: codexAdapter,
   chat: chatAdapter,
   "chat-sandbox": chatSandboxAdapter,
+  mcp: mcpAdapter,
 };
 
 async function main() {
   const [sourceRoot, targetRoot, ...ids] = process.argv.slice(2);
   if (!sourceRoot || !targetRoot) {
-    console.error("Usage: write-entrypoints <sourceRepoRoot> <targetRepoRoot> [claude-code] [codex] [chat] [chat-sandbox]");
+    console.error("Usage: write-entrypoints <sourceRepoRoot> <targetRepoRoot> [claude-code] [codex] [chat] [chat-sandbox] [mcp]");
     process.exit(1);
   }
   // Default: claude-code + codex only (the CLI agents that natively
   // read CLAUDE.md / AGENTS.md). Chat adapters are opt-in because
   // their entrypoints (CHAT-ENTRYPOINT.md, CHAT-ENTRYPOINT-SANDBOX.md)
-  // may conflict with hand-authored versions at repo root.
+  // may conflict with hand-authored versions at repo root. MCP is
+  // also opt-in: an MCP-ENTRYPOINT.md is only useful for projects
+  // that actually drive MCP-connected agents.
   const defaultIds = ["claude-code", "codex"];
   const selectedIds = ids.length ? ids : defaultIds;
   const selected = selectedIds

@@ -8,6 +8,7 @@ import { claudeCodeAdapter } from "./claude-code/adapter.js";
 import { codexAdapter } from "./codex/adapter.js";
 import { chatAdapter } from "./chat/adapter.js";
 import { chatSandboxAdapter } from "./chat-sandbox/adapter.js";
+import { mcpAdapter } from "./mcp/adapter.js";
 
 const AjvCtor = Ajv2020 as unknown as new (opts?: object) => import("ajv").default;
 const addFormatsFn = addFormats as unknown as (ajv: import("ajv").default) => void;
@@ -83,6 +84,7 @@ function scenarioCapabilitiesDiffer() {
   const codex = codexAdapter.capabilities();
   const chat = chatAdapter.capabilities();
   const chatSandbox = chatSandboxAdapter.capabilities();
+  const mcp = mcpAdapter.capabilities();
 
   check("Claude Code declares full native_skills support", claude.native_skills === true);
   check("Codex declares partial native_skills support", codex.native_skills === "partial");
@@ -99,6 +101,20 @@ function scenarioCapabilitiesDiffer() {
   check("chat-sandbox declares test_runner=true (within sandbox)", chatSandbox.test_runner === true);
   check("chat-sandbox declares native_skills=false (still must read SKILL.md via shell)", chatSandbox.native_skills === false);
   check("chat and chat-sandbox have distinct ids", chatAdapter.id === "chat" && chatSandboxAdapter.id === "chat-sandbox");
+
+  // MCP adapter: real host capabilities mediated by MCP servers.
+  // Distinct from chat-sandbox (which is sandboxed/ephemeral) and
+  // from claude-code/codex (which are vendor CLI adapters).
+  check("MCP adapter declares filesystem_read=true (via file server)", mcp.filesystem_read === true);
+  check("MCP adapter declares filesystem_write=true (via file server)", mcp.filesystem_write === true);
+  check("MCP adapter declares shell_exec=true (via shell server)", mcp.shell_exec === true);
+  check("MCP adapter declares test_runner=true (via test-runner server)", mcp.test_runner === true);
+  check("MCP adapter declares native_skills=true (reads SKILL.md via file server)", mcp.native_skills === true);
+  check("MCP adapter declares browser=false (MCP does not standardize browser access)", mcp.browser === false);
+  check("MCP adapter declares mcp=true (the defining capability)", mcp.mcp === true);
+  check("MCP adapter declares sandboxed_code_execution=false (real host, not sandbox)", mcp.sandboxed_code_execution === false);
+  check("MCP adapter id is 'mcp'", mcpAdapter.id === "mcp");
+  check("MCP and chat-sandbox have distinct sandbox flags", mcp.sandboxed_code_execution === false && chatSandbox.sandboxed_code_execution === true);
 }
 
 function scenarioTranslateObservation() {
@@ -127,6 +143,108 @@ function scenarioTranslateObservation() {
   check("Claude Code adapter redacted the api_key in payload", claudePayload.api_key === "[redacted]");
   check("Codex adapter redacted the api_key in payload", codexPayload.api_key === "[redacted]");
   check("Claude Code adapter did not redact the non-sensitive command field", claudePayload.command === "pytest");
+
+  // MCP adapter: translateObservation must prefix `source` with `mcp:`
+  // and extract the server name from `raw.server` (preferred) or
+  // `raw.server_name`, falling back to the tool name. Test all three
+  // extraction paths plus a tool-only observation (no explicit server
+  // field) to confirm the fallback works.
+  const mcpObsWithServer = {
+    raw: {
+      tool: "read_file",
+      server: "filesystem",
+      path: "/repo/agents/AGENTS.md",
+      api_key: "sk-should-be-redacted",
+    },
+    timestamp: new Date().toISOString(),
+    traceRef: "trace-mcp-1",
+    source: "mcp-run-1",
+  };
+  const mcpObsWithServerName = {
+    raw: {
+      tool: "run_command",
+      server_name: "shell",
+      command: "pytest",
+      api_key: "sk-should-be-redacted",
+    },
+    timestamp: new Date().toISOString(),
+    traceRef: "trace-mcp-2",
+    source: "mcp-run-2",
+  };
+  const mcpObsToolOnly = {
+    raw: {
+      tool: "filesystem", // no explicit server field; tool name falls back as server
+      command: "ls",
+    },
+    timestamp: new Date().toISOString(),
+    traceRef: "trace-mcp-3",
+    source: "mcp-run-3",
+  };
+
+  const mcpEvent1 = mcpAdapter.translateObservation(mcpObsWithServer);
+  const mcpEvent2 = mcpAdapter.translateObservation(mcpObsWithServerName);
+  const mcpEvent3 = mcpAdapter.translateObservation(mcpObsToolOnly);
+
+  check("MCP translateObservation output (with raw.server) validates against event.schema.json", validate(mcpEvent1) === true);
+  check("MCP translateObservation output (with raw.server_name) validates against event.schema.json", validate(mcpEvent2) === true);
+  check("MCP translateObservation output (tool-only, no explicit server) validates against event.schema.json", validate(mcpEvent3) === true);
+
+  check("MCP adapter prefixes source with 'mcp:' (raw.server path)", mcpEvent1.source === "mcp:filesystem");
+  check("MCP adapter prefixes source with 'mcp:' (raw.server_name path)", mcpEvent2.source === "mcp:shell");
+  check("MCP adapter falls back to tool name as server name when no explicit server field present", mcpEvent3.source === "mcp:filesystem");
+
+  // Server-name-based kind mapping: filesystem server + read tool → observation.
+  check("MCP adapter maps filesystem-server read to kind 'observation'", mcpEvent1.kind === "observation");
+  // shell server + run_command → action.
+  check("MCP adapter maps shell-server run to kind 'action'", mcpEvent2.kind === "action");
+
+  const mcpPayload1 = mcpEvent1.payload as Record<string, unknown>;
+  const mcpPayload2 = mcpEvent2.payload as Record<string, unknown>;
+  check("MCP adapter redacted the api_key in payload (filesystem server)", mcpPayload1.api_key === "[redacted]");
+  check("MCP adapter redacted the api_key in payload (shell server)", mcpPayload2.api_key === "[redacted]");
+  check("MCP adapter did not redact the non-sensitive path field", mcpPayload1.path === "/repo/agents/AGENTS.md");
+  check("MCP adapter did not redact the non-sensitive command field (shell server)", mcpPayload2.command === "pytest");
+}
+
+function scenarioMCPEntrypoint() {
+  console.log("\n=== Scenario 5: MCP adapter renders MCP-ENTRYPOINT.md (ADR-0006) ===");
+  const canonical = loadCanonicalSources(REPO_ROOT);
+
+  const mcpFiles1 = mcpAdapter.renderEntrypoint(canonical);
+  const mcpFiles2 = mcpAdapter.renderEntrypoint(canonical);
+  check("MCP adapter renders MCP-ENTRYPOINT.md (not CLAUDE.md / AGENTS.md)", mcpFiles1[0]?.path === "MCP-ENTRYPOINT.md");
+  check(
+    "MCP render is idempotent (byte-identical on repeat run)",
+    mcpFiles1[0]?.content === mcpFiles2[0]?.content
+  );
+  check(
+    "MCP-ENTRYPOINT.md includes canonical AGENTS.md content verbatim",
+    mcpFiles1[0]?.content.includes(canonical.agentsMdContent)
+  );
+  check(
+    "MCP-ENTRYPOINT.md lists all skills by name",
+    canonical.skills.every((s) => mcpFiles1[0]?.content.includes(s.name))
+  );
+  check(
+    "MCP-ENTRYPOINT.md includes 30-second orientation section",
+    mcpFiles1[0]?.content.includes("The 30-second version")
+  );
+  check(
+    "MCP-ENTRYPOINT.md includes MCP server discovery section",
+    mcpFiles1[0]?.content.includes("MCP server discovery")
+  );
+  check(
+    "MCP-ENTRYPOINT.md includes evidence protocol section",
+    mcpFiles1[0]?.content.includes("Evidence protocol")
+  );
+  check(
+    "MCP-ENTRYPOINT.md includes tool integration table mapping capabilities to MCP servers",
+    mcpFiles1[0]?.content.includes("Tool integration section")
+  );
+  check(
+    "MCP-ENTRYPOINT.md emphasizes safety-gate confirmation (real host mutations)",
+    mcpFiles1[0]?.content.includes("aiecp:confirm")
+  );
 }
 
 async function selfTest() {
@@ -135,6 +253,7 @@ async function selfTest() {
   scenarioRenderAndIdempotency();
   scenarioCapabilitiesDiffer();
   scenarioTranslateObservation();
+  scenarioMCPEntrypoint();
 
   console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
   if (failed > 0) {
