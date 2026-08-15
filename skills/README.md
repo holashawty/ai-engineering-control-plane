@@ -154,3 +154,83 @@ needs) are long-term scope (ADR-0016) and are not started. The
 here as long-term, were authored as cross-cutting domain skills
 (see "Domain skills" section above).
 
+## Skill Authoring Conventions
+
+Inspired by `anthropics/skills`'s skill structure (Apache-2.0,
+structural learning only — no content copied, per ADR-0018).
+
+### Directory structure (progressive disclosure)
+
+```
+skill-name/
+├── SKILL.md          (required — frontmatter + procedure)
+├── reference/        (optional — long reference docs loaded on demand)
+│   ├── topic-a.md
+│   └── topic-b.md
+└── scripts/          (optional — executable helper scripts)
+    └── helper.py
+```
+
+- `SKILL.md` is always read first. Keep it under 3000 words.
+- `reference/` files are loaded only when the skill's procedure
+  explicitly tells the agent to read them. This prevents context
+  bloat.
+- `scripts/` files are black-box tools — the agent should run them
+  with `--help` first, not read the source.
+
+### Frontmatter
+
+```yaml
+---
+name: skill-name
+description: When to trigger + what it does. Be "pushy" — include
+  specific trigger phrases and contexts so the LLM uses this skill
+  when it should, not just when explicitly asked.
+license: MIT
+allowed-tools: [filesystem_read, filesystem_write, shell_exec, test_runner]
+---
+```
+
+The `description` is the primary triggering mechanism. All "when to
+use" info goes here, not in the body. Make it "pushy" — instead of
+"How to debug", write "Use when encountering ANY bug, test failure,
+or unexpected behavior. Use ESPECIALLY when under time pressure or
+when previous fixes didn't work."
+
+### Decision tree format
+
+For skills with branching logic, use a decision tree format:
+
+```
+User task → Is it X?
+    ├─ Yes → Do A
+    │       ├─ Success → Continue
+    │       └─ Fails → Try B
+    └─ No → Do C
+```
+
+This is clearer than nested if/else prose.
+
+### Cross-skill references
+
+Skills may reference other skills by name:
+`Use the `superpowers:systematic-debugging` skill for Phase 1.`
+This helps the agent navigate the skill catalog.
+
+### "Ready for Development" checklist (for `specification` skill)
+
+Inspired by `BMAD-METHOD` (MIT, paraphrased per ADR-0018).
+
+A specification is "Ready for Development" when it meets all 6 criteria:
+
+1. **Actionable** — every task has a file path and specific action.
+2. **Logical** — tasks ordered by dependency.
+3. **Testable** — all acceptance criteria use Given/When/Then.
+4. **Complete** — no placeholders or TBDs.
+5. **Sufficient** — no unresolved requirement/dependency gaps.
+6. **Coherent** — no internal contradictions.
+
+**Scope standard**: target a single user-facing goal within 900-1600
+tokens of spec text. Below 900 risks ambiguity; above 1600 risks
+context-rot in implementation agents.
+
