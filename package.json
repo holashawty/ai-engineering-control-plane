@@ -1,16 +1,21 @@
 {
   "name": "aiecp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "AI Engineering Control Plane — portable, agent-agnostic framework that makes any LLM (chat, IDE, CLI) operate with senior-engineer discipline: evidence-driven debugging, mandatory tool use, safety gates, workflow state machines. 35 skills, 15 workflows, 5 agent adapters, 29 ADRs, 953 assertions passing.",
+  "description": "AI Engineering Control Plane — portable, agent-agnostic framework that makes any LLM (chat, IDE, CLI) operate with senior-engineer discipline: evidence-driven debugging, mandatory tool use, safety gates, workflow state machines, JIT context injection, adaptive risk-based routing, Docker sandbox isolation, Tree-sitter multi-language AST, SWE-bench eval adapter. v1.0.0 Release Candidate: 36 ADRs, 35 skills, 15 workflows, 5 agent adapters, 1356 assertions passing.",
   "license": "MIT",
   "workspaces": [
     "discovery/cli",
     "executor",
     "adapters/agents"
   ],
+  "bin": {
+    "aiecp": "./executor/dist/cli.js",
+    "init-aiecp": "./scripts/init-aiecp.mjs"
+  },
   "scripts": {
     "install:all": "npm install",
+    "prepare": "npm run build",
     "build": "npm run build --workspace=discovery/cli && npm run build --workspace=executor && npm run build --workspace=adapters/agents",
     "test": "npm test --workspace=discovery/cli && npm test --workspace=executor && npm test --workspace=adapters/agents",
     "bootstrap": "npm run install:all && npm run build && npm run test",

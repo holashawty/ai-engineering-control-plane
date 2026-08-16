@@ -1,0 +1,80 @@
+# AIECP sandbox CI — Docker-based isolation test for ADR-0030/0035.
+#
+# This workflow is ADDITIVE to `assertion-table-check.yml`:
+#   - `assertion-table-check.yml` runs the assertion-count table drift
+#     check WITHOUT Docker (it just verifies STATUS.md matches reality).
+#   - `sandbox-ci.yml` (this file) runs the sandbox tests WITH a real
+#     Docker daemon so that the hardened container path in
+#     `executor/src/sandbox-runner.ts` (isDockerAvailable()===true) is
+#     actually exercised end-to-end.
+#
+# GitHub Actions ubuntu-latest runners ship with Docker pre-installed,
+# so no extra setup is needed — `docker build` and `docker run` work
+# out of the box.
+#
+# What this workflow does:
+#   1. Builds all 3 workspaces (discovery/cli, executor, adapters/agents).
+#   2. Builds the AIECP executor Docker image
+#      (sandbox/Dockerfile.aiecp-executor → aiecp-executor:latest).
+#   3. Verifies the image was built.
+#   4. Runs `executor/examples/e2e-sandbox/drive-run.mjs` — which will
+#      now exercise the REAL Docker path (sandboxed=true, no warning).
+#   5. Runs `executor/examples/e2e-swebench-adapter/drive-run.mjs` to
+#      verify no regression in the SWE-bench adapter.
+#   6. Runs the executor self-test (`npm test --workspace=executor`).
+#
+# Contributor flow when this fails:
+#   - If the Docker build fails: check sandbox/Dockerfile.aiecp-executor.
+#   - If e2e-sandbox fails with sandboxed=false: the runner's Docker
+#     daemon may be down, or the image wasn't built. Check step 7 output.
+#   - If e2e-sandbox passes locally but not in CI: the local run
+#     probably used the fallback path (sandboxed=false) and silently
+#     passed — re-run locally with Docker installed to reproduce CI.
+#
+# Why a SEPARATE workflow (instead of a job inside assertion-table-check):
+#   - The assertion-table-check workflow runs on EVERY push to main and
+#     on every PR that touches tests. Docker builds are slow (~30s
+#     image pull + build) and we only want to pay that cost when the
+#     sandbox code itself is changed.
+#   - The path filters below narrow the trigger to sandbox/ and the
+#     sandbox-runner module and its e2e driver.
+
+name: sandbox-ci
+
+on:
+  pull_request:
+    paths:
+      - 'sandbox/**'
+      - 'executor/src/sandbox-runner.ts'
+      - 'executor/examples/e2e-sandbox/**'
+      - '.github/workflows/sandbox-ci.yml'
+  push:
+    branches: [main]
+
+jobs:
+  sandbox-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pyyaml
+        run: pip3 install pyyaml
+      - name: Install dependencies
+        run: npm install
+      - name: Build workspaces
+        run: npm run build
+      - name: Build AIECP executor Docker image
+        run: docker build -t aiecp-executor:latest -f sandbox/Dockerfile.aiecp-executor sandbox/
+      - name: Verify image built
+        run: docker images | grep aiecp-executor
+      - name: Run e2e-sandbox driver (exercises real Docker path)
+        run: node executor/examples/e2e-sandbox/drive-run.mjs
+      - name: Run e2e-swebench-adapter (no regression check)
+        run: node executor/examples/e2e-swebench-adapter/drive-run.mjs
+      - name: Run executor self-test
+        run: npm test --workspace=executor

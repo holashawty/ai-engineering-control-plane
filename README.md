@@ -16,38 +16,124 @@ bir arada, tek bir anayasaya (constitution) bağlı.
 
 ---
 
+## v1.0.0 Yenilikleri (Release Candidate)
+
+> Bu sürüm, 2026-08-16'daki harici pro-LLM denetiminin 5 maddelik eylem
+> planını ([`docs/roadmap-2026-pro.md`](docs/roadmap-2026-pro.md)) tamamlar.
+> Her madde ayrı bir ADR ile kayıt altına alınmıştır; hiçbiri sessiz mutasyon
+> değildir (ADR-0008 — anayasal self-improvement).
+
+### 1. JIT Bağlam Yönetimi (ADR-0032)
+
+[`executor/src/context-router.ts`](executor/src/context-router.ts) her state
+geçişinde yalnızca o state için gereken minimal bağlam paketini üretir:
+state purpose + emits-evidence alanları + ilgili skill'lerin 500-karakterlik
+özeti. State başına ortalama **76 satırlık mikro-paket** — upfront ~5000 satır
+yüklemeye göre **%96 token tasarrufu**. "Lost in the Middle" etkisi yapısal
+olarak azaltıldı. Kanıt:
+[`executor/examples/e2e-context-router/`](executor/examples/e2e-context-router/)
+(119 assertion, 12 `bug-report` state).
+
+### 2. Adaptif Risk Yönlendirme (ADR-0034)
+
+[`executor/src/risk-classifier.ts`](executor/src/risk-classifier.ts) her isteği
+5 seviyeden birine sınıflandırır (`trivial | low | medium | high | critical`),
+saf fonksiyon (LLM değil, `git diff`'ten):
+
+- **trivial** → **fast-path**: FSM atlanır, tek `Decision(what: "fast_path_applied")` + apply + verify
+- **medium** → tam FSM (mevcut davranış)
+- **critical** (auth/payment/credential/security anahtar kelimeleri) → tam FSM + yeni `human-approval-required` gate
+
+`trivial` fast-path'i evidence-free değildir — `Decision` + `Validation`
+üretir, sadece per-state apparatus'ı atlar. Kanıt:
+[`executor/examples/e2e-risk-classifier/`](executor/examples/e2e-risk-classifier/)
+(53 assertion).
+
+### 3. Docker Sandbox İzolasyonu (ADR-0035)
+
+[`executor/src/sandbox-runner.ts`](executor/src/sandbox-runner.ts) LLM-emirli
+komutları Docker container içinde çalıştırır:
+`docker run --rm --read-only --cap-drop=ALL --network=none`. 2026 vm2/WASI
+CVE'leri nedeniyle WASI reddedildi (ADR-0030). Docker daemon yoksa
+`execSync`'e düşer ama **asla sessizce unsafe moduna geçmez** — stderr +
+`SandboxResult.warning`'e loud uyarı yazar. Üretim için Docker kurulumu
+zorunlu (bkz. [Üretim Dağıtımı](#üretim-dağıtımı-v100)). Kanıt:
+[`executor/examples/e2e-sandbox/`](executor/examples/e2e-sandbox/) (25 assertion,
+runtime-agnostic).
+
+### 4. Tree-sitter Çoklu Dil Desteği (ADR-0033)
+
+[`discovery/cli/src/detectors/universal-ast.ts`](discovery/cli/src/detectors/universal-ast.ts)
+tek bir Tree-sitter powered detector ile **11 dili** (Go, Rust, Java, C++, C,
+Kotlin, Swift, Ruby, PHP, Scala, Clojure) universal AST'ye parse eder —
+`symbols`, `call_graph`, `imports`, `complexity_hotspots`. WASM binary'leri
+`discovery/cli/vendor/`'a vendored edildi (ADR-0022 zero-runtime-deps
+invariant'ı intact). Yeni dil eklemek manifest edit + WASM download, kod
+değişikliği değil. Kanıt:
+[`executor/examples/e2e-universal-ast/`](executor/examples/e2e-universal-ast/)
+(47 assertion).
+
+### 5. SWE-bench Adaptörü (ADR-0036)
+
+[`evaluations/swebench-adapter.py`](evaluations/swebench-adapter.py) bir
+SWE-bench instance JSON'ı → AIECP `bug-report` scenario YAML'ye çevirir
+(~640 satır Python). Endüstri standardı benchmark ile doğrudan
+karşılaştırılabilir Pass@1 ölçümü için zemin hazırlar. Gerçek 10-instance
+Pass@1 run Phase 3.5'e (Docker bağımlılığı) ertelendi; bu fazda sentetik
+1 örnek + adapter doğrulaması var
+([`evaluations/swebench-samples/sympy-13031.json`](evaluations/swebench-samples/sympy-13031.json)).
+Kanıt:
+[`executor/examples/e2e-swebench-adapter/`](executor/examples/e2e-swebench-adapter/)
+(66 assertion).
+
+> **Dürüst kapsam notu:** 5 maddenin tümü ADR + e2e driver ile kayıt altına
+> alındı, ama gerçek üretim ajan koşusuna (canlı LLM + gerçek GitHub repo +
+> gerçek SWE-bench Verified kümesi) karşı doğrulanmadı — bkz.
+> [`docs/roadmap-2026-pro.md`](docs/roadmap-2026-pro.md) Phase 3.5 ve her
+> ADR'nin "Status" bölümü. Bu not bir bug değil, kasıtlı bir disiplindir
+> (constitution kuralı §5: "self-improvement tekliftir, sessiz mutasyon değil").
+
+---
+
 ## İçindekiler
 
-1. [Durum](#durum)
-2. [Kurulum](#kurulum)
-3. [Hızlı başlangıç](#hızlı-başlangıç)
-4. [Mimari özet](#mimari-özet)
-5. [Workflow kataloğu](#workflow-kataloğu)
-6. [Skill kataloğu](#skill-kataloğu)
-7. [Agent adapter'ları](#agent-adapterları)
-8. [Chat LLM desteği](#chat-llm-desteği)
-9. [Anayasa (Constitution)](#anayasa-constitution)
-10. [ADR özeti](#adr-özeti)
-11. [Upstream kaynaklar](#upstream-kaynaklar)
-12. [Lisans](#lisans)
-13. [Güvenlik](#güvenlik)
+1. [v1.0.0 Yenilikleri (Release Candidate)](#v100-yenilikleri-release-candidate)
+2. [Durum](#durum)
+3. [Kurulum](#kurulum)
+4. [Hızlı başlangıç](#hızlı-başlangıç)
+5. [Mimari özet](#mimari-özet)
+6. [Workflow kataloğu](#workflow-kataloğu)
+7. [Skill kataloğu](#skill-kataloğu)
+8. [Agent adapter'ları](#agent-adapterları)
+9. [Chat LLM desteği](#chat-llm-desteği)
+10. [Anayasa (Constitution)](#anayasa-constitution)
+11. [ADR özeti](#adr-özeti)
+12. [Upstream kaynaklar](#upstream-kaynaklar)
+13. [Üretim Dağıtımı (v1.0.0)](#üretim-dağıtımı-v100)
+14. [Lisans](#lisans)
+15. [Güvenlik](#güvenlik)
 
 ---
 
 ## Durum
 
-**Faz:** Phase 2 (Core) — **MVP dikey dilim tamamlandı**, Phase 3+ kapsamına
-geçiliyor. Phase 0 (Araştırma + Mimari) ve Phase 1 (Şemalar) tamamlanıp merge
-edildi. Tüm aşama kırılımı için [`docs/archive/implementation-roadmap.md`](docs/archive/implementation-roadmap.md).
+**Faz:** **v1.0.0 Release Candidate** — pro-LLM denetiminin (2026-08-16)
+5 maddelik eylem planı tamamlandı (bkz. [v1.0.0 Yenilikleri](#v100-yenilikleri-release-candidate)
+ve [`docs/roadmap-2026-pro.md`](docs/roadmap-2026-pro.md)). Phase 0
+(Araştırma + Mimari), Phase 1 (Şemalar) ve Phase 2 (Core MVP dikey dilim)
+tamamlandı; Phase 3 (Docker sandbox + SWE-bench adapter) implement edildi;
+Phase 3.5 (gerçek 10-instance SWE-bench Pass@1 + sandbox'ın her skill
+shell-out'una bağlanması) bekliyor. Tüm aşama kırılımı için
+[`docs/archive/implementation-roadmap.md`](docs/archive/implementation-roadmap.md).
 
 | Alan | Tamamlandı | Hedef | Not |
 |---|---|---|---|
-| ADR (karar kayıtları) | **29 / 29** | 23 | [`DECISIONS.md`](DECISIONS.md) |
+| ADR (karar kayıtları) | **36 / 36** | 23 | [`DECISIONS.md`](DECISIONS.md); ADR-0030–0036 pro-LLM denetimi ürünü |
 | Workflow (runnable `.sm.yaml`) | **15 / 15** | 14 | tamamı implement edildi |
 | Skill (`SKILL.md`) | **35** | ~19–23 | long-term scope ADR-0016 |
 | Agent adapter | **5** | 9 long-term | `claude-code`, `codex`, `chat`, `chat-sandbox`, `mcp` |
-| Stack adapter | 1 (`discovery/cli`) | 11 long-term | placeholder `adapters/stacks/` |
-| e2e driver | **20** (19+1 narrative) | — | 953 pass + 5 known-fail across all harnesses (see `STATUS.md`, auto-generated via `npm run count-assertions`) |
+| Stack adapter | 1 (`discovery/cli`) | 11 long-term | placeholder `adapters/stacks/`; universal-ast detector 11 dili destekler (ADR-0033) |
+| e2e driver | **26** (25 runnable + 1 narrative-only) | — | 1356 pass + 5 known-fail across 5 components (see `STATUS.md`, auto-generated via `npm run count-assertions`) |
 | Anayasa kuralları | **8** | 8 | [`constitution/constitution.md`](constitution/constitution.md) |
 
 **Tamamlanan önemli kilometre taşları** (detaylı liste [`STATUS.md`](STATUS.md)
@@ -110,7 +196,7 @@ Bu komut şunları yapar:
      yok — ADR-0022).
    - `executor/dist/` (workflow motoru + evidence-store).
    - `adapters/agents/dist/` (4 adapter + `write-entrypoints` CLI).
-3. `npm test` — 3 paketin self-test'ini çalıştırır (toplam 953 assertion).
+3. `npm test` — 3 paketin self-test'ini çalıştırır (toplam 1356 assertion, 5 known-fail dahil — bkz. [`STATUS.md`](STATUS.md)).
 
 Diğer kök script'leri ([`package.json`](package.json) içinde tam liste):
 
@@ -271,7 +357,7 @@ soruya geri izlenebilir olmalıdır ([`constitution/constitution.md`](constituti
 ## Workflow kataloğu
 
 Aşağıdaki tablo, [`docs/workflow-model.md`](docs/workflow-model.md) ve
-[`workflows/_router.md`](workflows/_router.md) kaynaklı **15 workflow'un** tamamı runnable `.sm.yaml` olarak yazıldı ve gerçek `WorkflowRun` API'sine karşı kanıtlandı (953 assertion). Kullanıcı asla workflow seçmez; intent'i doğal dilde verir, router deterministic eşleme yapar.
+[`workflows/_router.md`](workflows/_router.md) kaynaklı **15 workflow'un** tamamı runnable `.sm.yaml` olarak yazıldı ve gerçek `WorkflowRun` API'sine karşı kanıtlandı (1356 assertion). Kullanıcı asla workflow seçmez; intent'i doğal dilde verir, router deterministic eşleme yapar.
 
 | # | Workflow | Tetikleyici (intent sinyali) | Tip | Durum |
 |---|---|---|---|---|
@@ -574,8 +660,9 @@ dosyayı sessizce düzenleyemez.
 
 [`DECISIONS.md`](DECISIONS.md) — her framework-seviyesi karar (özellikle
 `constitution/`'ı etkileyenler) ADR olarak kaydedilir. Sessiz değişiklik
-yasaktır (ADR-0008). Aşağıdaki tablo 29 ADR'nin kısa özetidir; tam gerekçe
-için ilgili ADR başlığına bakın.
+yasaktır (ADR-0008). Aşağıdaki tablo 36 ADR'nin kısa özetidir; tam gerekçe
+için ilgili ADR başlığına bakın. ADR-0030–0036 pro-LLM denetiminin (2026-08-16)
+5 maddelik eylem planı ürünüdür — bkz. [v1.0.0 Yenilikleri](#v100-yenilikleri-release-candidate).
 
 | ADR | Başlık | Öz |
 |---|---|---|
@@ -608,6 +695,13 @@ için ilgili ADR başlığına bakın.
 | 0027 | `classify-goal` için misclassification detector | Orchestrator `report` durumunda gerçek iteration sayısı ile sınıflandırılan scale'i karşılaştırır; uyumsuzlukta `Validation: mismatch` yazar (small + 4 iterasyon → under_classified → inferred large). `executor/src/project-scale-classifier.ts` |
 | 0028 | Skill-tier eval harness | 4 planlama skill'inin (`requirements-gathering`, `project-planning`, `architecture-design`, `ux-design`) dahili prosedürlerini workflow dışında direkt test eden harness. `executor/examples/e2e-skill-tier/` (35/35) |
 | 0029 | STATUS.md assertion tablosu auto-generated | `npm run count-assertions -- --write` tabloyu `<!-- AUTO-GENERATED -->` marker'ları arasında yeniden üretir; `--check` CI'da stale tabloyu reddeder. 4 döngüde tekrarlayan el-drift'ini yapısal olarak önler |
+| 0030 | OS-level sandbox: Docker kararı (impl Phase 3) | 2026 vm2/WASI CVE'leri nedeniyle WASI reddedildi; Docker `--read-only --cap-drop=ALL --network=none` ile çekirdek seviyesinde izolasyon. ADR-0035'te implement edildi |
+| 0031 | SWE-bench adapter tasarımı (impl Phase 3) | SWE-bench'i reimplement etmek değil ADAPT etmek: instance JSON → AIECP scenario YAML. ADR-0036'da implement edildi |
+| 0032 | JIT Context Injection | `executor/src/context-router.ts` her state için minimal bağlam paketi (~76 satır/state, %96 token tasarrufu). 119 assertion, 12 state |
+| 0033 | Tree-sitter universal AST detector | 11 dil (Go, Rust, Java, C++, C, Kotlin, Swift, Ruby, PHP, Scala, Clojure) için vendored WASM; ADR-0022 zero-runtime-deps intact. 47 assertion |
+| 0034 | Adaptif risk-based workflow routing | 5 seviyeli classifier (`trivial \| low \| medium \| high \| critical`); trivial → fast-path (FSM atlanır), critical → `human-approval-required` gate. FSM tanımları değişmedi. 53 assertion |
+| 0035 | Phase 3 Docker sandbox implementation | `sandbox-runner.ts` Docker daemon varsa container, yoksa `execSync` (loud WARNING ile, asla sessizce unsafe'a düşmez). `WorkflowRunOptions.sandbox: true`. 25 assertion |
+| 0036 | Phase 3 SWE-bench adapter implementation | `evaluations/swebench-adapter.py` instance JSON → scenario YAML; 1 sentetik örnek (`sympy-13031.json`). Gerçek 10-instance Pass@1 Phase 3.5'e ertelendi. 66 assertion |
 
 ---
 
@@ -677,6 +771,73 @@ Agent kontrol eder: `.aiecp/project-intelligence.json` var mı?
 - **Memory persistence** — Evidence ve memory artık kalıcı (.aiecp/)
 - **Auto-activation** — AGENTS.md'de otomatik AIECP hook
 - **init-aiecp.mjs** — Tek komut kurulum: `npm run init`
+
+---
+
+## Üretim Dağıtımı (v1.0.0)
+
+### 1. Global CLI kurulumu
+
+```bash
+npm install -g .
+# → `aiecp` ve `init-aiecp` komutları PATH'e eklenir
+aiecp --help                       # executor CLI (WorkflowRun, evidence-store, safety gate)
+init-aiecp /path/to/project        # mevcut projeye AIECP bootstrapper (ADR-0025)
+```
+
+`init-aiecp` çalıştıktan sonra `.aiecp/` dizini oluşur; `AGENTS.md`'ye "AIECP
+Auto-Activation" bölümü eklenir (ADR-0025) — ajan bir sonraki `AGENTS.md`
+okumasında AIECP'yi otomatik devralır.
+
+### 2. Docker sandbox imajı (ADR-0035)
+
+LLM-emirli komutların OS seviyesinde izole çalışması için executor imajını
+bir kez derleyin:
+
+```bash
+docker build -t aiecp-executor:latest -f sandbox/Dockerfile.aiecp-executor sandbox/
+docker images | grep aiecp-executor   # imaj hazır mı doğrula
+```
+
+İmaj `node:20-alpine` + `python3` + `git` içerir; tüm hardening
+(`--read-only --cap-drop=ALL --network=none`) `docker run` zamanında
+`sandbox-runner.ts` tarafından zorlanır. Docker daemon yoksa runner
+`execSync`'e düşer ve stderr + `SandboxResult.warning`'e loud uyarı yazar
+(asla sessizce unsafe moda geçmez — ADR-0035).
+
+### 3. CI/CD entegrasyonu
+
+```bash
+# .github/workflows/sandbox-ci.yml — Docker daemon'lı test job'u
+#   (assertion-table-check.yml'den AYRI; sandbox/ yoluna path-filtered)
+#   ubuntu-latest runner'ları Docker'ı built-in sunar — ek setup gerekmez.
+```
+
+`sandbox-ci.yml` iş akışı: 3 workspace'i build → `aiecp-executor` imajını
+build → `e2e-sandbox` driver'ını çalıştır (gerçek Docker yolunu exerciser,
+`sandboxed=true`) → `e2e-swebench-adapter` (regresyon kontrolü) → executor
+self-test. Path filtreleri yalnızca `sandbox/**`,
+`executor/src/sandbox-runner.ts`, `executor/examples/e2e-sandbox/**` ve
+`.github/workflows/sandbox-ci.yml` dokunuşlarında tetikler.
+
+### 4. SWE-bench adaptörü (ADR-0036)
+
+Bir SWE-bench instance JSON'ını AIECP scenario YAML'ye çevir:
+
+```bash
+python3 evaluations/swebench-adapter.py evaluations/swebench-samples/sympy-13031.json
+# → stdout: bug-report workflow'ünü drove eden scenario YAML
+
+# Veya dosyaya yaz + eval_runner ile çalıştır:
+python3 evaluations/swebench-adapter.py evaluations/swebench-samples/sympy-13031.json \
+  --output scenario.yaml
+python3 evaluations/eval_runner.py scenario.yaml
+```
+
+Gerçek 10-instance Pass@1 run için Docker + gerçek GitHub repo download'ları
+gerekir — bkz. [`docs/roadmap-2026-pro.md`](docs/roadmap-2026-pro.md) Phase 3.5.
+
+---
 
 ## Lisans
 
