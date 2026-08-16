@@ -7,8 +7,9 @@ description: >
   classification cannot route the user's request to any of the
   specific workflows (`bug-report`, `feature-request`, `change-request`,
   `refactor`, `code-review`, `regression`, `performance-problem`,
-  `project-onboarding`, or the planned `user-complaint`,
-  `security-problem`, `release`, `incident`) with confidence. The
+  `project-onboarding`, or the implemented `user-complaint`,
+  `security-problem`, `release`, `incident` workflows`) with
+  confidence. The
   workflow's job is to triage the ambiguous request into the correct
   target workflow, or — if no confident routing can be derived even
   after the question budget is consumed — refuse safely via `blocked`

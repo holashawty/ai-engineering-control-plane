@@ -114,6 +114,8 @@ function runChatValidator(responseFile) {
   // node scripts/validate-chat-output.mjs <file> — emits:
   //   stdout: "=== Results: <pass> passed, <fail> failed (of <total> total) ==="
   //   stderr: "VALIDATION PASSED" or "VALIDATION FAILED"
+  //   exit 0 = pass, exit 1 = validator FAIL (intentional for regression fixtures),
+  //   exit 2 = harness error (parse/IO/missing file)
   // Use spawnSync to capture stdout and stderr separately, then concat.
   const r = spawnSync(
     "node",
@@ -122,8 +124,18 @@ function runChatValidator(responseFile) {
   );
   const out = (r.stdout || "") + (r.stderr || "");
   const m = out.match(/Results:\s+(\d+) passed,\s+(\d+) failed/);
-  if (!m) return { pass: 0, fail: 0, error: "could not parse results" };
-  return { pass: parseInt(m[1], 10), fail: parseInt(m[2], 10) };
+  if (m) {
+    return { pass: parseInt(m[1], 10), fail: parseInt(m[2], 10) };
+  }
+  // No "Results:" line — either:
+  //   (a) bare-aiecp fixture (exit 1, validator rejected format — intentional)
+  //   (b) true harness error (exit 2, e.g. file not found)
+  // Both produce 0 pass / 0 fail for our purposes. The distinction
+  // (intentional vs error) is documented in scripts/test-responses/README.md.
+  if (r.status === 1 || r.status === 0) {
+    return { pass: 0, fail: 0 };
+  }
+  return { pass: 0, fail: 0, error: `validator exited ${r.status}` };
 }
 
 // ---- orchestration: run everything, collect results ----

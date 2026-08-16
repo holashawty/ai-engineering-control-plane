@@ -166,8 +166,24 @@ function parseBlocks(text) {
         continue;
       }
       block.questionText = parsed.text;
+    } else if (kind === "confirm") {
+      // ADR-0023: chat-sandbox / MCP adapters emit `aiecp:confirm` blocks
+      // to authorize safety gates (e.g. broad-refactor). The block has
+      // a `gate:` field naming the gate to authorize.
+      let parsed;
+      try {
+        parsed = parseYaml(body);
+      } catch (e) {
+        console.error(`  Block #${block.index} (aiecp:confirm): YAML parse failed: ${e.message}`);
+        continue;
+      }
+      if (!parsed.gate || typeof parsed.gate !== "string") {
+        console.error(`  Block #${block.index} (aiecp:confirm): missing "gate:" string field`);
+        continue;
+      }
+      block.gate = parsed.gate;
     } else {
-      console.error(`  Block #${block.index}: unknown aiecp: block kind "${kind}" (valid: evidence, memory, advance, question)`);
+      console.error(`  Block #${block.index}: unknown aiecp: block kind "${kind}" (valid: evidence, memory, advance, question, confirm)`);
       continue;
     }
     blocks.push(block);
@@ -217,9 +233,13 @@ function main() {
       label = `memory/${b.parsed.kindOrType} (id: ${b.parsed.data.id ?? "?"})`;
     } else if (b.kind === "advance") {
       label = `advance (on: ${b.onEvent})`;
-    } else {
+    } else if (b.kind === "question") {
       const truncated = b.questionText.length > 60 ? b.questionText.slice(0, 60) + "..." : b.questionText;
       label = `question (text: "${truncated}")`;
+    } else if (b.kind === "confirm") {
+      label = `confirm (gate: ${b.gate})`;
+    } else {
+      label = `unknown-kind`;
     }
 
     if (b.kind === "evidence") {

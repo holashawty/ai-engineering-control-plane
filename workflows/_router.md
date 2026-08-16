@@ -1,6 +1,6 @@
 # Workflow Router
 
-**Status: Phase 1 — fifteen runnable workflows.**
+**Status: Phase 2 — fifteen runnable workflows, all proven end-to-end.**
 
 Deterministic mapping from (intent classification, repository state) to a
 workflow. Per docs/workflow-model.md, the user never selects a workflow
@@ -8,7 +8,7 @@ directly; they supply intent in natural language.
 
 ## MVP routing table
 
-Eight workflows are implemented as runnable workflows and proven
+All 15 workflows are implemented as runnable workflows and proven
 end-to-end against the real executor (`WorkflowRun` API):
 
 - `bug-report.sm.yaml` — reactive (something broken). Proof:
@@ -32,9 +32,7 @@ end-to-end against the real executor (`WorkflowRun` API):
 Together these cover the primary shapes of engineering work:
 reactive, constructive, behavior-preserving, behavior-modifying,
 gatekeeping, onboarding, regression, and performance — driven by
-the same workflow-agnostic executor. The remaining rows describe
-target routing for post-MVP workflows and are not yet backed by an
-`.sm.yaml` file.
+the same workflow-agnostic executor.
 
 | Intent signal (heuristic, not exhaustive) | Workflow | Status |
 |---|---|---|
@@ -66,8 +64,7 @@ target routing for post-MVP workflows and are not yet backed by an
 3. If no confident match → `unknown-failure` (fallback), never silently
    guess a workflow.
 
-## Non-goals for MVP
+## Non-goals
 
-The router does not yet handle multi-intent messages ("fix this bug AND
-add this feature") — that is explicitly deferred past the vertical
-slice per ADR-0016.
+None for the current scope. Multi-intent routing is handled by
+`orchestrator.sm.yaml` (see routing table above).

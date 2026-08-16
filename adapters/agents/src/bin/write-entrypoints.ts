@@ -23,13 +23,23 @@ async function main() {
     console.error("Usage: write-entrypoints <sourceRepoRoot> <targetRepoRoot> [claude-code] [codex] [chat] [chat-sandbox] [mcp]");
     process.exit(1);
   }
-  // Default: claude-code + codex only (the CLI agents that natively
-  // read CLAUDE.md / AGENTS.md). Chat adapters are opt-in because
-  // their entrypoints (CHAT-ENTRYPOINT.md, CHAT-ENTRYPOINT-SANDBOX.md)
-  // may conflict with hand-authored versions at repo root. MCP is
-  // also opt-in: an MCP-ENTRYPOINT.md is only useful for projects
-  // that actually drive MCP-connected agents.
-  const defaultIds = ["claude-code", "codex"];
+  // Default: claude-code + codex + chat-sandbox + mcp.
+  // - claude-code → CLAUDE.md (CLI agent)
+  // - codex → AGENTS.md (CLI agent)
+  // - chat-sandbox → CHAT-ENTRYPOINT-SANDBOX.md (chat LLM with sandbox)
+  // - mcp → MCP-ENTRYPOINT.md (MCP-connected agent)
+  // 
+  // The `chat` adapter is EXCLUDED from default because the repo ships
+  // a hand-authored CHAT-ENTRYPOINT.md (1075 lines, with worked examples,
+  // stuck-pattern style switches, and detailed protocol reference) that
+  // is the canonical source for chat LLMs without sandbox. Running
+  // sync-entrypoints with `chat` explicitly WILL overwrite that hand-
+  // authored file with the generated minimal version. To regenerate
+  // CHAT-ENTRYPOINT.md from the adapter, run:
+  //   node adapters/agents/dist/bin/write-entrypoints.js . . chat
+  // (audit finding H4 2026-08-16: previously chat was default, but its
+  // generated output clobbered the hand-authored version on every run).
+  const defaultIds = ["claude-code", "codex", "chat-sandbox", "mcp"];
   const selectedIds = ids.length ? ids : defaultIds;
   const selected = selectedIds
     .map((id) => ADAPTERS[id as keyof typeof ADAPTERS])

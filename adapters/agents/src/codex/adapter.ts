@@ -19,6 +19,7 @@ export const codexAdapter: AgentAdapter = {
       native_skills: "partial", // reads SKILL.md-shaped content but with narrower support than Claude Code — see docs/portability.md
       browser: false,
       mcp: true,
+      sandboxed_code_execution: false, // Codex uses the real fs/shell, not a sandbox
     };
   },
 

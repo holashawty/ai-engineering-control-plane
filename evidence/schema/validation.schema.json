@@ -13,14 +13,18 @@
     "result": { "type": "string", "enum": ["match", "mismatch", "inconclusive"] },
     "method": {
       "type": "string",
-      "enum": ["app_validation", "contract_validation", "unit_test", "manual_review", "replay_comparison"],
-      "description": "How the match/mismatch was determined. 'unit_test' passing alone is NOT sufficient to close an Incident — see ADR-0010."
+      "enum": ["app_validation", "contract_validation", "unit_test", "manual_review", "replay_comparison", "scale_classification_review"],
+      "description": "How the match/mismatch was determined. 'unit_test' passing alone is NOT sufficient to close an Incident — see ADR-0010. 'scale_classification_review' is used by the ADR-0027 misclassification detector (project-scale-classifier.ts) — it does not verify an Expected/Actual contract, but records whether the orchestrator's project_scale Decision was consistent with the actual iteration count."
     },
     "evidence_refs": { "type": "array", "items": { "type": "string" } },
     "validated_at": { "type": "string", "format": "date-time" },
     "decision_ref": {
       "type": ["string", "null"],
       "description": "If this Validation is judging an AI-proposed Decision, reference it here."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Optional human-readable explanation of the validation result. Used by meta-validations like scale_classification_review to explain the inferred_correct_scale."
     }
   },
   "additionalProperties": false

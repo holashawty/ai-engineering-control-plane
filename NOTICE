@@ -2,9 +2,10 @@ AI Engineering Control Plane (AIECP)
 Attribution notice for reused / adapted / referenced upstream work.
 
 STATUS: Live-verified via web search on 2026-08-11 (see docs/research.md
-"Verified" notes per repo for sources). No upstream code has been
-vendored as of Phase 0 — this is attribution bookkeeping in advance of
-any future reuse, per ADR-0004/ADR-0013 and CONTRIBUTING.md.
+"Verified" notes per repo for sources). Upstream code vendored per
+ADR-0018: obra/superpowers@b36e0829 (MIT, adapted for
+systematic-debugging), github/spec-kit@83883a2 (MIT, 5 spec templates
+verbatim). See attribution rows below.
 
 Note: exact commit SHAs were not captured (no `git clone` / `gh api`
 access in this environment; verification was via web search + page
@@ -246,38 +247,6 @@ each entry must additionally record:
   with `predicate_kind: "behavioral"`, `"invariant"`, or
   `"state_property"`. No upstream code or prose was adapted or
   copied.
-
-- **`workflows/project-onboarding.sm.yaml` +
-  `skills/project-onboarding/SKILL.md`** — novel to AIECP.
-  project-onboarding is the entry-point workflow for any new
-  repository: it runs `discovery/cli` (ADR-0009's detector pipeline),
-  validates the output against
-  `discovery/schema/project-intelligence.schema.json`, and writes
-  the initial `project` and `environment` memory entries that every
-  other workflow depends on. No upstream equivalent found in
-  `docs/research.md`'s verified-license table.
-
-- **`workflows/regression.sm.yaml` + `skills/regression/SKILL.md`**
-  — novel to AIECP. The regression workflow is bug-report with prior
-  context: it reads the prior `known-failure` memory entry
-  (`memory/schemas/known-failure.schema.json`), confirms the current
-  symptom matches, identifies the reintroduction commit, and re-fixes
-  with explicit awareness of the prior fix's blind spot (the new
-  fix's `Decision.why` must cite what the prior fix missed and why).
-  No upstream equivalent found.
-
-- **`workflows/performance-problem.sm.yaml` +
-  `skills/performance-problem/SKILL.md`** — novel to AIECP.
-  performance-problem is the workflow for "it's slow" / latency /
-  throughput complaints. Unique structural features: (1) requires an
-  `environment_fingerprint_ref` at the baseline stage (performance
-  is environment-sensitive); (2) the `verify-improvement` state
-  requires BOTH a performance check AND a functional regression
-  check; (3) the `regression-protect` state writes a `known-failure`
-  memory entry for a PERFORMANCE regression. The profiler-commands-
-  per-language reference (Node `--prof`, Python `cProfile`, Go
-  `pprof`, Swift Instruments, Rust `cargo-flamegraph`) is curated
-  from general performance-engineering practice.
 
 - **`scripts/chat-harness.mjs`** — novel to AIECP. Live-session test
   infrastructure: drives an AIECP workflow interactively with a

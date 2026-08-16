@@ -70,12 +70,14 @@ export const chatAdapter: AgentAdapter = {
     // The file lives at CHAT-ENTRYPOINT.md (repo root) so a chat LLM
     // given the repo as a zip can find it without help.
     //
-    // Note: this file's body is generated, but the canonical
-    // CHAT-ENTRYPOINT.md (hand-authored, longer-form orientation)
-    // is at repo root and is the actual entrypoint. This generated
-    // version is a fallback / minimal version for hosts that want
-    // the adapter to produce it programmatically (per ADR-0006).
-    // If both exist, the hand-authored one takes precedence.
+    // Note: this file is the GENERATED fallback version. The repo
+    // also ships a hand-authored CHAT-ENTRYPOINT.md with longer-form
+    // orientation + worked examples. Per ADR-0006 (strict reading),
+    // sync-entrypoints overwrites the hand-authored version with
+    // this generated one — but the generated version now includes
+    // the skill index (was missing before, audit finding H4 2026-08-16).
+    // If a host project wants to keep the hand-authored version, they
+    // should not run sync-entrypoints for the `chat` adapter.
     const skillLines = canonical.skills
       .map((s) => `- **${s.name}** (\`${s.path}/SKILL.md\`) — ${s.description}`)
       .join("\n");
@@ -83,9 +85,7 @@ export const chatAdapter: AgentAdapter = {
     const content = `<!-- GENERATED FILE — DO NOT EDIT DIRECTLY.
      Source: agents/AGENTS.md + skills/*/SKILL.md
      Regenerate with: aiecp-sync-entrypoints
-     Per ADR-0006, hand edits here will be overwritten.
-     Note: if a hand-authored CHAT-ENTRYPOINT.md exists at repo root,
-     it takes precedence over this generated file. -->
+     Per ADR-0006, hand edits here will be overwritten. -->
 
 # CHAT-ENTRYPOINT (generated, minimal) — read this first if you are a chat LLM
 
@@ -157,9 +157,9 @@ data:
   exactly what to apply.
 - Skip states. The workflow exists to keep you honest.
 
-See the hand-authored \`CHAT-ENTRYPOINT.md\` at repo root (if present)
-for the full orientation, including worked examples and stuck-pattern
-style switches.
+This file IS the canonical CHAT-ENTRYPOINT.md (per ADR-0006, generated
+from agents/AGENTS.md + skills/*/SKILL.md). If a longer-form worked
+example is needed, see the executor/examples/e2e-*/ directories.
 `;
 
     return [{ path: "CHAT-ENTRYPOINT.md", content }];

@@ -232,12 +232,12 @@ is not the same as "an agent following it produces the claimed
 behavior." See `docs/evaluations/evaluation-strategy.md`'s core
 principle.
 
-The remaining ~4 skills (mobile, security, release,
-incident-response — pick the most relevant to the project's actual
-needs) are long-term scope (ADR-0016) and are not started. The
-`database` / `frontend` / `backend` skills, previously listed
-here as long-term, were authored as cross-cutting domain skills
-(see "Domain skills" section above).
+Of the original long-term scope (mobile, security, release,
+incident-response), 3 are now implemented: `security-problem`,
+`release`, `incident`. Only `mobile` remains as genuinely future
+work. The `database` / `frontend` / `backend` skills, previously
+listed here as long-term, were authored as cross-cutting domain
+skills (see "Domain skills" section above).
 
 ## Verification skills (patron-driven)
 

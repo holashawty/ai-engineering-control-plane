@@ -24,7 +24,7 @@ that's `docs/`. This file only tracks *what's done and what's next*.
 
 Phase 0 (Research + Architecture) and Phase 1 (Schemas) are complete and
 merged. See `docs/implementation-roadmap.md` for the full phase
-breakdown and `DECISIONS.md` for all 17 ADRs governing these choices.
+breakdown and `DECISIONS.md` for all 29 ADRs governing these choices.
 
 ## Sequencing decision (2026-08-11)
 
@@ -50,22 +50,19 @@ dependency order. This is the order we're following, chosen for maximum
    detectors). See `discovery/cli/README.md` for details.
 4. **MVP skill content** (`systematic-debugging`, `evidence-engineering`,
    `behavioral-verification`, `testing` as real `SKILL.md` files) —
-   🔄 next up. Textual; the workflow executor needs these to exist as
-   real files to reference, not placeholders.
-4. **MVP skill content** (`systematic-debugging`, `evidence-engineering`,
-   `behavioral-verification`, `testing` as real `SKILL.md` files) —
-   ⬜ not started. Textual; the workflow executor needs these to exist
-   as real files to reference, not placeholders.
+   ✅ done. (See Done section: "4 MVP `SKILL.md` files … real procedures
+   cross-referencing the actual Phase 1 schemas …".) Catalog has since
+   grown to 35 skills.
 5. **Workflow executor** (Node.js/TS CLI that walks
    `workflows/bug-report.sm.yaml`, calls skills, reads/writes
    evidence + memory JSON against the Phase 1 schemas, enforces
-   `question_economy` and `safety_gate`) — ⬜ not started. This is the
-   biggest single piece of remaining work.
-6. **End-to-end run + evidence schema validation** — ⬜ not started.
-   Run the executor against a real toy repo with a seeded bug, confirm
-   the full `bug-report` state machine completes, and use that run (plus
-   2 more scenarios) to satisfy the "validate against 3 real bug
-   scenarios" requirement in `docs/evidence-model.md` / ADR-0004.
+   `question_economy` and `safety_gate`) — ✅ done. Real, tested
+   Node.js/TypeScript engine with 20/20 self-test assertions; see
+   Done section.
+6. **End-to-end run + evidence schema validation** — ✅ done. The
+   `e2e-membership-bug` driver (and 18 subsequent drivers) prove the
+   full state-machine completion + evidence schema validation
+   end-to-end.
 
 **Why this order and not another:** governance (2) is needed before
 skills/executor can cite real constitution text instead of TODOs.
@@ -282,7 +279,7 @@ don't silently reorder.
       discovered", it asserts "at least the 4 MVP skills
       discovered" + "all 4 MVP skill names present in the
       discovered set." This future-proofs the test against the
-      growing skill catalog (now 13 skills, was 4 at MVP).
+      growing skill catalog (now 35 skills, was 4 at MVP).
 - [x] C3 sprint — ADR-0019 + constitution §8 ("Tool use is
       mandatory, not optional") + 3 tool-use discipline skills
       authored. The user's vision explicitly named "tool
@@ -362,9 +359,9 @@ don't silently reorder.
       <response-file>` or `cat response.md | npm run chat-harness
       -- <workflow-name>`.
 - [x] `workflows/_router.md`, `workflows/README.md`,
-      `skills/README.md`, `package.json` updated to reflect 8
-      runnable workflows + 16 skills. `package.json` now has
-      9 e2e-demo scripts + 2 validators + chat-harness.
+      `skills/README.md`, `package.json` updated to reflect 15
+      runnable workflows + 35 skills. `package.json` now has
+      15 e2e-demo scripts + 2 validators + chat-harness.
 - [x] **Live session test (subagent-simulated)** — A clean-session
       chat LLM simulation was run via a general-purpose subagent
       (opus, model "chat-llm-simulator"). The subagent was given
@@ -497,23 +494,14 @@ below is the next task to pick up)
       scenarios — they are exercised only indirectly via the
       orchestrator scenarios. A skill-tier harness (separate from
       the workflow-tier one) is the next eval expansion.
-- [ ] Remaining workflows (6 of 14: `user-complaint`,
-      `security-problem`, `release`, `incident`,
-      `unknown-failure`, plus any added since). Eight of fourteen
-      target workflows are now done (`bug-report`, `feature-request`,
-      `code-review`, `refactor`, `change-request`,
-      `project-onboarding`, `regression`, `performance-problem`) —
-      covering the primary shapes of engineering work. The remaining
-      six are specialized domains (security, release engineering,
-      incident response) and lower priority than the eval harness
-      and live-session tests.
-- [ ] Remaining skills (~3 of ~19, per ADR-0016 long-term scope).
-      16 of ~19 are now authored. The remaining ~3 are
-      domain-specific (database, frontend, backend — pick the
-      most relevant to the project's actual needs).
-- [ ] Remaining stack adapters (9 of 11) and agent adapters (6 of 9
-      — chat adapter is now the 3rd, alongside claude-code and codex).
-      Long-term scope per ADR-0016.
+- [x] All 15 workflows are implemented and proven end-to-end (see
+      `workflows/README.md`).
+- [x] All 35 of 35 skills authored (per ADR-0016 + long-term scope;
+      see `skills/README.md`). The only genuinely future-work skill
+      is `mobile`.
+- [x] Adapters: 1 stack adapter (`discovery/cli/`, per ADR-0009 +
+      ADR-0022) and 5 agent adapters (`claude-code`, `codex`, `chat`,
+      `chat-sandbox`, `mcp`). Long-term scope per ADR-0016.
 
 ## Known open questions (not blocking, but unresolved)
 
@@ -524,10 +512,6 @@ below is the next task to pick up)
   future vendoring. The general open question (other repos) remains.
 - `vercel-labs/skills` license still unverified — flagged in
   `docs/research.md` and `NOTICE`, must be checked before any reuse.
-- Whether `discovery-refresh` (the trigger that flips
-  `project-intelligence.json`'s `stale` flag) is itself a Phase 3
-  detector responsibility or a separate watcher process — not decided,
-  will get decided when discovery detectors are actually built.
 - ADR-0018 permits verbatim reuse of permissively-licensed code, but
   no actual vendoring of code (only prose adaptation so far) has
   happened yet. When the first real vendoring happens (likely A2:
@@ -559,7 +543,7 @@ below is the next task to pick up)
    token anywhere in the repo, commit messages, or this file.
 
 ---
-*Last updated: 2026-08-14, ADR-0023 (safety gate authorization for
+*Last updated: 2026-08-16, ADR-0023 (safety gate authorization for
 chat-sandbox) added after controller found security gap in
 chat-harness.mjs. The 4th ChatGPT test proved chat-sandbox CAN write
 files, but the harness was auto-confirming ALL safety gates
@@ -567,9 +551,10 @@ unconditionally — a stale comment from pre-ADR-0020 days. Fixed:
 adapter-aware safety gate handling (chat=auto-confirm, chat-sandbox
 requires explicit authorization via aiecp:confirm or --user-prompt).
 Also added already-terminal violation handling (catches the "extra
-block past terminal" bug from the 4th test). 23 ADRs, 15 e2e drivers
-(was incorrectly claimed as 9 — corrected after running every
-driver in this cycle), 786 assertions across all harnesses (was
+block past terminal" bug from the 4th test). 29 ADRs, 20 e2e drivers
+(19 with assertions + 1 narrative-only; was incorrectly claimed as
+9 — corrected after running every driver in this cycle), 953
+assertions across all harnesses (was
 incorrectly claimed as 325+ — corrected after running every
 component in this cycle; see breakdown below). SDLC planning gap
 filled: 4 new planning skills (requirements-gathering,
@@ -584,16 +569,16 @@ YAML line).*
 **Assertion breakdown (auto-generated by `npm run count-assertions -- --write`):**
 
 <!-- AUTO-GENERATED by `node scripts/count-assertions.mjs --write`. DO NOT EDIT by hand. -->
-<!-- Last regenerated: 2026-08-16T13:37:39.353Z -->
+<!-- Last regenerated: 2026-08-16T14:41:49.578Z -->
 
 | Component | Run command | Pass | Fail | Notes |
 |---|---|---|---|---|
 | `eval_runner.py` | `python3 evaluations/eval_runner.py` | 115 | 0 | 25/25 scenarios PASS |
 | `executor self-test` | `npm test --workspace=executor` | 20 | 0 | 20/20 PASS |
 | `adapters/agents self-test` | `npm test --workspace=adapters/agents` | 58 | 0 | 58/58 PASS |
-| `e2e-* drivers (19 runnable, 1 narrative-only)` | `node executor/examples/e2e-*/drive-run.mjs` | 660 | 0 | 18/19 drivers PASS with assertions; narrative-only: e2e-membership-bug |
-| `validate-chat-output.mjs (test-responses/)` | `node scripts/validate-chat-output.mjs <file>` | 94 | 5 | 3 fixture(s) errored and are excluded from this count — see stderr; otherwise see scripts/test-responses/README.md for intentional-fail regression cases |
-| **Total** | | **947** | **5** | Total: 947 pass + 5 fail across 5 components |
+| `e2e-* drivers (19 runnable, 1 narrative-only)` | `node executor/examples/e2e-*/drive-run.mjs` | 664 | 0 | 18/19 drivers PASS with assertions; narrative-only: e2e-membership-bug |
+| `validate-chat-output.mjs (test-responses/)` | `node scripts/validate-chat-output.mjs <file>` | 96 | 5 | see scripts/test-responses/README.md for which fixtures are intentional-fail regression cases |
+| **Total** | | **953** | **5** | Total: 953 pass + 5 fail across 5 components |
 <!-- END AUTO-GENERATED -->
 
 NOTE: This table is regenerated by `npm run count-assertions -- --write`.

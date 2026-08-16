@@ -16,6 +16,7 @@ export const claudeCodeAdapter: AgentAdapter = {
       native_skills: true, // Claude Code reads SKILL.md natively — no flattening needed
       browser: true, // via Claude in Chrome / computer-use tooling
       mcp: true,
+      sandboxed_code_execution: false, // Claude Code uses the real fs/shell, not a sandbox
     };
   },
 

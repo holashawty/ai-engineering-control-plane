@@ -1,6 +1,6 @@
 ---
 name: unknown-failure
-description: Use at the classify, gather-context, triage, and route-or-block states of workflows/unknown-failure.sm.yaml — the fallback workflow that runs when the router cannot confidently classify the user's intent into any specific workflow. The skill's job is to triage the ambiguous request into the correct target workflow (bug-report, feature-request, change-request, refactor, code-review, regression, performance-problem, project-onboarding, or the planned user-complaint / security-problem / release / incident) OR refuse safely via blocked with a precise gap. Novel to AIECP; no upstream equivalent found in docs/research.md.
+description: Use at the classify, gather-context, triage, and route-or-block states of workflows/unknown-failure.sm.yaml — the fallback workflow that runs when the router cannot confidently classify the user's intent into any specific workflow. The skill's job is to triage the ambiguous request into the correct target workflow (bug-report, feature-request, change-request, refactor, code-review, regression, performance-problem, project-onboarding, or the implemented user-complaint / security-problem / release / incident workflows) OR refuse safely via blocked with a precise gap. Novel to AIECP; no upstream equivalent found in docs/research.md.
 license: MIT
 allowed-tools: [filesystem_read, shell_exec]
 ---

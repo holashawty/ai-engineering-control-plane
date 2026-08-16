@@ -1,8 +1,8 @@
 # aiecp-run — Workflow Executor
 
 The core engine that walks a workflow `.sm.yaml` state machine
-(currently `workflows/bug-report.sm.yaml`, ADR-0016), enforces question
-economy (`constitution/constitution.md` §4) and safety gates
+(15 workflows — see `workflows/`), enforces question economy
+(`constitution/constitution.md` §4) and safety gates
 (`constitution/constitution.md` §3, `docs/security-model.md`), and
 validates + persists Evidence Model / Memory artifacts against the
 Phase 1 JSON Schemas.
@@ -12,9 +12,9 @@ Phase 1 JSON Schemas.
 This is the *engine*, not an agent. It does not itself diagnose bugs,
 call an LLM, or decide what evidence to emit — it is the thing an agent
 (or, in the self-test, a scripted stand-in for one) drives through the
-`WorkflowRun` API (`src/run.ts`). Wiring a real agent adapter
-(Claude Code / Codex, per ADR-0007's MVP scope) to actually call this
-API is separate, not-yet-started work — see `STATUS.md`.
+`WorkflowRun` API (`src/run.ts`). Agent adapters
+(`adapters/agents/claude-code/`, `codex/`, `chat/`, `chat-sandbox/`,
+`mcp/` per ADR-0007) drive this API — see `STATUS.md`.
 
 ## Usage
 
@@ -77,8 +77,11 @@ schema validation actually doing its job:**
   `decision.trace_ref` actually point at a `Trace` that was written?)
   is not checked — flagged as a gap in
   `skills/evidence-engineering/SKILL.md` §Validation.
-- Only `bug-report` is wired up; the executor's `WorkflowRun` class is
-  written to be workflow-agnostic (it reads `states`/`transitions`/
-  `safety_gates`/`question_economy` generically from whatever
-  `WorkflowDefinition` it's given), but no other `.sm.yaml` exists yet
-  to prove that generality against a second real workflow.
+- All 15 workflows are wired up and proven end-to-end (see
+  `executor/examples/e2e-*/` for 19 runnable drivers). The executor's
+  `WorkflowRun` class is workflow-agnostic (it reads `states`/
+  `transitions`/`safety_gates`/`question_economy` generically from
+  whatever `WorkflowDefinition` it's given), proven across reactive /
+  constructive / behavior-preserving / behavior-modifying /
+  gatekeeping / onboarding / regression / performance / security /
+  release / incident / unknown-failure / orchestrator shapes.

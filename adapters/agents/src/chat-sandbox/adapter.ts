@@ -38,6 +38,7 @@
 // copies them out.
 
 import type { AgentAdapter, AgentCapabilities, RenderedFile, GenericObservation, CanonicalSources } from "../types.js";
+import { redact } from "../redact.js";
 
 export const chatSandboxAdapter: AgentAdapter = {
   id: "chat-sandbox",
@@ -288,7 +289,7 @@ where this file explicitly overrides it (you have code execution).
       ts: obs.timestamp,
       kind: mapKind(toolName, obs.raw),
       source: `chat-sandbox:${toolName}`,
-      payload: obs.raw,
+      payload: redact(obs.raw),
     };
   },
 };

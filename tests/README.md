@@ -1,10 +1,3 @@
 # Tests
 
-**Status: Phase 0 scaffold — not yet implemented.**
-
-Unit/integration tests and fixtures for the framework's own tooling (discovery detectors, sync-entrypoints, schema validation). Phase 2+.
-
-This directory is part of the proposed repository structure in
-`docs/architecture.md`. Implementation begins in the phase noted in
-`docs/implementation-roadmap.md` and requires an approved ADR in
-`DECISIONS.md` for any structural change.
+Tests live across multiple locations: `executor/examples/e2e-*/` (e2e drivers), `evaluations/eval_runner.py` (workflow scenarios), `scripts/test-responses/` (chat fixtures), and per-workspace `npm test`. See STATUS.md for the assertion count table (953 pass / 5 fail as of 2026-08-16).

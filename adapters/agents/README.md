@@ -35,27 +35,29 @@ Codex session — `translateObservation()` is verified against realistic
 *shapes* of tool-call output (see below), not against a live session's
 real output, which isn't obtainable in this development environment.
 
-## What's verified so far (2026-08-12)
+## Verified (2026-08-16)
 
-`npm test` runs 4 scenarios, 19/19 assertions pass:
+`npm test` runs scenarios covering all adapters, 58/58 assertions
+pass (per STATUS.md auto-gen table):
 
 1. **Load canonical sources** — reads this repo's own
-   `agents/AGENTS.md` and all 4 `skills/*/SKILL.md` files, confirms all
-   4 skills are discovered with correct names.
-2. **Render + idempotency (ADR-0006)** — both adapters render their
+   `agents/AGENTS.md` and all 35 `skills/*/SKILL.md` files, confirms all
+   35 skills are discovered with correct names.
+2. **Render + idempotency (ADR-0006)** — adapters render their
    entrypoint twice from the same input and produce byte-identical
    output (the requirement ADR-0006 exists to enforce: generated files
    are deterministic, never hand-edited). Confirms `CLAUDE.md` embeds
-   the canonical `AGENTS.md` content verbatim and lists all 4 skills by
+   the canonical `AGENTS.md` content verbatim and lists all 35 skills by
    name; confirms Codex's adapter writes to `AGENTS.md` (its own native
    filename) rather than `CLAUDE.md`.
 3. **Capabilities genuinely differ between adapters** — Claude Code
    declares full native skill support and browser access; Codex
-   declares partial native skill support and no browser access,
+   declares partial native skill support and no browser access;
+   chat-sandbox declares `sandboxed_code_execution: true` —
    matching `docs/portability.md`'s matrix in code, not just prose.
 4. **`translateObservation` produces schema-valid Events** — a raw,
    agent-shaped observation (including a fake `api_key` field) is
-   translated by both adapters into an `evidence/schema/event.schema.json`
+   translated by adapters into an `evidence/schema/event.schema.json`
    -valid `Event`, and the `api_key` is confirmed redacted in the
    output while an unrelated field (`command`) passes through
    untouched.

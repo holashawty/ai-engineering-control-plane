@@ -45,9 +45,9 @@ edildi. Tüm aşama kırılımı için [`docs/implementation-roadmap.md`](docs/i
 | ADR (karar kayıtları) | **29 / 29** | 23 | [`DECISIONS.md`](DECISIONS.md) |
 | Workflow (runnable `.sm.yaml`) | **15 / 15** | 14 | tamamı implement edildi |
 | Skill (`SKILL.md`) | **35** | ~19–23 | long-term scope ADR-0016 |
-| Agent adapter | **5** | 9 long-term | `claude-code`, `codex`, `chat`, `chat-sandbox`, `mcp`, `mcp` |
+| Agent adapter | **5** | 9 long-term | `claude-code`, `codex`, `chat`, `chat-sandbox`, `mcp` |
 | Stack adapter | 1 (`discovery/cli`) | 11 long-term | placeholder `adapters/stacks/` |
-| e2e driver | **16** | — | 886 assertion pass + 5 known-fail across all harnesses (see `STATUS.md`, auto-generated via `npm run count-assertions`) |
+| e2e driver | **20** (19+1 narrative) | — | 953 pass + 5 known-fail across all harnesses (see `STATUS.md`, auto-generated via `npm run count-assertions`) |
 | Anayasa kuralları | **8** | 8 | [`constitution/constitution.md`](constitution/constitution.md) |
 
 **Tamamlanan önemli kilometre taşları** (detaylı liste [`STATUS.md`](STATUS.md)
@@ -110,7 +110,7 @@ Bu komut şunları yapar:
      yok — ADR-0022).
    - `executor/dist/` (workflow motoru + evidence-store).
    - `adapters/agents/dist/` (4 adapter + `write-entrypoints` CLI).
-3. `npm test` — 3 paketin self-test'ini çalıştırır (toplam ~750 assertion).
+3. `npm test` — 3 paketin self-test'ini çalıştırır (toplam 953 assertion).
 
 Diğer kök script'leri ([`package.json`](package.json) içinde tam liste):
 
@@ -129,7 +129,7 @@ npm run e2e:change-request-demo    # behavior-modifying (iki Expected)
 npm run e2e:project-onboarding-demo # discovery → memory yazımı
 npm run e2e:regression-demo        # known-failure'a öncelikli bağlam
 npm run e2e:performance-problem-demo # cost-shaped, baseline+profil
-npm run e2e:chat-adapter-demo      # chat + chat-sandbox adapter kanıtı (56/56)
+npm run e2e:chat-adapter-demo      # chat + chat-sandbox adapter kanıtı (58/58)
 
 npm run validate:feature-request  # feature-request.sm.yaml yapısal doğrulayıcı
 npm run validate:chat-output      # chat LLM metnindeki aiecp:* bloklarını şema-doğrula
@@ -271,10 +271,7 @@ soruya geri izlenebilir olmalıdır ([`constitution/constitution.md`](constituti
 ## Workflow kataloğu
 
 Aşağıdaki tablo, [`docs/workflow-model.md`](docs/workflow-model.md) ve
-[`workflows/_router.md`](workflows/_router.md) kaynaklı **14 hedef workflow'u**
-listeler. 8 tanesi runnable `.sm.yaml` olarak yazıldı ve gerçek `WorkflowRun`
-API'sine karşı kanıtlandı (~750 assertion). Kullanıcı asla workflow seçmez;
-intent'i doğal dilde verir, router deterministic eşleme yapar.
+[`workflows/_router.md`](workflows/_router.md) kaynaklı **15 workflow'un** tamamı runnable `.sm.yaml` olarak yazıldı ve gerçek `WorkflowRun` API'sine karşı kanıtlandı (953 assertion). Kullanıcı asla workflow seçmez; intent'i doğal dilde verir, router deterministic eşleme yapar.
 
 | # | Workflow | Tetikleyici (intent sinyali) | Tip | Durum |
 |---|---|---|---|---|
@@ -286,12 +283,13 @@ intent'i doğal dilde verir, router deterministic eşleme yapar.
 | 6 | [`code-review`](workflows/code-review.sm.yaml) | "bu PR'ı review et" | gatekeeping | ✅ MVP |
 | 7 | [`regression`](workflows/regression.sm.yaml) | Bir `known-failure` semptomu tekrarladı | prior-context-aware | ✅ MVP |
 | 8 | [`performance-problem`](workflows/performance-problem.sm.yaml) | "yavaş", gecikme/throughput şikayeti | cost-shaped | ✅ MVP |
-| 9 | `discovery-refresh` | yeşil alan projesi başlatma | constructive | ⬜ Planlandı |
-| 10 | `user-complaint` | kullanıcı bir başkasına kayıtlı bug bildirdi | reactive | ⬜ Planlandı |
-| 11 | `security-problem` | güvenlik açığı, şüpheli erişim | security | ⬜ Planlandı |
-| 12 | `release` | "bunu ship et", release kes | release engineering | ⬜ Planlandı |
-| 13 | `incident` | üretim alarmı, on-call page | incident response | ⬜ Planlandı |
-| 14 | `unknown-failure` | intent yukarıdakilerden hiçbiriyle güvenle eşleşmiyor | fallback (triage) | ⬜ Fallback |
+| 9 | [`discovery-refresh`](workflows/discovery-refresh.sm.yaml) | yeşil alan projesi başlatma | constructive | ✅ MVP |
+| 10 | [`user-complaint`](workflows/user-complaint.sm.yaml) | kullanıcı bir başkasına kayıtlı bug bildirdi | reactive | ✅ MVP |
+| 11 | [`security-problem`](workflows/security-problem.sm.yaml) | güvenlik açığı, şüpheli erişim | security | ✅ MVP |
+| 12 | [`release`](workflows/release.sm.yaml) | "bunu ship et", release kes | release engineering | ✅ MVP |
+| 13 | [`incident`](workflows/incident.sm.yaml) | üretim alarmı, on-call page | incident response | ✅ MVP |
+| 14 | [`unknown-failure`](workflows/unknown-failure.sm.yaml) | intent yukarıdakilerden hiçbiriyle güvenle eşleşmiyor | fallback (triage) | ✅ MVP |
+| 15 | [`orchestrator`](workflows/orchestrator.sm.yaml) | çok-intentli istek: "X'i fix ET ve Y ekle" | multi-workflow chaining | ✅ MVP |
 
 **Sınıflandırma yöntemi** (MVP): önce `.aiecp/project-intelligence.json` var mı
 ve `stale: true` mi diye kontrol et → yoksa/te eskidse `project-onboarding`
@@ -311,7 +309,7 @@ Her MVP workflow'unun bir e2e driver kanıtı vardır:
 | `project-onboarding` | `executor/examples/e2e-project-onboarding/` | 36/36 |
 | `regression` | `executor/examples/e2e-regression/` | 43/43 |
 | `performance-problem` | `executor/examples/e2e-performance-problem/` | 41/41 |
-| chat adapter'ları | `executor/examples/e2e-chat-adapter/` | 56/56 |
+| chat adapter'ları | `executor/examples/e2e-chat-adapter/` | 58/58 |
 
 ---
 
@@ -576,7 +574,7 @@ dosyayı sessizce düzenleyemez.
 
 [`DECISIONS.md`](DECISIONS.md) — her framework-seviyesi karar (özellikle
 `constitution/`'ı etkileyenler) ADR olarak kaydedilir. Sessiz değişiklik
-yasaktır (ADR-0008). Aşağıdaki tablo 25 ADR'nin kısa özetidir; tam gerekçe
+yasaktır (ADR-0008). Aşağıdaki tablo 29 ADR'nin kısa özetidir; tam gerekçe
 için ilgili ADR başlığına bakın.
 
 | ADR | Başlık | Öz |
@@ -604,6 +602,12 @@ için ilgili ADR başlığına bakın.
 | 0021 | Discovery bir prosedür, bir tool değil | `discovery/cli/dist/` repoya commit edildi (chat-sandbox offline çalışsın); `skills/project-onboarding/discovery-fallback.md` metin prosedürü (Node.js runtime'ı olmayan ajanlar için) |
 | 0022 | discovery/cli'da sıfır runtime npm bağımlılığı | `ajv`/`ajv-formats` runtime'dan çıkarıldı; yapısal kontrol yeterli. Tam şema doğrulaması `validate-discovery` durumunda (executor üzerinden). `check-discovery-freshness.mjs` executability check ekler |
 | 0023 | chat-sandbox için safety gate yetkisi | `chat-harness.mjs` artık koşulsuz auto-confirm yapmaz. `chat` adapter auto-confirm (gate moot); `chat-sandbox` `aiecp:confirm` bloğu veya `--user-prompt` yetki anahtar kelimeleriyle yetki ister. `already-terminal` violation handling eklendi |
+| 0024 | Memory/evidence `.aiecp/`'e kalıcı yazılır | `EvidenceStore` ve `MemoryStore` `mkdtempSync` yerine `.aiecp/evidence/` ve `.aiecp/memory/`'e yazar — önceki oturumların `known-failure` / `project` / `environment` kayıtları sonraki oturumda okunabilir (ADR-0007) |
+| 0025 | AGENTS.md'de AIECP auto-activation hook | `scripts/init-aiecp.mjs`, `AGENTS.md`'ye "AIECP Auto-Activation" bölümü ekler; ajan `AGENTS.md`'yi okuyunca AIECP'yi otomatik devralır. `.aiecp/auto-activate.json` marker |
+| 0026 | `Decision.what` kelime dağarcığı linter'i | `decision.schema.json`'a enum koymak yerine `evidence/vocabulary/decision-what.json` registry + `scripts/validate-what-vocabulary.mjs` linter (62/62). Tanınmayan `what` değeri için stderr WARNING — backwards-compatible |
+| 0027 | `classify-goal` için misclassification detector | Orchestrator `report` durumunda gerçek iteration sayısı ile sınıflandırılan scale'i karşılaştırır; uyumsuzlukta `Validation: mismatch` yazar (small + 4 iterasyon → under_classified → inferred large). `executor/src/project-scale-classifier.ts` |
+| 0028 | Skill-tier eval harness | 4 planlama skill'inin (`requirements-gathering`, `project-planning`, `architecture-design`, `ux-design`) dahili prosedürlerini workflow dışında direkt test eden harness. `executor/examples/e2e-skill-tier/` (35/35) |
+| 0029 | STATUS.md assertion tablosu auto-generated | `npm run count-assertions -- --write` tabloyu `<!-- AUTO-GENERATED -->` marker'ları arasında yeniden üretir; `--check` CI'da stale tabloyu reddeder. 4 döngüde tekrarlayan el-drift'ini yapısal olarak önler |
 
 ---
 

@@ -80,6 +80,7 @@ import { loadWorkflow } from "../../dist/workflow-loader.js";
 import { WorkflowRun } from "../../dist/run.js";
 import { WorkflowViolation } from "../../dist/types.js";
 import { mkdtemp, rm, readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -211,6 +212,23 @@ async function scenarioHappyPath(runDir) {
       { option: "goal_decomposition:feature-request(batch-label-printing);bug-report(shipping-label-slot)", rejected_because: "feature-first ordering would have the feature's tests run against the buggy slot calculation, producing flaky failures; the user's classify-goal answer confirms bug-first is the correct ordering" },
       { option: "goal_decomposition:bug-report(shipping-label-slot) (single-workflow)", rejected_because: "the request explicitly names two intents — collapsing to a single-workflow decomposition would silently drop the feature request" },
     ],
+  });
+
+  // Per ADR-0027: classify-goal also emits a project_scale Decision
+  // that drives which planning phases run. For this scenario, the
+  // user's goal is short, single-repo, no --yarat flag — classified
+  // as "medium" (substantive feature + multi-step change, but not
+  // greenfield). Scale=medium means: requirements-gathering runs,
+  // then execution workflow(s); planning chain (project-planning +
+  // architecture-design + ux-design) is SKIPPED.
+  await run.emitEvidence("decision", {
+    id: "decision-classify-goal-scale",
+    trace_ref: "trace-classify-goal-1",
+    what: "project_scale:medium",
+    why: "user word count 42 (between 20-100 medium threshold), no --yarat flag, single-repo surface (executor/examples/toy-shipping-bug), no multi-platform mention — per workflows/orchestrator.sm.yaml classify-goal project-scale detection rules. Scale=medium routes to requirements-gathering then execution workflow(s), skipping the full planning chain.",
+    validated: false,
+    result: "pending",
+    evidence_refs: ["event-classify-goal-1"],
   });
   advanceResults.push(run.advance("goal_classified"));
   check("state is route (after classify-goal decomposition)", run.currentState === "route");
@@ -533,6 +551,44 @@ async function scenarioHappyPath(runDir) {
     const files = await readdir(dir).catch(() => []);
     check(`evidence/${kind}/ has at least one persisted JSON file`, files.length > 0);
   }
+
+  // (h.5) ADR-0027 misclassification detector — at the report state
+  // (terminal, after all iterations), invoke the scale classifier to
+  // verify the project_scale Decision (medium) matches the actual
+  // iteration count (2). Emit the resulting Validation as a learning
+  // signal. This closes the ADR-0027 "orchestrator integration" gap.
+  const { classifyRun, buildValidation } = await import("../../dist/project-scale-classifier.js");
+  // Read all persisted Decisions to feed the classifier
+  const decisionsDir = join(runDir, "evidence", "decision");
+  const decisionFiles = await readdir(decisionsDir).catch(() => []);
+  const decisions = [];
+  for (const f of decisionFiles) {
+    try {
+      decisions.push(JSON.parse(await readFile(join(decisionsDir, f), "utf-8")));
+    } catch {}
+  }
+  const scaleResult = classifyRun(run, decisions);
+  check("ADR-0027 classifier: classified scale is 'medium'",
+    scaleResult.classified_scale === "medium", `got: ${scaleResult.classified_scale}`);
+  check("ADR-0027 classifier: actual iterations is 2 (bug-report + feature-request)",
+    scaleResult.actual_iterations === 2, `got: ${scaleResult.actual_iterations}`);
+  check("ADR-0027 classifier: verdict is 'match' (medium expected 1-3 iters, actual is 2)",
+    scaleResult.verdict === "match", `got: ${scaleResult.verdict} — ${scaleResult.reason}`);
+
+  // Emit the Validation entity (proves the schema fix for
+  // method: scale_classification_review + notes field).
+  const validation = buildValidation(scaleResult);
+  await run.emitEvidence("validation", {
+    id: validation.id,
+    schema_version: "1.0.0",
+    expected_ref: validation.expected_ref,
+    actual_ref: validation.actual_ref,
+    result: validation.result,
+    method: validation.method,
+    notes: validation.notes,
+  });
+  check("ADR-0027: scale-classification Validation emitted to evidence/validation/",
+    existsSync(join(runDir, "evidence", "validation", `${validation.id}.json`)));
 
   // (i) State machine history — the orchestrator's run walked the
   // full multi-iteration path: 9 transitions total (intake→classify-
