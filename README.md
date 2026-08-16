@@ -42,12 +42,12 @@ edildi. Tüm aşama kırılımı için [`docs/implementation-roadmap.md`](docs/i
 
 | Alan | Tamamlandı | Hedef | Not |
 |---|---|---|---|
-| ADR (karar kayıtları) | **25 / 25** | 23 | [`DECISIONS.md`](DECISIONS.md) |
+| ADR (karar kayıtları) | **29 / 29** | 23 | [`DECISIONS.md`](DECISIONS.md) |
 | Workflow (runnable `.sm.yaml`) | **15 / 15** | 14 | tamamı implement edildi |
-| Skill (`SKILL.md`) | **31** | ~19–23 | long-term scope ADR-0016 |
+| Skill (`SKILL.md`) | **35** | ~19–23 | long-term scope ADR-0016 |
 | Agent adapter | **5** | 9 long-term | `claude-code`, `codex`, `chat`, `chat-sandbox`, `mcp`, `mcp` |
 | Stack adapter | 1 (`discovery/cli`) | 11 long-term | placeholder `adapters/stacks/` |
-| e2e driver | **16** | — | ~750 assertion, hepsi PASS |
+| e2e driver | **16** | — | 886 assertion pass + 5 known-fail across all harnesses (see `STATUS.md`, auto-generated via `npm run count-assertions`) |
 | Anayasa kuralları | **8** | 8 | [`constitution/constitution.md`](constitution/constitution.md) |
 
 **Tamamlanan önemli kilometre taşları** (detaylı liste [`STATUS.md`](STATUS.md)
@@ -317,7 +317,7 @@ Her MVP workflow'unun bir e2e driver kanıtı vardır:
 
 ## Skill kataloğu
 
-Toplam **31 skill** gerçek `SKILL.md` + YAML frontmatter olarak yazıldı
+Toplam **35 skill** gerçek `SKILL.md` + YAML frontmatter olarak yazıldı
 (ADR-0001 Agent Skills standardı). Her skill somut prosedür, araç entegrasyonu,
 doğrulama kriterleri ve hem happy-path hem failure-mode örneği içerir
 ([`CONTRIBUTING.md`](CONTRIBUTING.md) ve [`docs/evaluations/evaluation-strategy.md`](docs/evaluations/evaluation-strategy.md)
@@ -372,6 +372,28 @@ Anayasa §8'i operasyonelleştiren üç skill — araç kullanımı zorunlu, ops
 > yoluyla Phase 1 şemaları ve workflow `.sm.yaml` ile tutarlıdır, ama
 > "doğru okunuyor" ile "ajan takip edince iddia edilen davranışı üretiyor"
 > aynı şey değildir.
+
+### Planlama skill'leri (SDLC gap closure)
+
+`requirements-gathering → project-planning → architecture-design → ux-design`
+sırasıyla çalışır — `orchestrator`'ın `classify-goal` state'i proje ölçeğine
+(small/medium/large) göre bu zincirin ne kadarının çalışacağına karar verir.
+Dosya sözleşmesi: her skill kendi `specs/*.md` dosyasını YAZAR, diğerleri
+sadece OKUR (çakışma yok). `architecture-design` requirements ile çelişen bir
+mimari kısıt bulursa `plan_revision_needed` ile `project-planning`'e geri
+döner — max 3 tur, sonrasında `blocked` (ADR-0026, ADR-0027, ADR-0029'daki
+Q1/Q2 takip notlarına bakın).
+
+| Skill | İşlev |
+|---|---|
+| [`requirements-gathering`](skills/requirements-gathering/SKILL.md) | Kullanıcının fikrini netleştirici sorularla user stories (Given/When/Then) + MVP scope + persona + monetizasyon önerisine çevirir. `project-onboarding`'den farkı: o TEKNİK stack'i keşfeder, bu İNSAN niyetini. Yazar: `specs/requirements.md` |
+| [`project-planning`](skills/project-planning/SKILL.md) | Requirements'ı fazlı plana çevirir: task breakdown, dependency graph, risk assessment. `specification`'dan farkı: o şablon SAĞLAR, bu şablonu İÇERİKLE doldurur. Yazar: `specs/plan.md` + `specs/tasks.md` |
+| [`architecture-design`](skills/architecture-design/SKILL.md) | Tech stack seçer, sistem mimarisi/DB şema/API tasarlar. Requirements ile çelişirse `plan_revision_needed` tetikler. Yazar: `specs/contracts.md` + `specs/invariants.md` + `specs/architecture.md` |
+| [`ux-design`](skills/ux-design/SKILL.md) | Wireframe, user flow, journey map, design system. `frontend`'den farkı: o KOD yazma disiplini, bu TASARIM kararı. Yazar: `specs/ux/` |
+
+> Bu 4 skill de yukarıdaki dürüst-kapsam notuna tabidir: eval senaryosu
+> henüz sadece `orchestrator` üzerinden dolaylı (bkz. `evaluations/scenarios/orchestrator.yaml`),
+> kendi skill-tier senaryoları yok (ADR-0028, deferred).
 
 Kalan ~2–6 skill (database, frontend, backend, mobile, security, release,
 incident-response — projenin gerçek ihtiyacına göre seçilecek) uzun vadeli

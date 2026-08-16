@@ -135,15 +135,31 @@ function collectAll() {
   //    scenario files are picked up automatically.
   try {
     const r = runEvalRunner();
+    if (r.error) {
+      // r.error means the subprocess ran but its output couldn't be parsed
+      // (e.g. a crash before it printed a summary line, or a missing build
+      // step — see evaluations/README.md prerequisites). Reporting this as
+      // silent "0/0 PASS" would look identical to "no tests exist", which
+      // is exactly the kind of masked failure ADR-0029 Q3 already fixed
+      // for e2e drivers. Surface it the same way: WARNING to stderr, and
+      // the error text (not a fake pass count) in the table's notes column.
+      process.stderr.write(
+        `WARNING: eval_runner.py output could not be parsed (${r.error}) — ` +
+        `reporting 0 pass/0 fail, which may mask real failures rather than ` +
+        `mean no tests exist. Run \`python3 evaluations/eval_runner.py\` ` +
+        `directly to see the actual error.\n`
+      );
+    }
     components.push({
       name: "eval_runner.py",
       kind: "eval-runner",
       cmd: "python3 evaluations/eval_runner.py",
       ...r,
-      notes: `${r.scenariosPassed}/${r.scenarios} scenarios PASS`,
+      notes: r.error ? `ERROR: ${r.error}` : `${r.scenariosPassed}/${r.scenarios} scenarios PASS`,
     });
   } catch (e) {
-    components.push({ name: "eval_runner.py", cmd: "python3 evaluations/eval_runner.py", pass: 0, fail: 0, error: e.message.slice(0, 100) });
+    process.stderr.write(`WARNING: eval_runner.py could not be run at all (${e.message.slice(0, 100)}) — reporting 0 pass/0 fail.\n`);
+    components.push({ name: "eval_runner.py", cmd: "python3 evaluations/eval_runner.py", pass: 0, fail: 0, notes: `ERROR: ${e.message.slice(0, 100)}` });
   }
 
   // 2. npm workspace self-tests — discover workspaces from package.json
@@ -160,15 +176,29 @@ function collectAll() {
     if (ws === "discovery/cli") continue;
     try {
       const r = runNpmSelfTest(ws);
+      if (r.error) {
+        // Same masking risk as the eval_runner case above: a workspace
+        // that fails to build/run (e.g. `npm install` or `npm run build`
+        // not yet done — see CONTRIBUTING.md / evaluations/README.md
+        // prerequisites) reports 0/0 here, which looks identical to
+        // "this workspace legitimately has no tests." Surface it.
+        process.stderr.write(
+          `WARNING: ${ws} self-test output could not be parsed (${r.error}) — ` +
+          `reporting 0 pass/0 fail, which may mean the workspace isn't built ` +
+          `(run \`npm install && npm run build --workspace=${ws}\`) rather ` +
+          `than that it has no tests.\n`
+        );
+      }
       components.push({
         name: `${ws} self-test`,
         kind: "npm-self-test",
         cmd: `npm test --workspace=${ws}`,
         ...r,
-        notes: `${r.pass}/${r.pass + r.fail} PASS`,
+        notes: r.error ? `ERROR: ${r.error}` : `${r.pass}/${r.pass + r.fail} PASS`,
       });
     } catch (e) {
-      components.push({ name: `${ws} self-test`, cmd: `npm test --workspace=${ws}`, pass: 0, fail: 0, error: e.message.slice(0, 100) });
+      process.stderr.write(`WARNING: ${ws} self-test could not be run at all (${e.message.slice(0, 100)}) — reporting 0 pass/0 fail.\n`);
+      components.push({ name: `${ws} self-test`, cmd: `npm test --workspace=${ws}`, pass: 0, fail: 0, notes: `ERROR: ${e.message.slice(0, 100)}` });
     }
   }
 
@@ -238,18 +268,42 @@ function collectAll() {
   // 5. chat-output validator — one entry per file, plus an aggregate row
   const chatDir = join(REPO_ROOT, "scripts", "test-responses");
   let chatFiles = readdirSync(chatDir)
-    .filter(f => f.endsWith(".md"))
+    // README.md documents the fixtures, it is not itself a chat-output
+    // fixture — including it here was a real bug (found while fixing
+    // this file's error-masking, see ADR-0029): it always fails
+    // validate-chat-output.mjs (no ```aiecp:* blocks) and, since that
+    // failure mode emits no "Results:" line, silently counted as a
+    // parse error indistinguishable from a real fixture problem.
+    .filter(f => f.endsWith(".md") && f !== "README.md")
     .sort();
   let chatPass = 0, chatFail = 0;
+  const chatErrors = [];
   for (const f of chatFiles) {
     const filePath = join("scripts", "test-responses", f);
     try {
       const r = runChatValidator(filePath);
-      chatPass += r.pass;
-      chatFail += r.fail;
+      if (r.error) {
+        chatErrors.push(f);
+      } else {
+        chatPass += r.pass;
+        chatFail += r.fail;
+      }
     } catch (e) {
-      // skip
+      chatErrors.push(f);
     }
+  }
+  if (chatErrors.length > 0) {
+    // Same masking risk as above: a fixture whose output couldn't be
+    // parsed (e.g. a missing dependency like `ajv` — see
+    // evaluations/README.md prerequisites) was previously dropped
+    // silently, understating the total instead of surfacing the gap.
+    process.stderr.write(
+      `WARNING: ${chatErrors.length} chat-output fixture(s) could not be validated ` +
+      `(parse/run error) and are excluded from the pass/fail count below — this ` +
+      `understates the real total rather than meaning those fixtures have no ` +
+      `assertions. Run \`node scripts/validate-chat-output.mjs <file>\` directly ` +
+      `on each to see the actual error. Files: ${chatErrors.join(", ")}\n`
+    );
   }
   components.push({
     name: "validate-chat-output.mjs (test-responses/)",
@@ -257,7 +311,10 @@ function collectAll() {
     cmd: "node scripts/validate-chat-output.mjs <file>",
     pass: chatPass,
     fail: chatFail,
-    notes: "see scripts/test-responses/README.md for which fixtures are intentional-fail regression cases",
+    notes: chatErrors.length > 0
+      ? `${chatErrors.length} fixture(s) errored and are excluded from this count — see stderr; ` +
+        `otherwise see scripts/test-responses/README.md for intentional-fail regression cases`
+      : "see scripts/test-responses/README.md for which fixtures are intentional-fail regression cases",
   });
 
   return components;
