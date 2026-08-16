@@ -2,34 +2,30 @@
 // init-aiecp.mjs — One-command AIECP setup for any project.
 //
 // Usage:
-//   node init-aiecp.mjs [path]              # auto-detect: integrate mode
-//   node init-aiecp.mjs [path] --entegre    # explicit integrate (existing project)
-//   node init-aiecp.mjs [path] --yarat "fikir"  # create mode (greenfield project)
-//   node init-aiecp.mjs [path] --yarat      # create mode, idea prompted interactively
+//   node init-aiecp.mjs [path] --entegre          # integrate into existing project (default)
+//   node init-aiecp.mjs [path] --yarat "fikir"    # create greenfield project from idea
+//   node init-aiecp.mjs --help                     # show usage
 //
 // Modes:
-//   --entegre (default): Mevcut projeye AIECP ekle.
-//     Runs init-aiecp's 4 steps: framework setup → discovery → entrypoints → auto-activate.
-//     After completion, the user continues with their normal workflow.
+//   --entegre (default): Integrate AIECP into an EXISTING project.
+//     1. Copies/symlinks AIECP framework to .aiecp-framework/
+//     2. Runs discovery → .aiecp/project-intelligence.json
+//     3. Generates entrypoints: AGENTS.md, CLAUDE.md, CHAT-ENTRYPOINT-SANDBOX.md, MCP-ENTRYPOINT.md
+//     4. Creates .aiecp/auto-activate.json + appends ADR-0025 hook to AGENTS.md
 //
-//   --yarat "fikir": Sıfırdan proje oluştur.
-//     1. Runs project-scaffolding skill (creates repo skeleton + manifest)
-//     2. Runs init-aiecp's integrate flow on the new skeleton
-//     3. Prints a CHAT-ENTRYPOINT prompt that tells the chat LLM to
-//        drive the orchestrator workflow for the given "fikir"
-//        (requirements-gathering → project-planning → architecture-
-//        design → ux-design → feature-request → testing → code-review
-//        → release).
+//   --yarat "fikir": Create a NEW greenfield project from the idea.
+//     1. Runs project-scaffolding skill inline (creates src/tests/docs/ + README/LICENSE/.gitignore/package.json)
+//     2. Runs the full --entegre flow on the new skeleton
+//     3. Prints a ready-to-paste prompt for the chat LLM to drive the orchestrator
+//        workflow (requirements → planning → architecture → ux → implementation → testing → review → release)
 //
-//   (no flag): Interactive — asks the user "Yeni proje mi (--yarat) yoksa
-//     mevcut projeye entegre mi (--entegre)?" then proceeds accordingly.
+// If no mode flag is given, defaults to --entegre (there is NO interactive
+// mode — the script does not prompt; it runs to completion).
 //
-// What it does (integrate mode):
-//   1. Copies AIECP framework files to .aiecp-framework/ in the target repo
-//   2. Runs discovery: node .aiecp-framework/discovery/cli/dist/cli.js .
-//   3. Generates entrypoints: AGENTS.md, CLAUDE.md, CHAT-ENTRYPOINT-SANDBOX.md, MCP-ENTRYPOINT.md
-//   4. Creates .aiecp/auto-activate marker file + ADR-0025 hook in AGENTS.md
-//   5. Prints "AIECP is ready" with next steps
+// SECURITY (audit 2026-08-16):
+//   - Unknown --flags are ERRORS (exit 1), not silently ignored.
+//   - Refuses to run against the AIECP framework repo itself unless --force-self.
+//   - --help / -h prints usage and exits 0.
 
 import { existsSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, symlinkSync, cpSync, readdirSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
@@ -38,38 +34,132 @@ import { execSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Parse args: [path?] [--yarat "fikir"? | --entegre?]
-// Default mode: --entegre (integrate into existing project)
-let mode = "entegre"; // "entegre" | "yarat" | "interactive"
+// ---------------------------------------------------------------------------
+// Argument parsing — strict mode (audit 2026-08-16 by external LLM).
+//
+// SECURITY: Previously, unknown flags (like --help) were silently ignored,
+// targetPath fell back to process.cwd(), and the script proceeded with the
+// default --entegre flow ON THE CURRENT DIRECTORY without confirmation.
+// This meant `node init-aiecp.mjs --help` would silently start copying
+// framework files into the AIECP repo itself — a destructive default.
+//
+// Now: --help prints usage and exits. Unknown --flags are ERRORS, not
+// silently ignored. The script also refuses to run against its own repo
+// (the AIECP framework repo itself) unless --force-self is passed, to
+// prevent accidental self-modification.
+// ---------------------------------------------------------------------------
+const HELP_TEXT = `Usage:
+  node init-aiecp.mjs [path] --entegre
+    Integrate AIECP into an EXISTING project at [path].
+    [path] defaults to current directory if omitted.
+    Runs: framework setup → discovery → entrypoints → auto-activate.
+
+  node init-aiecp.mjs [path] --yarat "fikir"
+    Create a NEW greenfield project at [path] from the idea.
+    Runs: project-scaffolding → integrate flow → prints chat LLM prompt.
+    [path] must be empty or non-existent.
+
+  node init-aiecp.mjs --help
+    Print this message and exit.
+
+Flags:
+  --entegre   Integrate mode (default if no flag given)
+  --yarat     Create mode (requires idea text as next argument)
+  --help      Show this help
+  --force-self  Allow running against the AIECP framework repo itself
+                (DANGEROUS — only for framework development/testing)
+
+Exit codes:
+  0  success
+  1  user error (unknown flag, missing idea, non-empty target for --yarat)
+  2  harness error (framework source not found, permission denied)`;
+
+// Parse args: collect positional [path] and recognized flags.
+const rawArgs = process.argv.slice(2);
+let mode = "entegre"; // default if no --yarat given
 let ideaText = null;
 let targetPath = null;
+let forceSelf = false;
 
-const args = process.argv.slice(2);
-for (let i = 0; i < args.length; i++) {
-  const arg = args[i];
+const KNOWN_FLAGS = new Set(["--entegre", "--yarat", "--help", "--force-self"]);
+
+for (let i = 0; i < rawArgs.length; i++) {
+  const arg = rawArgs[i];
+
+  if (arg === "--help" || arg === "-h") {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
+
+  if (arg === "--force-self") {
+    forceSelf = true;
+    continue;
+  }
+
   if (arg === "--yarat") {
     mode = "yarat";
-    // The next arg (if not a flag) is the idea text
-    const next = args[i + 1];
+    const next = rawArgs[i + 1];
     if (next && !next.startsWith("--")) {
       ideaText = next;
-      i++; // consume it
+      i++; // consume the idea text
     }
-  } else if (arg === "--entegre") {
+    // If no idea provided, we'll prompt the user later (not an error here)
+    continue;
+  }
+
+  if (arg === "--entegre") {
     mode = "entegre";
-  } else if (!arg.startsWith("--")) {
-    // It's a path
+    continue;
+  }
+
+  // Unknown --flag → ERROR, not silent ignore (audit finding)
+  if (arg.startsWith("--")) {
+    process.stderr.write(`ERROR: unknown flag "${arg}".\n`);
+    process.stderr.write(`Known flags: ${[...KNOWN_FLAGS].join(", ")}\n`);
+    process.stderr.write(`Run "node init-aiecp.mjs --help" for usage.\n`);
+    process.exit(1);
+  }
+
+  // Positional argument → treat as target path
+  if (!targetPath) {
     targetPath = resolve(arg);
+  } else {
+    process.stderr.write(`ERROR: unexpected extra argument "${arg}".\n`);
+    process.stderr.write(`Only one positional [path] argument is accepted.\n`);
+    process.stderr.write(`Run "node init-aiecp.mjs --help" for usage.\n`);
+    process.exit(1);
   }
 }
 
+// Default target: current working directory (only if not --yarat without path)
 if (!targetPath) {
   targetPath = process.cwd();
+}
+
+// SECURITY: refuse to run against the AIECP framework repo itself unless
+// --force-self is passed. This prevents accidental self-modification when
+// a developer runs `npm run init` from within the AIECP repo (the npm
+// script shadows npm's built-in `npm init`).
+const isFrameworkRepoSelf = existsSync(join(targetPath, "workflows", "bug-report.sm.yaml"))
+  && existsSync(join(targetPath, "skills", "systematic-debugging", "SKILL.md"))
+  && existsSync(join(targetPath, "adapters", "agents", "src", "sync-entrypoints.ts"));
+
+if (isFrameworkRepoSelf && !forceSelf) {
+  process.stderr.write("ERROR: refusing to run against the AIECP framework repo itself.\n");
+  process.stderr.write(`Target ${targetPath} appears to be the AIECP framework repository.\n`);
+  process.stderr.write("Running init here would symlink the framework to itself, which is\n");
+  process.stderr.write("almost certainly not what you want.\n\n");
+  process.stderr.write("If you are testing init-aiecp.mjs and understand the risk, pass --force-self:\n");
+  process.stderr.write(`  node scripts/init-aiecp.mjs ${targetPath} --entegre --force-self\n`);
+  process.stderr.write("\nOtherwise, specify a different target path:\n");
+  process.stderr.write("  node scripts/init-aiecp.mjs /path/to/your/project --entegre\n");
+  process.exit(1);
 }
 
 console.log("=== AIECP Init ===");
 console.log(`Target: ${targetPath}`);
 console.log(`Mode:   ${mode}${ideaText ? ` ("${ideaText}")` : ""}`);
+if (forceSelf) console.log("NOTE:    --force-self is set — running against framework repo (testing only)");
 console.log("");
 
 // Step 1: Check if AIECP is already fully installed (only short-circuits
@@ -78,8 +168,15 @@ console.log("");
 // meant a partially-initialized install (entrypoints missing, framework
 // broken) would be reported as "already initialized" — audit finding 2.5.
 // Now: check ALL critical components before claiming "already initialized".
-const aiecpDir = join(targetPath, ".aiecp");
-const frameworkDir = join(targetPath, ".aiecp-framework");
+//
+// NOTE: aiecpDir and frameworkDir are declared with `let` (not `const`)
+// because --yarat mode reassigns targetPath below (to projectDir), and
+// these paths must follow. Declaring them as const here would freeze them
+// at the pre-yarat targetPath, causing .aiecp-framework to be written to
+// the wrong directory (audit 2026-08-16: --yarat mode was writing framework
+// to parent dir instead of project dir).
+let aiecpDir = join(targetPath, ".aiecp");
+let frameworkDir = join(targetPath, ".aiecp-framework");
 
 if (mode === "entegre") {
   const piExists = existsSync(join(aiecpDir, "project-intelligence.json"));
@@ -169,6 +266,13 @@ if (mode === "yarat") {
 
   // 4. Re-target the integrate flow to the new project dir
   targetPath = projectDir;
+  // CRITICAL: re-derive aiecpDir and frameworkDir from the NEW targetPath.
+  // Previously these were computed once at the top (line 178-179) from the
+  // ORIGINAL targetPath (the parent dir), so .aiecp-framework/ was written
+  // to the parent instead of the project dir. This bug was caught by the
+  // e2e-init-aiecp regression test (audit 2026-08-16).
+  aiecpDir = join(targetPath, ".aiecp");
+  frameworkDir = join(targetPath, ".aiecp-framework");
   console.log("");
   console.log(`Step 2/5: Integrating AIECP into ${projectSlug}/...`);
   // Continue with the normal integrate flow below (no early exit)
