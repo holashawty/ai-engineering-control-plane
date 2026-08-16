@@ -1049,3 +1049,27 @@ conclusion didn't change, you didn't actually walk the chain.
 - `scripts/validate-chat-output.mjs` — the script the user can
   run to validate your emitted evidence blocks against the
   schemas.
+
+---
+
+## Hızlı Başlatma (--yarat / --entegre)
+
+Kullanıcı `--yarat` veya `--entegre` komutunu kullandıysa:
+
+### `--yarat [fikir]`
+Sıfırdan proje oluştur:
+1. AIECP'yi entegre et (dosyaları kopyala/symlink)
+2. `project-onboarding` çalıştır
+3. `orchestrator` workflow'unu başlat: specification -> implementation -> testing -> code-review
+4. Her adımda evidence emit et
+
+### `--entegre`
+Mevcut projeye AIECP ekle:
+1. `init-aiecp.mjs` çalıştır (framework kurulumu)
+2. `project-onboarding` çalıştır (projeyi tara)
+3. Kullanıcının görevine AIECP disipliniyle devam et
+
+### Komut yoksa
+`.aiecp/project-intelligence.json` var mı kontrol et:
+- Var -> AIECP kurulu, devam et
+- Yok -> kullanıcıya sor: "--yarat mı --entegre mi?"
