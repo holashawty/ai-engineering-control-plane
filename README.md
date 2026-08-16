@@ -42,12 +42,12 @@ edildi. Tüm aşama kırılımı için [`docs/implementation-roadmap.md`](docs/i
 
 | Alan | Tamamlandı | Hedef | Not |
 |---|---|---|---|
-| ADR (karar kayıtları) | **23 / 23** | 23 | [`DECISIONS.md`](DECISIONS.md) |
-| Workflow (runnable `.sm.yaml`) | **8 / 14** | 14 | 6'sı planlandı |
-| Skill (`SKILL.md`) | **17** | ~19–23 | long-term scope ADR-0016 |
-| Agent adapter | **4** | 9 long-term | `claude-code`, `codex`, `chat`, `chat-sandbox` |
+| ADR (karar kayıtları) | **25 / 25** | 23 | [`DECISIONS.md`](DECISIONS.md) |
+| Workflow (runnable `.sm.yaml`) | **15 / 15** | 14 | tamamı implement edildi |
+| Skill (`SKILL.md`) | **31** | ~19–23 | long-term scope ADR-0016 |
+| Agent adapter | **5** | 9 long-term | `claude-code`, `codex`, `chat`, `chat-sandbox`, `mcp`, `mcp` |
 | Stack adapter | 1 (`discovery/cli`) | 11 long-term | placeholder `adapters/stacks/` |
-| e2e driver | **9** | — | 325+ assertion, hepsi PASS |
+| e2e driver | **16** | — | ~750 assertion, hepsi PASS |
 | Anayasa kuralları | **8** | 8 | [`constitution/constitution.md`](constitution/constitution.md) |
 
 **Tamamlanan önemli kilometre taşları** (detaylı liste [`STATUS.md`](STATUS.md)
@@ -64,7 +64,7 @@ ve [`DELIVERABLES.md`](DELIVERABLES.md)):
   skill + 3 yeni-workflow skill.
 - `executor/` — gerçek Node.js/TypeScript motoru: state machine + question
   economy + safety gate + schema-validating evidence/memory store.
-- 4 agent adapter (`claude-code`, `codex`, `chat`, `chat-sandbox`) ve
+- 4 agent adapter (`claude-code`, `codex`, `chat`, `chat-sandbox`, `mcp`) ve
   `sync-entrypoints.ts` (ADR-0006, idempotent render).
 - **Gerçek (scripted olmayan) e2e koşu**: `executor/examples/e2e-membership-bug/`
   içinde gerçek off-by-one hatası gerçek kodda teşhis edilip düzeltildi.
@@ -77,9 +77,9 @@ ve [`DELIVERABLES.md`](DELIVERABLES.md)):
 
 - Gerçek (simülasyon olmayan) çok-turlu canlı chat LLM oturumu — altyapı hazır,
   sadece patron'un evinden bir ChatGPT/Claude/GLM oturumu gerekiyor.
-- 6 kalan workflow: `new-project`, `user-complaint`, `security-problem`,
+- 0 kalan workflow (15/15 tamam): `discovery-refresh`, `user-complaint`, `security-problem`,
   `release`, `incident`, `unknown-failure` (fallback).
-- Kalan ~2–6 skill (uzun vadeli, ADR-0016).
+- Tüm çekirdek skill'ler yazıldı. Domain-özel (mobile, game-dev) ihtiyaç oldukça eklenebilir.
 - Formal eval harness (Phase 8, Python, ADR-0017): mevcut e2e driver'lar
   proof-of-concept; `docs/evaluations/evaluation-strategy.md`'in ≥5-senaryo/
   skill ve ≥3-senaryo/workflow çıtası değil.
@@ -110,7 +110,7 @@ Bu komut şunları yapar:
      yok — ADR-0022).
    - `executor/dist/` (workflow motoru + evidence-store).
    - `adapters/agents/dist/` (4 adapter + `write-entrypoints` CLI).
-3. `npm test` — 3 paketin self-test'ini çalıştırır (toplam 325+ assertion).
+3. `npm test` — 3 paketin self-test'ini çalıştırır (toplam ~750 assertion).
 
 Diğer kök script'leri ([`package.json`](package.json) içinde tam liste):
 
@@ -273,7 +273,7 @@ soruya geri izlenebilir olmalıdır ([`constitution/constitution.md`](constituti
 Aşağıdaki tablo, [`docs/workflow-model.md`](docs/workflow-model.md) ve
 [`workflows/_router.md`](workflows/_router.md) kaynaklı **14 hedef workflow'u**
 listeler. 8 tanesi runnable `.sm.yaml` olarak yazıldı ve gerçek `WorkflowRun`
-API'sine karşı kanıtlandı (325+ assertion). Kullanıcı asla workflow seçmez;
+API'sine karşı kanıtlandı (~750 assertion). Kullanıcı asla workflow seçmez;
 intent'i doğal dilde verir, router deterministic eşleme yapar.
 
 | # | Workflow | Tetikleyici (intent sinyali) | Tip | Durum |
@@ -286,7 +286,7 @@ intent'i doğal dilde verir, router deterministic eşleme yapar.
 | 6 | [`code-review`](workflows/code-review.sm.yaml) | "bu PR'ı review et" | gatekeeping | ✅ MVP |
 | 7 | [`regression`](workflows/regression.sm.yaml) | Bir `known-failure` semptomu tekrarladı | prior-context-aware | ✅ MVP |
 | 8 | [`performance-problem`](workflows/performance-problem.sm.yaml) | "yavaş", gecikme/throughput şikayeti | cost-shaped | ✅ MVP |
-| 9 | `new-project` | yeşil alan projesi başlatma | constructive | ⬜ Planlandı |
+| 9 | `discovery-refresh` | yeşil alan projesi başlatma | constructive | ⬜ Planlandı |
 | 10 | `user-complaint` | kullanıcı bir başkasına kayıtlı bug bildirdi | reactive | ⬜ Planlandı |
 | 11 | `security-problem` | güvenlik açığı, şüpheli erişim | security | ⬜ Planlandı |
 | 12 | `release` | "bunu ship et", release kes | release engineering | ⬜ Planlandı |
@@ -317,7 +317,7 @@ Her MVP workflow'unun bir e2e driver kanıtı vardır:
 
 ## Skill kataloğu
 
-Toplam **17 skill** gerçek `SKILL.md` + YAML frontmatter olarak yazıldı
+Toplam **31 skill** gerçek `SKILL.md` + YAML frontmatter olarak yazıldı
 (ADR-0001 Agent Skills standardı). Her skill somut prosedür, araç entegrasyonu,
 doğrulama kriterleri ve hem happy-path hem failure-mode örneği içerir
 ([`CONTRIBUTING.md`](CONTRIBUTING.md) ve [`docs/evaluations/evaluation-strategy.md`](docs/evaluations/evaluation-strategy.md)
@@ -554,7 +554,7 @@ dosyayı sessizce düzenleyemez.
 
 [`DECISIONS.md`](DECISIONS.md) — her framework-seviyesi karar (özellikle
 `constitution/`'ı etkileyenler) ADR olarak kaydedilir. Sessiz değişiklik
-yasaktır (ADR-0008). Aşağıdaki tablo 23 ADR'nin kısa özetidir; tam gerekçe
+yasaktır (ADR-0008). Aşağıdaki tablo 25 ADR'nin kısa özetidir; tam gerekçe
 için ilgili ADR başlığına bakın.
 
 | ADR | Başlık | Öz |
@@ -610,6 +610,47 @@ pass'ında `git clone`/`gh api` erişimi yoktu — bkz. [`STATUS.md`](STATUS.md)
 bir reuse öncesi doğrulanmalı.
 
 ---
+
+
+
+## Hızlı Başlatma (--yarat / --entegre)
+
+### `--yarat [fikir]` — Sıfırdan proje oluştur
+
+```
+[repo linki veya zip] --yarat e-commerce API with Stripe
+```
+
+Sistem otomatik:
+1. `project-scaffolding` → dizin, config, git
+2. `project-onboarding` → discovery, memory
+3. `orchestrator` → specification → implementation → testing → code-review → release
+
+### `--entegre` — Mevcut projeye AIECP ekle
+
+```
+[repo linki veya zip] --entegre
+```
+
+Sistem: `init-aiecp.mjs` → discovery → kullanıcı devam eder.
+
+### Komut yoksa
+
+Agent kontrol eder: `.aiecp/project-intelligence.json` var mı?
+- Var → AIECP kurulu, devam et
+- Yok → sorar: "--yarat mı --entegre mi?"
+
+## Yeni Eklenen Özellikler (2026 Entegrasyonu)
+
+- **MCP adapter** — Model Context Protocol (Linux Foundation standardı, 10K+ server)
+- **Orchestrator workflow** — Loop engineering (workflow zincirleme, otonom döngü)
+- **Context engineering skill** — Uzun oturumlarda context sıkıştırma
+- **Visual regression skill** — Playwright ekran görüntüsü karşılaştırma (Phaser/Electron için)
+- **Self-healing skill** — Kırık selector otomatik onarımı (Playwright Healer)
+- **Project scaffolding skill** — Sıfırdan proje dizin/config oluşturma
+- **Memory persistence** — Evidence ve memory artık kalıcı (.aiecp/)
+- **Auto-activation** — AGENTS.md'de otomatik AIECP hook
+- **init-aiecp.mjs** — Tek komut kurulum: `npm run init`
 
 ## Lisans
 
