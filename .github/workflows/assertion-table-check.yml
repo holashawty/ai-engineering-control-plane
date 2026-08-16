@@ -1,0 +1,64 @@
+# AIECP CI — verifies that the assertion-count table in STATUS.md
+# matches the real harness output. Catches the drift problem
+# identified in ADR-0029 (4 cycles of stale counts in STATUS.md).
+#
+# What this workflow does:
+#   1. Builds all workspaces (discovery/cli, executor, adapters/agents).
+#   2. Runs `npm run count-assertions -- --check` — this runs every
+#      test harness (eval_runner.py, executor self-test, adapter
+#      self-test, all e2e-* drivers, all chat-output fixtures),
+#      renders the Markdown assertion table from real output, and
+#      compares it against the table currently in STATUS.md.
+#   3. If the tables differ (after timestamp normalization), the
+#      step fails with exit 1, blocking the PR.
+#
+# What this workflow does NOT do:
+#   - It does not run tests themselves separately (count-assertions
+#     already runs them as part of computing the table).
+#   - It does not gate on test PASS/FAIL — only on table-drift.
+#     If a test genuinely fails, count-assertions will show that
+#     fail count in the fresh table, but it won't fail the build
+#     by itself. (A separate `npm test` workflow should handle
+#     the pass/fail gate.)
+#
+# Contributor flow when this fails:
+#   - The error output shows the diff between the current and fresh
+#     tables.
+#   - Run `npm run count-assertions -- --write` locally.
+#   - Commit the regenerated STATUS.md.
+#   - Push again.
+
+name: assertion-table-check
+
+on:
+  pull_request:
+    paths:
+      - 'evaluations/**'
+      - 'executor/examples/e2e-*/**'
+      - 'adapters/agents/**'
+      - 'scripts/test-responses/**'
+      - 'scripts/validate-chat-output.mjs'
+      - 'scripts/count-assertions.mjs'
+      - 'STATUS.md'
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pyyaml
+        run: pip3 install pyyaml
+      - name: Install dependencies
+        run: npm install
+      - name: Build workspaces
+        run: npm run build
+      - name: Check assertion table is up to date
+        run: npm run count-assertions -- --check

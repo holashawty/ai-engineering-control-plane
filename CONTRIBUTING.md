@@ -17,6 +17,17 @@ has not started. See `docs/implementation-roadmap.md` for the phased plan and
    files will be rejected.
 4. Any reused or adapted code from an upstream project must be recorded in
    `NOTICE` with its license.
+5. **If you add or modify any test** (eval scenarios, e2e drivers, adapter
+   self-tests, chat-output fixtures), you MUST regenerate the assertion
+   table in `STATUS.md`:
+   ```bash
+   npm run count-assertions -- --write
+   ```
+   Then commit the regenerated `STATUS.md` together with your test changes.
+   The table is delimited by `<!-- AUTO-GENERATED -->` markers and is
+   verified by CI via `npm run count-assertions -- --check` — a stale table
+   will fail the build. See ADR-0029 for the rationale (this replaces the
+   prior hand-edited-count approach that drifted across 4 cycles).
 
 ## Reporting issues
 

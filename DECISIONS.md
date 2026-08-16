@@ -679,3 +679,256 @@ Every framework-level decision — especially anything touching
   - `CLAUDE.md` is still generated from `AGENTS.md` (the hook is
     in `AGENTS.md` source, so it appears in `CLAUDE.md` too).
 - **Status:** Decided 2026-08-16. Active.
+
+## ADR-0026 — `Decision.what` field vocabulary linter (deferred)
+
+- **Context:** The orchestrator's `evaluate-result` state detects
+  architectural conflicts by matching on the `what` field of
+  Decision entities — specifically the canonical string
+  `"architecture_constraint_conflict"` emitted by the
+  `architecture-design` skill (per `skills/architecture-design/
+  SKILL.md` step 7). The conflict-detection feedback loop
+  (`plan_revision_needed` → `route` → `project-planning` →
+  `architecture-design` re-run) depends on this string match
+  being exact. But `decision.schema.json`'s `what` field is a
+  free-form `type: string` with no enum constraint — same as
+  every other `what` value in the Evidence Model
+  (`"ai_proposal:apply_patch"`, `"workflow_routed:<name>"`,
+  `"root_cause_candidate:X"`, `"goal_decomposition:..."`, etc.).
+- **Problem:** If a future architecture-design skill emits
+  `"architecture_conflict_with_req"` or `"arch_constraint_conflict"`
+  (a plausible variant), the `evaluate-result` prefix-match
+  silently fails — no conflict is detected, no
+  `plan_revision_needed` fires, and the orchestrator proceeds to
+  `goal_not_yet_met` as if no conflict existed. This is the
+  "technically-valid-but-meaningless" failure mode the
+  Evidence Model is supposed to prevent (per
+  `skills/evidence-engineering/SKILL.md` step 2's note on
+  hollow evidence), but here it applies to the *consumer* of
+  the evidence, not the producer.
+- **Options considered:**
+  1. **Add enum to `decision.schema.json`** — rejected: would
+     require schema_version bump, migration of all existing
+     Decision documents, and rebuild of `discovery/cli`
+     validator. Also closes the door on future `what` values
+     without a coordinated schema change.
+  2. **Procedural linter** — a separate script
+     (`scripts/validate-what-vocabulary.mjs`) that maintains a
+     registry of canonical `what` values and warns when a
+     Decision's `what` field doesn't match any known vocabulary
+     entry. This is backwards-compatible (warnings, not errors)
+     and can be extended without schema churn.
+  3. **Do nothing** — rejected: the silent-break risk is real
+     and the critic's flag is recorded.
+- **Decision:** Adopt option 2 — add a procedural linter. The
+  linter is NOT YET IMPLEMENTED; this ADR records the decision
+  and the gap so it does not get lost in STATUS.md drift. When
+  implemented, the linter will:
+  - Read a `evidence/vocabulary/decision-what.json` registry
+    file listing every canonical `what` value with a brief
+    description of when each is emitted.
+  - Scan every Decision entity emitted by any workflow run
+    in `.aiecp/evidence/decision/`.
+  - Emit a WARNING (not an error) for any `what` value not in
+    the registry, naming the file and the unrecognized value.
+- **Status:** Decided 2026-08-16. Deferred implementation —
+  recorded here as an open gap, not a closed decision. The gap
+  was surfaced by an external critic (see conversation log) and
+  is tracked here per ADR-0018's policy of recording
+  known-but-deferred gaps as ADRs rather than letting them live
+  only in conversation context.
+
+## ADR-0027 — Misclassification detector hook for `classify-goal` (deferred)
+
+- **Context:** The orchestrator's `classify-goal` state emits a
+  `project_scale:small | medium | large` Decision based on
+  signals (user word count, `--yarat` flag presence, multi-
+  platform mention count, etc.). The thresholds are documented
+  in `workflows/orchestrator.sm.yaml` lines 223-255.
+- **Problem:** An external critic (see conversation log) noted
+  that word-count thresholds are fragile and that there is no
+  mechanism to detect when the classification was wrong in
+  hindsight. If a `small`-classified goal runs 5 workflow
+  iterations before terminating in `report`, that's an
+  empirical signal the goal was actually `medium` or `large` —
+  but nothing in the orchestrator currently records that
+  mismatch.
+- **Decision:** Add a misclassification detector hook to the
+  `report` state (the terminal state, after all iterations are
+  done). The hook:
+  - Compares the actual number of `execute-workflow` iterations
+    against the expected range for the classified scale:
+    - `small` should run 1 iteration (single-workflow)
+    - `medium` should run 1-3 iterations
+    - `large` should run 3+ iterations (planning chain + execution)
+  - If the actual count exceeds the expected range, emit a
+    `Validation` entity with `result: mismatch`, naming the
+    classified scale, the actual iteration count, and the
+    inferred-correct scale (e.g., "classified as small, ran 4
+    iterations — inferred correct scale: medium").
+  - This Validation is a learning signal for future runs (the
+    orchestrator's `report` state writes a `project` memory
+    entry; the misclassification Validation can be referenced
+    from future `classify-goal` Decisions in the same repo).
+- **Status:** Decided 2026-08-16. Deferred implementation —
+  recorded here as an open gap. Same rationale as ADR-0026:
+  recording the decision so the gap is auditable, not lost in
+  STATUS.md drift.
+
+## ADR-0028 — Skill-tier eval harness (deferred)
+
+- **Context:** The 4 planning skills added in this cycle
+  (`requirements-gathering`, `project-planning`,
+  `architecture-design`, `ux-design`) have NO skill-tier eval
+  scenarios. They are exercised only indirectly via the
+  orchestrator's workflow-tier scenarios
+  (`orchestrator-plan-revision-resolved`,
+  `orchestrator-plan-revision-limit-blocked`) and via
+  `executor/examples/e2e-orchestrator/drive-run.mjs`.
+- **Problem:** This is the original critic's Q3 finding —
+  "new code, no new tests" — only partially closed. The
+  workflow-tier scenarios prove the orchestrator correctly
+  routes to the planning skills and handles their outputs
+  (including the conflict signal), but they do NOT test the
+  planning skills' internal procedures (e.g., does
+  `requirements-gathering` actually produce a
+  `specs/requirements.md` with all required sections? does
+  `architecture-design` actually select a stack from the
+  constraints?).
+- **Decision:** Build a skill-tier eval harness separate from
+  `evaluations/eval_runner.py`. The skill-tier harness will:
+  - Drive each skill's procedure steps directly (not via a
+    workflow state machine).
+  - Assert on the file outputs the skill produces (e.g.,
+    `specs/requirements.md` exists AND has sections
+    `## User Stories`, `## MVP Scope`, `## Personas`).
+  - Assert on the Evidence entities the skill emits (e.g.,
+    a `Decision` with `what: "stack_selected:typescript"` for
+    `architecture-design`).
+- **Scope:** 4 skills × ~5 scenarios each = ~20 new scenarios.
+- **Status:** Decided 2026-08-16. Deferred implementation —
+  recorded here as the explicit known gap this cycle leaves
+  open. The critic's point that "next-cycle work" risks being
+  treated as "this-cycle done" is recorded here so future
+  STATUS updates cannot pretend the gap is closed.
+
+## ADR-0029 — STATUS.md assertion table is auto-generated, not hand-edited
+
+- **Context:** Four cycles of dialogue with an external critic
+  surfaced a recurring failure mode: STATUS.md contains assertion
+  counts that go stale because humans update them by hand. Across
+  cycles, the drift history was:
+  - "750 assertions" (wrong — closer to 786, but the aggregate
+    was not actually recomputed)
+  - "325+ assertions" (wrong — actually 786, the count was copied
+    from earlier STATUS.md without re-running components)
+  - "9 e2e drivers" (wrong — actually 16)
+  - "56 adapter assertions" (wrong — actually 58)
+  The critic's question at the end of cycle 4 — "is this
+  verification process going to stay manual forever? if so, in
+  2 months you'll have the same drift again" — identified this
+  as a structural problem, not a discipline problem.
+- **Decision:** The assertion-count table in `STATUS.md` is now
+  auto-generated by `scripts/count-assertions.mjs`. The table is
+  delimited by markers:
+  ```
+  <!-- AUTO-GENERATED by `node scripts/count-assertions.mjs --write`. DO NOT EDIT by hand. -->
+  ... table ...
+  <!-- END AUTO-GENERATED -->
+  ```
+  Any text between these markers is regenerated by the script
+  and will be overwritten on the next `--write` run. The script:
+  1. Actually runs each harness (`python3 evaluations/eval_runner.py`,
+     `npm test --workspace=executor`, `npm test --workspace=adapters/agents`,
+     every `executor/examples/e2e-*/drive-run.mjs`, every
+     `scripts/test-responses/*.md` via `validate-chat-output.mjs`).
+  2. Parses the actual output (PASS counts, FAIL counts, scenario
+     counts).
+  3. Renders a Markdown table with the real numbers.
+  4. Writes the table to STATUS.md between the markers.
+- **CI integration:** The script's `--check` mode runs all harnesses
+  and compares the freshly-computed table against what's currently
+  in STATUS.md. If they differ (after normalizing the timestamp
+  comment), exit 1 — this fails the build in CI. The intended use:
+  a GitHub Actions workflow (or pre-commit hook) runs
+  `npm run count-assertions -- --check` on every PR. If a contributor
+  adds a new test but forgets to regenerate STATUS.md, CI catches
+  it — the same way `npm test` catches a broken unit test.
+- **Why this is structural, not discipline-based:**
+  - Before ADR-0029: "remember to update STATUS.md after every test
+    addition" — a human-discipline rule that demonstrably failed
+    4 cycles in a row.
+  - After ADR-0029: the table is generated from real harness output;
+    a contributor cannot hand-edit it without the edit being caught
+    by `--check` on the next CI run.
+- **What does NOT change:**
+  - STATUS.md remains hand-edited for everything OUTSIDE the
+    AUTO-GENERATED markers (the narrative sections, the phase
+    descriptions, the ADR summary line at the top). Only the
+    assertion-count table is generated.
+  - The harnesses themselves are unchanged. The script does not
+    add tests or alter test behavior — it only runs and parses
+    them.
+- **What's NOT covered by this ADR (open gaps):**
+  - The "narrative" sections of STATUS.md (e.g., "23 ADRs",
+    "4 new planning skills") are still hand-edited and can still
+    drift. A future ADR could extend the auto-generation to those
+    counts too (e.g., `ls DECISIONS.md | grep -c "^## ADR-"`
+    for ADR count, `ls skills/ | wc -l` for skill count). For
+    now, only the assertion table is structural.
+  - The CI workflow file itself is not yet written. This ADR
+    records the decision; the workflow file is implementation
+    work that follows.
+- **Cycle 5 follow-ups (after external critic's Q1/Q2/Q3):**
+  - **Q1 (CI workflow syntax validated):** `actionlint v1.7.12`
+    was run against `.github/workflows/assertion-table-check.yml`
+    and reported zero errors — the YAML syntax is accepted by
+    GitHub Actions' parser. What is NOT yet verified: the
+    workflow has never been triggered by a real PR (the local
+    environment has no GitHub Actions runtime). The first real
+    push will surface runtime issues (e.g., a workspace build
+    dependency missing on `ubuntu-latest`) that syntax
+    validation cannot catch. This is a "verified-locally,
+    unverified-in-CI" state.
+  - **Q2 (new harness auto-discovery):** `count-assertions.mjs`
+    now auto-discovers new test components in 3 of 5 categories
+    without script edits:
+    - **e2e-* drivers:** `readdirSync(executor/examples/).filter(d
+      => d.name.startsWith("e2e-"))` — a new
+      `executor/examples/e2e-XXX/drive-run.mjs` is picked up
+      automatically.
+    - **chat-output fixtures:** `readdirSync(scripts/test-responses/).filter(f
+      => f.endsWith(".md"))` — a new `.md` file is picked up.
+    - **eval_runner.py scenarios:** handled by `eval_runner.py`
+      itself via its own scenario glob — a new
+      `evaluations/scenarios/XXX.yaml` is picked up.
+    - **npm workspace self-tests:** previously hardcoded to
+      `["executor", "adapters/agents"]`. Now reads `workspaces`
+      array from `package.json` at runtime, so a new workspace
+      added there is picked up automatically.
+    - **NEW test categories:** NOT auto-discovered. If a future
+      contributor adds a new kind of test harness (e.g., the
+      skill-tier harness from ADR-0028, or a benchmark suite),
+      `collectAll()` in `count-assertions.mjs` must be edited
+      to add the new component. This is the structural limit of
+      auto-discovery: the script can auto-discover new files
+      within known patterns, but cannot auto-discover new
+      patterns. Mitigation: any new test category should land
+      together with its `count-assertions.mjs` integration in
+      the same PR (CONTRIBUTING.md rule 5 already requires
+      regeneration when "any test" changes, which covers this).
+  - **Q3 (no-assertion script warning):** `runE2eDriver()` now
+    returns `status: "no-assertions"` when `okCount + failCount
+    === 0`. The script emits a WARNING to stderr listing every
+    no-assertion driver by name. The STATUS.md table's `notes`
+    column also lists them: "narrative-only: e2e-membership-bug".
+    A future contributor adding a narrative-only script will see
+    the WARNING in CI logs and can decide whether to add OK/FAIL
+    assertion lines or document why the script has none. This
+    makes the "0-assertion" status auditable rather than silent.
+- **Status:** Decided 2026-08-16. Implemented in
+  `scripts/count-assertions.mjs` (with cycle-5 follow-ups:
+  workspace auto-discovery, no-assertion WARNING, narrative-only
+  listing in table notes). Active — `--check` mode is ready to
+  be wired into CI; `actionlint` confirms workflow syntax is
+  valid.

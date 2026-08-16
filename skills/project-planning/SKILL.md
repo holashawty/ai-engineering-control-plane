@@ -56,10 +56,14 @@ a feedback loop: planning reads architecture, but architecture
 also reads planning (`architecture-design` reads
 `specs/plan.md`). The orchestrator's `evaluate-result` state
 detects when architectural constraints conflict with requirements
-(via the `conflicts_with_requirements: true` flag on the
-architecture-design Decision) and routes back to this skill via
-the `plan_revision_needed` transition — this is the **LIVING
-PLAN** rule (see below).
+(via the architecture-design Decision's `what` field being
+`"architecture_constraint_conflict"` — see
+`skills/architecture-design/SKILL.md` step 7 for why this is
+encoded in the `what` field rather than as a separate boolean
+field, due to `decision.schema.json`'s `additionalProperties:
+false`) and routes back to this skill via the
+`plan_revision_needed` transition — this is the **LIVING PLAN**
+rule (see below).
 
 **Distinct from `project-scaffolding`** (per
 `skills/project-scaffolding/SKILL.md`): scaffolding creates the

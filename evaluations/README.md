@@ -17,8 +17,16 @@ A fourth dimension: **question economy** — does the scenario reach
 
 ## Running the eval harness
 
+The harness drives the real `WorkflowRun` API (TypeScript), which
+lives in `executor/dist/`. That directory is gitignored (per
+ADR-0021's policy of not committing build artifacts, except
+`discovery/cli/dist/`). You MUST build the executor first:
+
 ```bash
-# Run all scenarios
+# Required once before first eval run, and after any executor/ change
+npm run build --workspace=executor
+
+# Then run evals:
 python3 evaluations/eval_runner.py
 
 # Run one workflow's scenarios
@@ -33,6 +41,16 @@ python3 evaluations/eval_runner.py --list
 # Show assertion details
 python3 evaluations/eval_runner.py --verbose
 ```
+
+If you see `ERR_MODULE_NOT_FOUND` for `executor/dist/run.js`, the
+build step above was skipped.
+
+Note: `npm run count-assertions` (per ADR-0029) does NOT auto-build.
+The `.github/workflows/assertion-table-check.yml` CI workflow runs
+`npm run build` as a separate step before
+`npm run count-assertions -- --check`, but if you run
+`count-assertions` locally without building first, you'll get the
+same `ERR_MODULE_NOT_FOUND`.
 
 ## Current coverage
 

@@ -1,0 +1,621 @@
+# Orchestrator workflow eval scenarios.
+#
+# These are the FIRST eval scenarios that exercise the orchestrator's
+# loop engineering (per ADR-0017 + the 2026 loop-engineering trend).
+# They cover the three structurally distinct paths through the
+# orchestrator's state graph:
+#
+#   1. HAPPY PATH — a 2-sub-goal decomposition runs two workflows
+#      back-to-back via the goal_not_yet_met back-edge, then
+#      terminates in report via goal_achieved. This is the
+#      degenerate case where every sub-goal succeeds on the first
+#      try and no plan revision is needed.
+#
+#   2. PLAN REVISION RESOLVED — the first architecture-design
+#      pass emits a `what: "architecture_constraint_conflict"`
+#      Decision, triggering the plan_revision_needed back-edge.
+#      The revised plan resolves the conflict; the second
+#      architecture-design pass emits `what: "architecture_ok"`,
+#      and the orchestrator proceeds to goal_achieved. This is
+#      the LIVING PLAN rule in action (skills/project-planning/
+#      SKILL.md): planning + architecture co-evolve via exactly
+#      one revision. The plan_revision_needed back-edge fires
+#      exactly once.
+#
+#   3. PLAN REVISION LIMIT — three successive
+#      architecture_constraint_conflict Decisions are emitted,
+#      each triggering plan_revision_needed (with a project-
+#      planning revision between each pair of conflicts). On
+#      the 3rd conflict's evaluate-result, the orchestrator
+#      MUST transition to blocked on plan_revision_limit_reached
+#      rather than emit a 3rd revised plan. This is the three-
+#      failure rule (mirrors systematic-debugging Phase 4.5) —
+#      the structural signal that the requirements are internally
+#      contradictory, not locally fixable. This scenario is the
+#      e2e proof that the loop limit transition (line 142 of
+#      workflows/orchestrator.sm.yaml) is not just a YAML line
+#      but an exercised, observable behavior.
+#
+# Together these scenarios add the FIRST assertions covering:
+#   - the orchestrator's back-edge (evaluate-result → route)
+#   - the plan_revision_needed transition
+#   - the plan_revision_limit_reached transition
+#   - the goal_decomposition Decision shape
+#   - the project_scale Decision shape
+#   - the project memory write at terminal report state
+
+- id: orchestrator-happy-path-2-subgoals
+  workflow: orchestrator
+  tier: workflow
+  description: "Happy path: 2-sub-goal decomposition runs two workflows via the goal_not_yet_met back-edge, terminates in report via goal_achieved"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-decomp-1
+        trace_ref: trace-orch-1
+        what: "goal_decomposition:bug-report(shipping);feature-request(batch-labels)"
+        why: "user goal names two distinct intents: fix shipping bug AND add batch labels feature"
+        validated: false
+        result: pending
+        evidence_refs: []
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-scale-1
+        trace_ref: trace-orch-1
+        what: "project_scale:medium"
+        why: "user word count 42, no --yarat flag, single-repo surface"
+        validated: false
+        result: pending
+        evidence_refs: []
+    - action: advance
+      on: goal_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-route-1
+        trace_ref: trace-orch-1
+        what: "workflow_routed:bug-report"
+        why: "first sub-goal is a shipping bug"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-decomp-1"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-exec-1
+        trace_ref: trace-orch-1
+        what: "child_workflow_outcome:bug-report:report"
+        why: "bug-report workflow terminated in report"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-orch-exec-1
+        trace_ref: trace-orch-1
+        ts: "2026-08-16T10:00:30Z"
+        kind: observation
+        source: "child:bug-report"
+        payload:
+          terminal_state: report
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-eval-1
+        trace_ref: trace-orch-1
+        what: "goal_evaluation:not_yet_met"
+        why: "bug-report sub-goal addressed; feature-request(batch-labels) sub-goal remains"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-orch-route-1", "decision-orch-exec-1"]
+    - action: advance
+      on: goal_not_yet_met
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-route-2
+        trace_ref: trace-orch-1
+        what: "workflow_routed:feature-request"
+        why: "second sub-goal is a new feature"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-decomp-1", "decision-orch-eval-1"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-exec-2
+        trace_ref: trace-orch-1
+        what: "child_workflow_outcome:feature-request:report"
+        why: "feature-request workflow terminated in report"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: event
+      data:
+        id: event-orch-exec-2
+        trace_ref: trace-orch-1
+        ts: "2026-08-16T10:01:30Z"
+        kind: observation
+        source: "child:feature-request"
+        payload:
+          terminal_state: report
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-eval-2
+        trace_ref: trace-orch-1
+        what: "goal_evaluation:achieved"
+        why: "both sub-goals addressed by workflows terminating in report"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-orch-route-2", "decision-orch-exec-2"]
+    - action: advance
+      on: goal_achieved
+    - action: writeMemory
+      type: project
+      data:
+        id: mem-project-orch-happy-1
+        type: project
+        schema_version: "1.0.0"
+        created_at: "2026-08-16T10:02:00Z"
+        source: "orchestrator run: orchestrator-happy-path-2-subgoals"
+        stack: ["typescript"]
+        layer: ["backend", "api"]
+        domain: "orchestrator-coordinated 2-workflow run (bug-report + feature-request)"
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    evidence_kinds: ["decision", "event"]
+    memory_types: ["project"]
+    min_log_entries: 10
+
+- id: orchestrator-plan-revision-resolved
+  workflow: orchestrator
+  tier: workflow
+  description: "LIVING PLAN rule: architecture-design emits 1 conflict -> plan_revision_needed -> project-planning revises -> 2nd architecture-design pass emits architecture_ok -> goal_achieved"
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-decomp-1
+        trace_ref: trace-orch-pr-1
+        what: "goal_decomposition:project-planning;architecture-design;feature-request"
+        why: "large greenfield project: --yarat flag present"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-scale-1
+        trace_ref: trace-orch-pr-1
+        what: "project_scale:large"
+        why: "--yarat flag present, multi-phase greenfield"
+        validated: false
+        result: pending
+    - action: advance
+      on: goal_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-route-1
+        trace_ref: trace-orch-pr-1
+        what: "workflow_routed:project-planning"
+        why: "large project: planning chain first"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-pr-decomp-1"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-exec-1
+        trace_ref: trace-orch-pr-1
+        what: "child_workflow_outcome:project-planning:report"
+        why: "project-planning produced specs/plan.md"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-eval-1
+        trace_ref: trace-orch-pr-1
+        what: "goal_evaluation:not_yet_met"
+        why: "planning done; architecture-design sub-goal remains"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-orch-pr-route-1", "decision-orch-pr-exec-1"]
+    - action: advance
+      on: goal_not_yet_met
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-route-2
+        trace_ref: trace-orch-pr-1
+        what: "workflow_routed:architecture-design"
+        why: "planning done; architecture next"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-pr-decomp-1", "decision-orch-pr-eval-1"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-arch-conflict-1
+        trace_ref: trace-orch-pr-1
+        what: "architecture_constraint_conflict"
+        why: "requirement 'offline-first' conflicts with PostgreSQL-only JSONB ops; plan's Phase 2 task depends on JSONB"
+        validated: false
+        result: pending
+        alternatives:
+          - option: "SQLite for offline-first, defer JSONB to Phase 2"
+            rejected_because: "would require rescoping photo metadata to Phase 2"
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-exec-2
+        trace_ref: trace-orch-pr-1
+        what: "child_workflow_outcome:architecture-design:report"
+        why: "architecture-design emitted conflict Decision"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-eval-2
+        trace_ref: trace-orch-pr-1
+        what: "goal_evaluation:plan_revision_needed"
+        why: "architecture-design emitted architecture_constraint_conflict; plan must be revised"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-orch-pr-route-2", "decision-orch-pr-exec-2", "decision-arch-conflict-1"]
+    - action: advance
+      on: plan_revision_needed
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-route-3
+        trace_ref: trace-orch-pr-1
+        what: "workflow_routed:project-planning"
+        why: "LIVING PLAN re-invocation: revise plan to resolve offline-first vs JSONB conflict"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-pr-decomp-1", "decision-orch-pr-eval-2"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-exec-3
+        trace_ref: trace-orch-pr-1
+        what: "child_workflow_outcome:project-planning:report"
+        why: "revised plan: photo metadata deferred to Phase 2, offline-first preserved"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-eval-3
+        trace_ref: trace-orch-pr-1
+        what: "goal_evaluation:not_yet_met"
+        why: "revised plan accepted; architecture-design re-run needed to confirm no further conflict"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-orch-pr-route-3", "decision-orch-pr-exec-3"]
+    - action: advance
+      on: goal_not_yet_met
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-route-4
+        trace_ref: trace-orch-pr-1
+        what: "workflow_routed:architecture-design"
+        why: "confirm revised plan has no conflict"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-pr-decomp-1", "decision-orch-pr-eval-3"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-arch-ok-1
+        trace_ref: trace-orch-pr-1
+        what: "architecture_ok"
+        why: "revised plan defers JSONB to Phase 2; offline-first preserved; no conflict"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-exec-4
+        trace_ref: trace-orch-pr-1
+        what: "child_workflow_outcome:architecture-design:report"
+        why: "architecture-design confirmed revised plan"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-pr-eval-4
+        trace_ref: trace-orch-pr-1
+        what: "goal_evaluation:achieved"
+        why: "plan + architecture co-evolved; no remaining conflicts; ready for execution"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-orch-pr-route-4", "decision-orch-pr-exec-4"]
+    - action: advance
+      on: goal_achieved
+  expected:
+    terminal_state: report
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    evidence_kinds: ["decision"]
+    min_log_entries: 12
+
+- id: orchestrator-plan-revision-limit-blocked
+  workflow: orchestrator
+  tier: workflow
+  description: "Three-failure rule: 3 successive architecture_constraint_conflict Decisions -> on the 3rd conflict's evaluate-result, orchestrator MUST transition to blocked on plan_revision_limit_reached (NOT a 3rd plan_revision_needed). 5 iterations: arch(conflict#1) -> planning(rev#1) -> arch(conflict#2) -> planning(rev#2) -> arch(conflict#3 -> LIMIT)."
+  steps:
+    - action: advance
+      on: intent_classified
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-decomp-1
+        trace_ref: trace-orch-lim-1
+        what: "goal_decomposition:project-planning;architecture-design"
+        why: "large project, planning + architecture"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-scale-1
+        trace_ref: trace-orch-lim-1
+        what: "project_scale:large"
+        why: "multi-phase greenfield"
+        validated: false
+        result: pending
+    - action: advance
+      on: goal_classified
+    # === ITERATION 1: route -> architecture-design (CONFLICT #1) ===
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-route-1
+        trace_ref: trace-orch-lim-1
+        what: "workflow_routed:architecture-design"
+        why: "1st architecture pass"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-lim-decomp-1"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-arch-conflict-lim-1
+        trace_ref: trace-orch-lim-1
+        what: "architecture_constraint_conflict"
+        why: "conflict #1: requirement A conflicts with constraint X"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-exec-1
+        trace_ref: trace-orch-lim-1
+        what: "child_workflow_outcome:architecture-design:report"
+        why: "emitted conflict #1"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-eval-1
+        trace_ref: trace-orch-lim-1
+        what: "goal_evaluation:plan_revision_needed"
+        why: "1st conflict; revise plan"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-arch-conflict-lim-1"]
+    - action: advance
+      on: plan_revision_needed
+    # === ITERATION 2: route -> project-planning (REVISION #1) ===
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-route-2
+        trace_ref: trace-orch-lim-1
+        what: "workflow_routed:project-planning"
+        why: "1st revision after conflict #1"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-lim-decomp-1", "decision-orch-lim-eval-1"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-exec-2
+        trace_ref: trace-orch-lim-1
+        what: "child_workflow_outcome:project-planning:report"
+        why: "revised plan #1"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-eval-2
+        trace_ref: trace-orch-lim-1
+        what: "goal_evaluation:not_yet_met"
+        why: "revision #1 done; re-run architecture-design to confirm"
+        validated: false
+        result: pending
+    - action: advance
+      on: goal_not_yet_met
+    # === ITERATION 3: route -> architecture-design (CONFLICT #2) ===
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-route-3
+        trace_ref: trace-orch-lim-1
+        what: "workflow_routed:architecture-design"
+        why: "2nd architecture pass after revision #1"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-lim-decomp-1", "decision-orch-lim-eval-2"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-arch-conflict-lim-2
+        trace_ref: trace-orch-lim-1
+        what: "architecture_constraint_conflict"
+        why: "conflict #2: revised plan still violates constraint X"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-exec-3
+        trace_ref: trace-orch-lim-1
+        what: "child_workflow_outcome:architecture-design:report"
+        why: "emitted conflict #2"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-eval-3
+        trace_ref: trace-orch-lim-1
+        what: "goal_evaluation:plan_revision_needed"
+        why: "2nd conflict; revise plan again"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-arch-conflict-lim-2"]
+    - action: advance
+      on: plan_revision_needed
+    # === ITERATION 4: route -> project-planning (REVISION #2) ===
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-route-4
+        trace_ref: trace-orch-lim-1
+        what: "workflow_routed:project-planning"
+        why: "2nd revision after conflict #2"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-lim-decomp-1", "decision-orch-lim-eval-3"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-exec-4
+        trace_ref: trace-orch-lim-1
+        what: "child_workflow_outcome:project-planning:report"
+        why: "revised plan #2"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-eval-4
+        trace_ref: trace-orch-lim-1
+        what: "goal_evaluation:not_yet_met"
+        why: "revision #2 done; re-run architecture-design to confirm"
+        validated: false
+        result: pending
+    - action: advance
+      on: goal_not_yet_met
+    # === ITERATION 5: route -> architecture-design (CONFLICT #3 -> LIMIT) ===
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-route-5
+        trace_ref: trace-orch-lim-1
+        what: "workflow_routed:architecture-design"
+        why: "3rd architecture pass after revision #2"
+        validated: true
+        result: accepted
+        evidence_refs: ["decision-orch-lim-decomp-1", "decision-orch-lim-eval-4"]
+    - action: advance
+      on: workflow_selected
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-arch-conflict-lim-3
+        trace_ref: trace-orch-lim-1
+        what: "architecture_constraint_conflict"
+        why: "conflict #3: 2nd revised plan STILL violates constraint; structural problem"
+        validated: false
+        result: pending
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-exec-5
+        trace_ref: trace-orch-lim-1
+        what: "child_workflow_outcome:architecture-design:report"
+        why: "3rd conflict emitted"
+        validated: false
+        result: pending
+    - action: advance
+      on: workflow_complete
+    # === LIMIT: 3rd conflict's evaluate-result MUST fire plan_revision_limit_reached, NOT plan_revision_needed ===
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-orch-lim-eval-5
+        trace_ref: trace-orch-lim-1
+        what: "goal_evaluation:plan_revision_limit_reached"
+        why: "3 successive conflicts; structural problem; refuse 3rd revision"
+        validated: false
+        result: pending
+        evidence_refs: ["decision-arch-conflict-lim-1", "decision-arch-conflict-lim-2", "decision-arch-conflict-lim-3"]
+    - action: advance
+      on: plan_revision_limit_reached
+  expected:
+    terminal_state: blocked
+    is_terminal: true
+    max_questions: 0
+    no_errors: true
+    evidence_kinds: ["decision"]
+    min_log_entries: 15
