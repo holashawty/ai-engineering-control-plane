@@ -1,6 +1,6 @@
 # Skills (Agent Skills format)
 
-**Status: 28 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend) + 2 new-verification (visual-regression, self-healing).**
+**Status: 35 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend) + 2 new-verification (visual-regression, self-healing) + 4 planning (requirements-gathering, project-planning, architecture-design, ux-design) + 9 other (orchestrator, incident, release, security-problem, discovery-refresh, unknown-failure, user-complaint, project-scaffolding, context-engineering).**
 
 All skills are written as real, procedural Agent Skills
 (`SKILL.md` + YAML frontmatter, per ADR-0001), not placeholders.
@@ -93,6 +93,91 @@ All skills are written as real, procedural Agent Skills
   improvement`, `regression-protect` states. Cites profiler-
   commands-per-language reference (Node `--prof`, Python `cProfile`,
   Go `pprof`, Swift Instruments, Rust `cargo-flamegraph`).
+
+## Planning skills (SDLC gap-fill)
+
+These four skills fill the "Requirements → Planning → Architecture → UX"
+gap in AIECP's SDLC coverage. They are invoked by the orchestrator's
+`classify-goal` state when it detects `project_scale: large` (per
+`workflows/orchestrator.sm.yaml` and `skills/orchestrator/SKILL.md`):
+a `small` goal skips all four; a `medium` goal invokes only
+`requirements-gathering`; a `large` goal invokes the full chain. Each
+follows the established skill format (frontmatter + When-to-use +
+Procedure with real evidence-schema citations + Tool integration +
+Validation criteria + Examples with happy path + failure mode) and
+produces Evidence Model artifacts (`Decision`/`Trace`/`Event`) that
+downstream skills cite. Novel to AIECP; no upstream equivalent found
+in `docs/research.md`.
+
+**File-level contract (non-negotiable):**
+
+| File | Who WRITES | Who READS |
+|---|---|---|
+| `specs/requirements.md` | requirements-gathering | planning, arch, ux |
+| `specs/plan.md` | project-planning | arch, ux |
+| `specs/tasks.md` | project-planning | arch, ux |
+| `specs/contracts.md` | architecture-design | planning |
+| `specs/invariants.md` | architecture-design | planning |
+| `specs/architecture.md` | architecture-design | (new file) |
+| `specs/ux/` (new dir) | ux-design | arch, frontend |
+
+- [`requirements-gathering/`](requirements-gathering/SKILL.md) —
+  the **human-intent discovery** layer. Use at the very start of
+  a `--yarat` session or when a user describes a new
+  feature/project. Gathers requirements through structured
+  clarifying questions (budget: 3), writes user stories in
+  Given/When/Then format, defines MVP scope (in/out/Phase 2+),
+  identifies 1-3 personas, suggests monetization angles. Writes
+  `specs/requirements.md`. Distinct from `project-onboarding`
+  (which discovers the TECHNICAL stack); this skill discovers the
+  HUMAN intent.
+- [`project-planning/`](project-planning/SKILL.md) — the
+  **decomposition** layer. Use after requirements-gathering.
+  Converts requirements into a phased development plan (MVP →
+  v1.0 → v1.1 → ...) with modular task breakdown, dependency
+  graph, risk assessment, and timeline estimate. Produces a
+  LIVING plan that gets updated after each phase (orchestrator's
+  `evaluate-result` state on `plan_revision_needed`). Writes
+  `specs/plan.md` + `specs/tasks.md`. Distinct from
+  `specification` (which provides spec TEMPLATES per ADR-0002);
+  this skill FILLS those templates with content.
+- [`architecture-design/`](architecture-design/SKILL.md) — the
+  **technical-decision** layer. Use after project-planning.
+  Selects technology stack based on requirements and plan,
+  designs system architecture (monolith/microservice/serverless),
+  database schema, API contracts, and deployment topology. Can
+  trigger `plan_revision_needed` if architectural constraints
+  conflict with requirements (emits Decision with
+  `what: "architecture_constraint_conflict"`, encoding the
+  logical `conflicts_with_requirements: true` intent in the
+  `what` field because `decision.schema.json`'s
+  `additionalProperties: false` forbids a separate boolean).
+  Writes `specs/contracts.md` + `specs/invariants.md` +
+  `specs/architecture.md` (new). Distinct from `specification`
+  (which writes spec TEMPLATES); this skill makes architectural
+  DECISIONS.
+- [`ux-design/`](ux-design/SKILL.md) — the **design-decision**
+  layer. Use after architecture-design (or in parallel for
+  medium-scale projects). Designs user experience: wireframes
+  (text-based ASCII art — diff-able, accessible, schema-checkable),
+  user flows (entry → key actions → exit per persona), journey
+  maps (emotional/functional journey across the product), design
+  system basics (colors with WCAG contrast ratios, typography,
+  spacing, component library). Writes `specs/ux/wireframes.md` +
+  `specs/ux/flows.md` + `specs/ux/design-system.md`. Distinct
+  from `frontend` (which is code-writing discipline: accessibility,
+  responsive); this skill is DESIGN decision-making.
+
+The four skills form a feedback loop with the orchestrator:
+`architecture-design`'s `architecture_constraint_conflict`
+Decision triggers the orchestrator's `evaluate-result → route on:
+plan_revision_needed` transition → `project-planning` revises
+`specs/plan.md` → `architecture-design` re-runs. Maximum 3 plan
+revision loops (mirrors `systematic-debugging`'s three-failure
+rule, Phase 4.5); on the 4th, the orchestrator transitions to
+`blocked` on `plan_revision_limit_reached` — the empirical
+signal that the requirements/architecture conflict is structural,
+not local.
 
 ## Domain skills (cross-cutting)
 

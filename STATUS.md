@@ -558,4 +558,4 @@ adapter-aware safety gate handling (chat=auto-confirm, chat-sandbox
 requires explicit authorization via aiecp:confirm or --user-prompt).
 Also added already-terminal violation handling (catches the "extra
 block past terminal" bug from the 4th test). 23 ADRs, 9 e2e drivers,
-325+ assertions. Next: 5th ChatGPT test with the fixed harness.*
+325+ assertions. SDLC planning gap filled: 4 new planning skills (requirements-gathering, project-planning, architecture-design, ux-design) + orchestrator plan_revision loop.*

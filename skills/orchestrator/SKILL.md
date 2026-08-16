@@ -157,6 +157,65 @@ NOT proceed to `route` against an empty decomposition — a
 loop with no sub-goals is structurally an infinite loop, and
 the only correct outcome is `blocked`.
 
+**Project scale detection (mandatory, in addition to the
+decomposition above).** `classify-goal` MUST also determine a
+`project_scale: small | medium | large` classification and emit
+it as a SEPARATE `Decision` with `what: "project_scale:small"`
+(or `:medium` / `:large`), `validated: false`, `result:
+"pending"`. This Decision is distinct from the
+`goal_decomposition:...` Decision — the decomposition says WHAT
+sub-goals to chain; the scale says HOW MANY planning phases to
+insert before the execution workflows. The four planning skills
+(`skills/requirements-gathering/`, `skills/project-planning/`,
+`skills/architecture-design/`, `skills/ux-design/`) exist to
+serve the `large` case; for `small` and `medium` they are
+skipped to avoid over-process on self-specifying requests.
+
+**Scale signals (inspected, not recalled — per `tool-use-
+discipline` and constitution §8):**
+
+- **small** — user word count < 20, no `--yarat` flag present,
+  no multi-platform mention, single existing-repo surface
+  named. Example: "fix the shipping bug" (5 words, no --yarat,
+  one surface). Routing: SKIP all planning phases; go directly
+  to the execution workflow (`bug-report` / `feature-request` /
+  `change-request` / `refactor`) the decomposition's single
+  sub-goal dictates. The request is self-specifying.
+- **medium** — user word count 20-100, no `--yarat` flag, no
+  multi-platform mention. Example: "add a CSV export endpoint
+  for the items table with date-range filtering and async
+  generation for large exports" (~25 words, no --yarat, one
+  surface, existing repo). Routing: `requirements-gathering`
+  → execution workflow (typically `feature-request` or
+  `change-request`). SKIP `project-planning`, `architecture-
+  design`, and `ux-design` — the existing repo's architecture
+  and design system already constrain the work, and a medium-
+  scale feature does not warrant re-planning them.
+- **large** — user word count > 100, OR `--yarat` flag present,
+  OR multi-platform mention ("web and mobile", "iOS and
+  Android"). Example: a `--yarat` session "build me a plant-
+  tracking app with web + mobile, photo log, watering schedule,
+  and household sharing" (~20 words but --yarat + multi-platform
+  → large). Routing: the FULL planning chain — `requirements-
+  gathering` → `project-planning` → `architecture-design` →
+  `ux-design` → execution workflows (`feature-request` for
+  each MVP user story) → ...
+
+The scale Decision's `evidence_refs` MUST point at the
+inspection events that informed the classification (the word-
+count probe `echo "$GOAL" | wc -w`, the `--yarat` flag check
+`echo "$ARGS" | grep -- '--yarat'`, the multi-platform mention
+scan `echo "$GOAL" | grep -iE 'mobile|ios|android|web.*and'`).
+A scale classification asserted from "this feels like a small
+request" is a constitution §8 violation — the signals must be
+inspected, not recalled.
+
+The scale is recorded so that downstream `evaluate-result`
+iterations and the terminal `report` state can cite which
+planning phases were (or were not) invoked. A `large` goal
+that skipped `architecture-design` is a routing bug this
+Decision makes auditable.
+
 ### 2. Route (state: `route`)
 
 Select the next workflow to execute, from the remaining
@@ -307,6 +366,63 @@ array MUST contain:
   `blocked` on `goal_unachievable` with a precise gap naming
   which sub-goal could not be addressed.
 
+**Plan revision handling (the LIVING PLAN feedback loop).** In
+ADDITION to the three goal-evaluation outcomes above, this
+state MUST check whether the just-executed workflow emitted a
+`Decision` whose `what` field is `architecture_constraint_conflict`
+(the `architecture-design` skill's canonical conflict signal,
+encoding the logical `conflicts_with_requirements: true` intent
+— see `skills/architecture-design/SKILL.md` step 7 for why this
+is encoded in the `what` field rather than as a separate boolean
+field, due to `decision.schema.json`'s `additionalProperties:
+false`). If such a Decision was emitted, transition to `route`
+on `plan_revision_needed` INSTEAD OF `goal_not_yet_met` — the
+goal is not "not yet met" in the sense of a remaining sub-goal;
+the goal's PLAN needs revision to account for the architectural
+constraint that conflicted with a requirement. `route` will then
+select `project-planning` (re-invoked per its LIVING PLAN rule,
+see `skills/project-planning/SKILL.md`) to update `specs/plan.md`,
+after which `architecture-design` re-runs to confirm the revised
+plan has no further conflicts.
+
+This back-edge is the structural feature that makes planning +
+architecture a *co-evolution* rather than a waterfall: when
+architecture surfaces a constraint the requirements did not
+account for, the plan is revised, and architecture re-evaluates
+against the revised plan. Without this back-edge, an
+architectural conflict would force a `blocked` outcome and a
+human re-plan; with it, the orchestrator drives the revision
+loop autonomously (the "loop engineering" pattern applied to
+the planning/architecture boundary, not just the workflow-
+execution boundary).
+
+**Maximum plan revision loops: 3 (the three-failure rule,
+mirrored from `systematic-debugging` Phase 4.5).** After the
+3rd `plan_revision_needed` transition, transition to `blocked`
+on `plan_revision_limit_reached` INSTEAD of routing back to
+`route` for a 4th revision. Three rejected architectural
+candidates is the empirical signal that the problem is
+structural (the requirements are internally contradictory, or
+the architectural constraints are mutually exclusive), not
+local. The blocked report MUST name (a) the three conflicts
+that triggered the revisions, (b) why each revised plan did
+not resolve the conflict, (c) what the user should do next
+(rephrase the requirements to remove the contradiction, or
+relax one of the conflicting constraints, or accept that the
+goal is unachievable with the available stack).
+
+This mirrors `systematic-debugging`'s three-failure rule
+exactly: that skill stops emitting new root-cause candidates
+after three have been tested and rejected, because three
+failures in a row is the empirical signal that the problem is
+architectural, not local. Here, three plan-revision failures
+in a row is the empirical signal that the requirements/
+architecture conflict is structural, not a planning bug.
+Continuing past 3 is the failure mode the
+`plan_revision_limit_reached` transition exists to prevent —
+exactly as `systematic-debugging`'s three-failure rule prevents
+a 4th speculative fix layered on top of 3 already-failed ones.
+
 **Loop boundedness.** The back-edge to `route` is bounded by
 the decomposition's finite sub-goal count: each pass through
 `route` consumes one sub-goal (the one whose workflow was
@@ -376,6 +492,22 @@ only if:
   decomposition Decision with no `evidence_refs` is a hollow
   plan, the same hollow-evidence failure mode
   `evidence-engineering` step 2 exists to prevent.
+- The `classify-goal` state ALSO emits a separate
+  `project_scale:small|medium|large` Decision with
+  `validated: false`, `result: "pending"`, and
+  `evidence_refs` pointing at the inspection events that
+  informed the scale classification (word-count probe,
+  `--yarat` flag check, multi-platform mention scan). A
+  scale Decision with no `evidence_refs` (classification
+  asserted from "this feels small") is a constitution §8
+  violation.
+- The scale classification drives routing: a `small` goal
+  skips all four planning skills; a `medium` goal invokes
+  only `requirements-gathering` before the execution
+  workflow; a `large` goal invokes the full planning chain
+  (`requirements-gathering` → `project-planning` →
+  `architecture-design` → `ux-design` → execution). A `large`
+  goal routed without the planning chain is a routing bug.
 - The `route` `Decision.what` field uses the
   `workflow_routed:<workflow-name>` form (the same form
   `unknown-failure`'s `route-or-block` uses — but here the
@@ -396,6 +528,15 @@ only if:
   `goal_evaluation:<achieved|not_yet_met|unachievable>` form.
   The `evidence_refs` array contains BOTH the `route` Decision
   id AND the `execute-workflow` Decision id.
+- The `evaluate-result` state checks for the
+  `architecture_constraint_conflict` what-field on the just-
+  executed workflow's emitted Decision, and if present,
+  transitions on `plan_revision_needed` (NOT `goal_not_yet_met`)
+  — the LIVING PLAN feedback loop. After the 3rd
+  `plan_revision_needed`, it transitions on
+  `plan_revision_limit_reached` to `blocked` rather than emit
+  a 4th revised plan — mirroring `systematic-debugging`'s
+  three-failure rule (Phase 4.5).
 - If the workflow terminates in `report`, the `report` state
   emits a final `Decision` with `what:
   "goal_achieved:<summary>"`, `validated: true`, `result:

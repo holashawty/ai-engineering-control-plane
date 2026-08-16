@@ -470,3 +470,130 @@ each entry must additionally record:
   adapted or copied.
 
 
+- **`skills/requirements-gathering/SKILL.md`** — novel to
+  AIECP. The human-intent discovery layer: gathers requirements
+  through structured clarifying questions (budget: 3, larger than
+  most AIECP skills because elicitation is fundamentally
+  conversational), writes user stories in Given/When/Then format
+  (the BDD standard, per spec-kit's `spec.template.md` reference
+  in `skills/specification/SKILL.md` — the shape is widely-used,
+  the procedure wrapping it is AIECP-original), defines MVP scope
+  (in / out / Phase 2+), identifies 1-3 user personas, and
+  suggests monetization angles. The five-dimension elicitation
+  framework (target platform, user type, scale, monetization
+  model, timeline) and the verbatim-capture-first rule (step 1,
+  mirroring `systematic-debugging`'s "locate evidence before
+  forming a theory") are AIECP-original, derived from the
+  Evidence Model's `Decision`/`Trace`/`Event` entities and
+  `constitution/constitution.md` §4 (question economy). No
+  upstream code or prose was adapted or copied. The skill fills
+  the "requirements" gap in AIECP's SDLC coverage (see
+  `skills/README.md`'s "Planning skills (SDLC gap-fill)"
+  section); prior to this skill, the catalog went directly from
+  `project-onboarding` (technical discovery of an existing repo)
+  to `specification` (authoring behavioral contracts) with no
+  step for discovering what the human actually wants.
+
+- **`skills/project-planning/SKILL.md`** — novel to AIECP. The
+  decomposition layer: converts `specs/requirements.md` (from
+  `requirements-gathering`) into a phased development plan with
+  modular task breakdown, dependency graph (ASCII-rendered,
+  surfacing the critical path), risk assessment (3-7 risks with
+  concrete mitigations, not "hope it doesn't happen"), and the
+  independent-testability rule (each module's tests run in
+  isolation, not only as part of the full suite — making the
+  dependency graph honest about cross-task test-time
+  dependencies). The LIVING PLAN rule — re-invoked on the
+  orchestrator's `plan_revision_needed` transition, bounded by
+  the `plan_revision_limit_reached` three-failure cap mirroring
+  `systematic-debugging` Phase 4.5 — is AIECP-original, derived
+  from the orchestrator's back-edge pattern
+  (`evaluate-result → route`) applied to the planning/architecture
+  boundary rather than the workflow-execution boundary. The phase
+  decomposition convention (Phase 0 Foundation → Phase 1 MVP →
+  Phase 2 v1.0 → ...) is widely-used in software engineering; the
+  specific procedure wrapping it (the file-level contract with
+  `specs/plan.md` + `specs/tasks.md`, the append-not-overwrite
+  rule per ADR-0002 "plan accrues", the `Decision` with `what:
+  "plan_created"` / `what: "plan_revised:<reason>"`) is
+  AIECP-original. No upstream code or prose was adapted or copied.
+
+- **`skills/architecture-design/SKILL.md`** — novel to AIECP.
+  The technical-decision layer: selects technology stack,
+  designs system architecture (monolith/microservice/serverless
+  with the modular-monolith default unless a genuine forcing
+  function is present), database schema, API contracts, and
+  deployment topology. The conflict-detection step (step 7) —
+  emitting a `Decision` with `what:
+  "architecture_constraint_conflict"` when architectural
+  constraints conflict with requirements, triggering the
+  orchestrator's `plan_revision_needed` feedback loop — is
+  AIECP-original and the structural feature that makes planning
+  + architecture a co-evolution rather than a waterfall. The
+  encoding of the logical `conflicts_with_requirements: true`
+  signal in the `what` field (rather than as a separate boolean
+  field) is a deliberate schema-stability choice:
+  `evidence/schema/decision.schema.json`'s
+  `additionalProperties: false` forbids adding new fields, so
+  the conflict flag is encoded in the `what` string for the
+  orchestrator to match on. The recency-verification discipline
+  for stack-version claims (per `constitution/constitution.md`
+  §8 and `skills/recency-verification/SKILL.md`) is cited, not
+  re-implemented. No upstream code or prose was adapted or
+  copied. The skill writes `specs/architecture.md` (new file,
+  not in the original ADR-0002 spec-kit family — added by this
+  skill as the architectural analogue of `specs/plan.md`), plus
+  fills `specs/contracts.md` and `specs/invariants.md` from
+  their existing ADR-0002 templates (the templates are spec-kit's
+  verbatim upstream artifacts per ADR-0018 and are NOT modified
+  by this skill — only filled with project-specific content).
+
+- **`skills/ux-design/SKILL.md`** — novel to AIECP. The
+  design-decision layer: designs user flows (entry → key actions
+  → exit per persona, per user story), wireframes (text-based
+  ASCII art — deliberately NOT image wireframes, because text
+  wireframes are diff-able in git, accessible to screen-reader-
+  using designers, and schema-checkable via `Expected` with
+  `source_ref` pointing at `specs/ux/wireframes.md#Wireframe-N`),
+  journey maps (the emotional/functional journey table surfacing
+  pain points and opportunities per-screen wireframes miss), and
+  design system basics (color palette with WCAG contrast ratios
+  verified at design time per `skills/frontend/SKILL.md` step 8,
+  typography with modular type scale, spacing with base unit +
+  scale, component library basics). The text-wireframe choice
+  (over Figma/Sketch images) is AIECP-original and motivated by
+  the Evidence Model's `source_ref` requirement: a wireframe that
+  cannot be cited by an `Expected` is a design no `verify` state
+  can validate against. The accessibility-at-design-time rule
+  (each interactive element in each wireframe has an accessible
+  name, role, and keyboard-reachability note — not deferred to
+  `frontend` implementation) is AIECP-original, derived from
+  `skills/frontend/SKILL.md` step 3's accessibility-invariant
+  `Expected` discipline pulled upstream to design time. No
+  upstream code or prose was adapted or copied.
+
+- **`workflows/orchestrator.sm.yaml` (plan_revision_needed +
+  plan_revision_limit_reached transitions) and
+  `skills/orchestrator/SKILL.md` (project_scale detection +
+  LIVING PLAN feedback loop + three-failure cap)** — novel to
+  AIECP, extending the existing orchestrator (already attributed
+  above). Two new transitions: `evaluate-result → route on:
+  plan_revision_needed` (the LIVING PLAN back-edge, structurally
+  parallel to the existing `goal_not_yet_met` back-edge but
+  triggered by `architecture-design`'s `architecture_constraint_
+  conflict` Decision rather than a remaining sub-goal) and
+  `evaluate-result → blocked on: plan_revision_limit_reached`
+  (the three-failure cap, mirroring `systematic-debugging`'s
+  Phase 4.5 three-failure rule — three rejected architectural
+  candidates is the empirical signal that the requirements/
+  architecture conflict is structural, not local). The
+  `classify-goal` state's new `project_scale: small|medium|large`
+  Decision (with inspected signals: word count, `--yarat` flag,
+  multi-platform mention — per `tool-use-discipline` and
+  constitution §8, derived from inspection not recall) drives
+  routing: `small` skips all four planning skills; `medium`
+  invokes only `requirements-gathering`; `large` invokes the
+  full planning chain. No upstream code or prose was adapted or
+  copied; the three-failure rule is cited by reference to
+  `skills/systematic-debugging/SKILL.md` (which itself adapts the
+  concept from obra/superpowers, already attributed above).

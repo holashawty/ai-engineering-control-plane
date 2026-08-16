@@ -112,6 +112,34 @@ transitions:
   - { from: evaluate-result, to: route, on: goal_not_yet_met }
   - { from: evaluate-result, to: report, on: goal_achieved }
   - { from: evaluate-result, to: blocked, on: goal_unachievable }
+  # PLAN REVISION BACK EDGE — when the just-executed workflow
+  # emitted a Decision with `what: "architecture_constraint_
+  # conflict"` (the architecture-design skill's conflict
+  # signal, encoding the logical conflicts_with_requirements:
+  # true intent), the orchestrator routes back to `route` on
+  # `plan_revision_needed` so that `project-planning` can revise
+  # `specs/plan.md` to account for the architectural constraint
+  # that conflicted with a requirement. This is the LIVING PLAN
+  # feedback loop: planning + architecture are not a waterfall
+  # but a co-evolution, and this back-edge is the structural
+  # feature that makes them so. See `skills/project-planning/
+  # SKILL.md`'s LIVING PLAN rule and `skills/architecture-design/
+  # SKILL.md` step 7 for the conflict-detection mechanism.
+  - { from: evaluate-result, to: route, on: plan_revision_needed }
+  # PLAN REVISION LIMIT — mirrors systematic-debugging's
+  # three-failure rule (Phase 4.5 of that skill). After the 3rd
+  # `plan_revision_needed` transition without producing a plan
+  # that architecture-design can accept without conflict, the
+  # orchestrator transitions to `blocked` rather than emit a
+  # 4th revised plan. Three rejected architectural candidates is
+  # the empirical signal that the problem is structural (the
+  # requirements are internally contradictory, or the
+  # architectural constraints are mutually exclusive), not
+  # local. Continuing past 3 is the failure mode this transition
+  # exists to prevent, exactly as systematic-debugging's three-
+  # failure rule prevents a 4th speculative fix layered on top
+  # of 3 already-failed ones.
+  - { from: evaluate-result, to: blocked, on: plan_revision_limit_reached }
 
 state_detail:
   intake:
@@ -179,6 +207,64 @@ state_detail:
       contributes), transition to `blocked` with
       `goal_too_ambiguous` and a precise gap naming what
       information would have made the goal decomposable.
+
+      **Project scale detection (mandatory).** In ADDITION to
+      the goal decomposition above, `classify-goal` MUST
+      determine a `project_scale: small | medium | large`
+      classification and emit it as a separate `Decision` with
+      `what: "project_scale:small"` (or `:medium` / `:large`),
+      `validated: false`, `result: "pending"`. This Decision is
+      distinct from the `goal_decomposition:...` Decision — the
+      decomposition says WHAT sub-goals to chain; the scale says
+      HOW MANY planning phases to insert before the execution
+      workflows. The scale classification drives routing as
+      follows:
+
+        - **small** — the request is short and single-intent
+          (a one-line bug report, a one-line feature tweak).
+          Signals: user word count < 20, no `--yarat` flag, no
+          multi-platform mention, single existing-repo surface
+          named. Routing: SKIP all planning phases; go directly
+          to the execution workflow (`bug-report` / `feature-
+          request` / `change-request` / `refactor` as the
+          decomposition's single sub-goal dictates). No
+          `requirements-gathering`, no `project-planning`, no
+          `architecture-design`, no `ux-design` — the request is
+          self-specifying.
+        - **medium** — the request is a substantive feature or
+          multi-step change but not a greenfield project.
+          Signals: user word count 20-100, no `--yarat` flag, no
+          multi-platform mention. Routing: `requirements-
+          gathering` → execution workflow (typically
+          `feature-request` or `change-request`). SKIP
+          `project-planning`, `architecture-design`, and
+          `ux-design` — the existing repo's architecture and
+          design system already constrain the work, and a
+          medium-scale feature does not warrant re-planning them.
+        - **large** — the request is a greenfield project, a
+          major multi-phase effort, or spans multiple platforms.
+          Signals: user word count > 100, OR `--yarat` flag
+          present, OR multi-platform mention ("web and mobile",
+          "iOS and Android"). Routing: the FULL planning chain —
+          `requirements-gathering` → `project-planning` →
+          `architecture-design` → `ux-design` → execution
+          workflows (`feature-request` for each MVP user story)
+          → ... This is the case the four planning skills
+          (`skills/requirements-gathering/`, `skills/project-
+          planning/`, `skills/architecture-design/`, `skills/ux-
+          design/`) exist to serve.
+
+      The scale classification is recorded so that downstream
+      `evaluate-result` iterations and the terminal `report`
+      state can cite which planning phases were (or were not)
+      invoked for this goal. A `large` goal that skipped
+      `architecture-design` is a routing bug this Decision makes
+      auditable. The scale Decision's `evidence_refs` MUST point
+      at the inspection events that informed the classification
+      (the word-count probe, the `--yarat` flag check, the
+      multi-platform mention scan) — per `tool-use-discipline`
+      and constitution §8, the classification is derived from
+      inspected signals, not recalled patterns.
     emits_evidence: [decision]
     reads_memory: [project, known-failure, environment]
 
@@ -280,6 +366,48 @@ state_detail:
           gap names a sub-goal that cannot be addressed by any
           remaining workflow in the catalog. Transition to
           `blocked`.
+
+      **Plan revision handling (the LIVING PLAN feedback
+      loop).** In ADDITION to the three goal-evaluation outcomes
+      above, this state MUST check whether the just-executed
+      workflow emitted a `Decision` whose `what` field is
+      `architecture_constraint_conflict` (the `architecture-
+      design` skill's canonical conflict signal, encoding the
+      logical `conflicts_with_requirements: true` intent —
+      see `skills/architecture-design/SKILL.md` step 7 for why
+      this is encoded in the `what` field rather than as a
+      separate boolean, due to `decision.schema.json`'s
+      `additionalProperties: false`). If such a Decision was
+      emitted, transition to `route` with `on:
+      plan_revision_needed` INSTEAD OF `goal_not_yet_met` —
+      the goal is not "not yet met" in the sense of a remaining
+      sub-goal; the goal's PLAN needs revision to account for
+      the architectural constraint that conflicted with a
+      requirement. `route` will then select `project-planning`
+      (re-invoked per its LIVING PLAN rule) to update
+      `specs/plan.md`, after which `architecture-design` re-runs
+      to confirm the revised plan has no further conflicts.
+
+      **Maximum plan revision loops: 3.** After the 3rd
+      `plan_revision_needed` transition, transition to
+      `blocked` with `on: plan_revision_limit_reached` INSTEAD
+      of routing back to `route` for a 4th revision. This
+      mirrors `systematic-debugging`'s three-failure rule
+      (Phase 4.5 of that skill): three rejected architectural
+      candidates is the empirical signal that the problem is
+      structural (the requirements are internally contradictory,
+      or the architectural constraints are mutually exclusive),
+      not local. The blocked report MUST name (a) the three
+      conflicts that triggered the revisions, (b) why each
+      revised plan did not resolve the conflict, (c) what the
+      user should do next (rephrase the requirements to remove
+      the contradiction, or relax one of the conflicting
+      constraints, or accept that the goal is unachievable with
+      the available stack). Continuing past 3 revisions is the
+      failure mode the `plan_revision_limit_reached` transition
+      exists to prevent — exactly as `systematic-debugging`'s
+      three-failure rule prevents a 4th speculative fix layered
+      on top of 3 already-failed ones.
 
       The back-edge to `route` is bounded by the
       decomposition's finite sub-goal count: each pass through

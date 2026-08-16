@@ -1,6 +1,6 @@
 # Workflow Router
 
-**Status: Phase 1 — eight runnable workflows.**
+**Status: Phase 1 — fifteen runnable workflows.**
 
 Deterministic mapping from (intent classification, repository state) to a
 workflow. Per docs/workflow-model.md, the user never selects a workflow
