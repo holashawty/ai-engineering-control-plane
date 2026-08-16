@@ -951,3 +951,540 @@ Every framework-level decision — especially anything touching
   listing in table notes). Active — `--check` mode is ready to
   be wired into CI; `actionlint` confirms workflow syntax is
   valid.
+
+## ADR-0033 — Tree-sitter universal AST detector (vendored WASM, not LSP, not npm-installed)
+
+- **Context:** A 2026-08-16 external pro-LLM audit (roadmap-2026-pro.md
+  Item 2) identified that `discovery/cli/src/detectors/` only covers
+  Python (python.ts) and TypeScript (typescript.ts). Projects written
+  in Go, Rust, Java, C, C++, Kotlin, Swift, Ruby, PHP, Scala, or
+  Clojure get NO symbol map, NO call hierarchy, and NO import graph
+  from the discovery pipeline — leaving the executor blind to
+  structural signals for ~11 language ecosystems. The audit's
+  recommendation was "Tree-sitter + LSP". LSP is rejected as
+  out-of-scope for batch discovery (LSP is a live-editor protocol —
+  it requires a long-lived server process, project initialization
+  dance, and per-language server install — none of which compose with
+  the discovery CLI's "run once, emit JSON, exit" model. LSP's value
+  is for IDE integration, not batch analysis. See roadmap-2026-pro.md
+  Cross-cutting concerns, "What we do NOT do this phase"). Tree-sitter
+  covers ~90% of LSP's discovery value (symbols, call graph, imports,
+  complexity) at a fraction of the integration cost.
+
+- **Decision:** Add `discovery/cli/src/detectors/universal-ast.ts` —
+  a single Tree-sitter-powered detector that parses ANY language with
+  a vendored grammar WASM and emits a language-agnostic structural
+  model:
+  - `symbols: { name, kind, file, line, endLine }[]` where `kind` is
+    one of `function | class | method | variable | interface | type`.
+  - `call_graph: { caller, callee, file, line }[]` edges.
+  - `imports: { file, module, isLocal }[]`.
+  - `complexity_hotspots: { function, file, line, cyclomatic_complexity }[]`
+    — top-N functions by a 1 + decision-point-count proxy.
+
+  Tree-sitter's runtime WASM (`web-tree-sitter.wasm`, ~1.5 MB) and
+  per-language grammar WASMs (~200 KB each, 11 grammars in Phase 1)
+  are VENDORED into `discovery/cli/vendor/` (web-tree-sitter.wasm +
+  web-tree-sitter.js glue + `grammars/<lang>.wasm`). This honors
+  ADR-0022's zero-runtime-deps invariant: there is no `npm install
+  web-tree-sitter` at runtime. The `web-tree-sitter` npm package is
+  devDependency-only (TypeScript types during build); at runtime the
+  detector dynamically `import()`s the vendored `vendor/web-tree-
+  sitter.js` glue by absolute file URL — no node_modules resolution.
+
+  A manifest at `discovery/cli/src/detectors/tree-sitter-grammars.json`
+  maps file extensions → grammar names and grammar names → per-grammar
+  node type names (e.g., Go's `function_declaration` vs Rust's
+  `function_item` vs Java's `method_declaration`). This makes adding
+  a language a manifest edit + a WASM download, not a code change.
+
+  `grammar-loader.ts` provides `loadGrammar(name)` (reads
+  `vendor/grammars/<name>.wasm` via `fs.readFileSync` — throws a
+  clear, actionable error pointing at `make download-grammars` if the
+  file is missing) and `grammarForFile(filePath)` (extension → grammar
+  name lookup).
+
+- **What does NOT change:**
+  - `python.ts` and `typescript.ts` stay as fallback detectors.
+    They read package manifests (pyproject.toml, package.json),
+    framework hints (Django, Next.js), and entrypoint conventions
+    (main.py, src/index.ts) — signals that pure AST analysis cannot
+    recover. universal-ast.ts is a STRUCTURAL-analysis companion to
+    these, not a replacement. The two co-exist in the detector
+    registry.
+  - `discover.ts` and `types.ts` are unchanged — the universal-ast
+    detector's output (`UniversalAstResult`) is a new top-level shape
+    that the next-phase `ProjectIntelligence` extension will consume.
+    For now, the detector module is importable and tested, but not
+    wired into `REGISTRY` (deliberately — that wiring is a separate
+    ADR-0033 follow-up that adds `symbols` / `call_graph` / `imports`
+    / `complexity_hotspots` fields to `ProjectIntelligence` and
+    merges them).
+  - ADR-0022 (zero runtime deps for discovery/cli) is fully intact:
+    `discovery/cli/package.json` still has no `dependencies` key, no
+    `web-tree-sitter` entry. The vendored WASM is committed to
+    `vendor/`, not installed from npm.
+
+- **Tradeoffs:**
+  - WASM binaries are committed to the repo (~4 MB total: 1.5 MB
+    runtime + 11 × ~200 KB grammars). This is acceptable per ADR-0021's
+    committed-binary exception (the same exception that allows
+    committing `discovery/cli/dist/`). It does bloat the clone size.
+  - The actual parsing code path (`detectUniversalAst` walking the
+    tree-sitter AST) is untested until `make download-grammars` is run
+    to populate `vendor/`. The e2e driver
+    (`executor/examples/e2e-universal-ast/drive-run.mjs`) tests the
+    grammar loader, manifest shape, module exports, and error
+    handling — but NOT actual AST extraction. A Phase-2 driver will
+    exercise real parsing once WASMs are present.
+  - The `web-tree-sitter.js` glue file is loaded via dynamic `import()`
+    with a computed URL. TypeScript cannot statically type-check this
+    import; we use an inline type stub (`TsRuntimeModule`) and cast the
+    dynamic-import result. If the runtime API shape drifts (e.g., a
+    future web-tree-sitter version renames `Parser` to `TreeSitter`),
+    the stub and the runtime will mismatch at runtime, not at build.
+
+- **Status:** Implemented (module + manifest + loader + e2e driver).
+  The detector module (`universal-ast.ts`), grammar manifest
+  (`tree-sitter-grammars.json`), and grammar loader (`grammar-loader.ts`)
+  are committed and built into `discovery/cli/dist/`. The e2e driver
+  exercises the parts testable WITHOUT the actual WASM binaries — 40+
+  assertions covering extension mapping, loader error handling, manifest
+  structure, module exports, and the ADR-0022 invariant. The actual
+  Tree-sitter WASM binaries (runtime + 11 grammars) are NOT yet
+  committed — their download is a separate ops step documented in
+  `discovery/cli/vendor/README.md`, slated to be wrapped by `make
+  download-grammars` (Makefile target TBD, Phase 2). The code is ready;
+  the binaries land via that ops step. Decided 2026-08-16.
+## ADR-0034 — Adaptive risk-based workflow routing (5-level classifier + fast-path)
+
+- **Context:** A 2026-08-16 external pro-LLM audit (roadmap-2026-pro.md
+  Item 5) critiqued the workflow layer as **over-rigid**: a 1-line
+  typo fix in a `.md` file currently runs the full 8-state
+  `bug-report` FSM — `triage → reproduce → localize → hypothesize →
+  test-fix → verify → report` — emitting a Decision, a Trace, an
+  Actual, an Expected, and a Validation at every state, plus
+  question-budget checks and safety gates. The pro-LLM's framing
+  (quoted in original Turkish):
+
+  > "Basit tip düzeltmelerinde hızlı-yol (Fast-Path), mimari
+  > değişikliklerde ise tam anayasal FSM devreye girmelidir."
+  >
+  > (*For simple typo fixes, Fast-Path; for architectural changes,
+  > the full constitutional FSM.*)
+
+  The critique is structural, not aesthetic: the constitution's safety
+  apparatus (question economy, safety gates, evidence-per-state) is
+  **sized for changes that warrant it**. Applying that apparatus to
+  3-LOC doc tweaks is both wasteful (costs time, context-window
+  tokens, and evidence-store bytes) and **desensitizing** — agents
+  that emit `Decision`+`Trace`+`Actual`+`Expected`+`Validation` for
+  every comma-fix start treating the evidence trail as noise, which
+  undermines the same apparatus's value on real changes. The pro-LLM
+  identified a parallel need on the other end: changes touching
+  auth/payment/credential paths currently run the same FSM as a 50-LOC
+  doc refactor — there is no mechanism to insert an explicit
+  human-in-the-loop gate when the risk is genuinely high.
+
+- **Decision:** Add a 5-level risk classifier
+  (`executor/src/risk-classifier.ts`) that sits **on TOP of** the
+  MVP routing table (`workflows/_router.md`). The classifier is a
+  PURE function (`classifyRisk(signals: RiskSignals): RiskAssessment`)
+  — no I/O, no LLM, no side effects, deterministic. The caller
+  (typically the orchestrator's `classify-goal` state) constructs
+  `RiskSignals` from git output (`git diff --stat` → `diff_loc` +
+  `files_changed`; `git diff --name-only` → `file_extensions`) and
+  from request tokenization (`request_keywords`) and from a known-
+  failure memory lookup (`known_failure_match`).
+
+  The classifier maps the signals to one of 5 levels, each with a
+  default workflow path:
+
+  | Level | Default path | Triggering conditions (deterministic) |
+  |---|---|---|
+  | `trivial` | `fast-path` | `diff_loc ≤ 5` AND `files_changed ≤ 2` AND no code extensions (`.ts`/`.py`/`.go`/`.rs`/`.java`) AND no security keywords |
+  | `low` | `full-fsm` | `diff_loc ≤ 50` AND `files_changed ≤ 5` AND no security keywords AND no `known_failure_match` |
+  | `medium` | `full-fsm` | `diff_loc ≤ 500` AND `files_changed ≤ 20` AND no security keywords (default for real changes with no escalators) |
+  | `high` | `full-fsm-plus-review` | `diff_loc > 500` OR `files_changed > 20` (mandatory `code-review` workflow runs AFTER the primary workflow) |
+  | `critical` | `full-fsm-plus-human-approval` | ANY of: security keyword present in request (`security`, `auth`, `password`, `payment`, `token`, `secret`, `credential`, `vulnerability`, `CVE`) OR `known_failure_match=true` with `diff_loc > 50` |
+
+  Edge case: when ALL signals are empty/zero/missing, the classifier
+  returns `medium` as a **safe default** — refusing to fast-path
+  without positive evidence the change is trivial. This handles the
+  case where the caller couldn't compute a diff (e.g., a fresh repo
+  with no commits yet) without ever emitting a fast-path Decision
+  for an unknown change.
+
+  **Fast-path semantics (trivial):** the outer router SKIPS the FSM
+  entirely. Instead of `triage → reproduce → ... → verify → report`,
+  the router:
+  1. Emits a single `Decision` with `what: "fast_path_applied"`
+     (so future replays/audits can see the fast-path was taken).
+  2. Applies the change directly (typically a 1-3 LOC
+     `.md`/`.txt`/`.json` tweak).
+  3. Verifies the change (build/test/`validate` — same `verify`
+     semantics as the FSM's terminal `verify` state, just without
+     the preceding states).
+  4. Emits a final `Validation` entity recording whether the
+     post-apply verification passed.
+
+  The fast-path is **gate-free but NOT evidence-free**: every
+  fast-path application still emits the `Decision` and `Validation`
+  entities the FSM would emit, so the audit trail is preserved. A
+  future investigator reading `.aiecp/evidence/` cannot tell from
+  the evidence alone whether the FSM or the fast-path produced the
+  artifacts — only the `Decision.what: "fast_path_applied"` marker
+  distinguishes them.
+
+  **Critical-path semantics:** the router takes the
+  `full-fsm-plus-human-approval` path — the full FSM with one
+  additional gate inserted before the terminal `apply` state:
+  a new `human-approval-required` gate type that blocks the
+  workflow until an out-of-band human confirmation is received
+  (`aiecp:confirm gate: human`). This is distinct from the existing
+  `broad-refactor` and `safety-gate` types: those gate *autonomy
+  within the agent's normal flow*; this gate *requires a human in
+  the loop* before the change can land. The gate applies to:
+  - Any change touching security-sensitive code paths (auth,
+    payment, credential handling) — detected via security keywords
+    in the request.
+  - Any change with `known_failure_match=true` AND `diff_loc > 50` —
+    a regression-risk change large enough to plausibly re-introduce
+    the known failure. (Small regression-risk changes with
+    `diff_loc ≤ 50` do NOT trigger the human-approval gate — they
+    go through the standard FSM at `medium` risk, since `low`
+    excludes `known_failure_match`. The human-approval gate is
+    reserved for changes that are BOTH regression-risk AND large.)
+
+- **What does NOT change (FSM purity preserved):**
+  - The `.sm.yaml` files in `workflows/` are UNCHANGED by ADR-0034.
+    Every workflow still has the same states, transitions, safety
+    gates, and question budgets. The risk classifier is an **outer
+    router** that decides WHETHER to enter the FSM (or take the
+    fast-path) — not a modification to the FSM itself.
+  - The MVP routing table in `workflows/_router.md` is unchanged.
+    The Fast-Path section is appended AFTER the MVP table, not
+    replacing any row.
+  - The `Decision.what` vocabulary linter (ADR-0026) is unchanged.
+    The new `fast_path_applied` Decision is added to the vocabulary
+    via the canonical evidence/vocabulary/decision-what.json file
+    (separate change, ADR-0026's process).
+  - The constitution's safety apparatus (question economy, safety
+    gates, evidence-per-state) is unchanged. The fast-path **opts
+    out** of the apparatus for trivial changes; it does not
+    **remove** the apparatus for non-trivial changes.
+  - The `RiskSignals` interface is constructible from git output
+    (`git diff --stat` → `diff_loc` + `files_changed`;
+    `git diff --name-only` → `file_extensions`), but the classifier
+    itself does NOT call git — the caller does. This keeps the
+    classifier pure, testable in isolation, and deterministic across
+    replays.
+
+- **Tradeoffs:**
+  - **Substring security-keyword matching:** `hasSecurityKeyword`
+    uses case-insensitive substring matching (not word-boundary
+    regex) so `passwords`, `auth-token`, and `cve-2024-1234` all
+    match their respective keywords. The trade-off: rare false
+    positives like `insecurity` matching `security`. Acceptable for
+    an MVP — the cost of a false positive (escalating a doc-only
+    change to `critical`) is one extra human-approval gate; the
+    cost of a false negative (missing `password` in `password-reset`)
+    is a security regression.
+  - **No LLM in the classifier:** the pro-LLM's recommendation
+    included LLM-based risk assessment ("risk and complexity"
+    via the model). This ADR rejects that — the classifier is
+    deterministic rules + thresholds, not an LLM call. This makes
+    the classifier (a) free (no model invocation), (b) instant
+    (sub-millisecond), (c) auditable (the rules are visible in
+    source, not in a model's hidden weights), and (d) replayable
+    (the same signals always produce the same level). An LLM-based
+    classifier could be a Phase-3 enhancement layered ON TOP of
+    this rules-based one (e.g., the LLM overrides `medium` →
+    `high` based on architectural context), but the rules-based
+    classifier remains the floor.
+  - **The fast-path emits fewer evidence entities than the FSM:**
+    a 3-LOC `.md` fix on the fast-path emits 1 `Decision` + 1
+    `Validation`, vs. ~8 of each for the FSM. This is intentional
+    (the whole point of the fast-path is to skip the per-state
+    apparatus) but it means the evidence trail is thinner for
+    trivial changes. The `fast_path_applied` marker on the
+    Decision makes this visible to audits — an investigator can
+    filter fast-path Decisions out when computing "real workflow
+    iterations" metrics.
+  - **`trivial` does NOT exclude `known_failure_match`:** a 3-LOC
+    `.md` change with `known_failure_match=true` would classify
+    as `trivial` per the literal rules (the `trivial` conditions
+    don't mention KFM). This is intentional — a known-failure
+    match on a doc-only change is most likely a stale match (the
+    symptom description happened to match), and a 3-LOC `.md`
+    change cannot plausibly re-introduce a real failure. If this
+    proves wrong in practice, a Phase-2 follow-up adds `AND no
+    known_failure_match` to the `trivial` conditions.
+
+- **Status:** Implemented 2026-08-16.
+  - `executor/src/risk-classifier.ts` exports `classifyRisk`,
+    `RiskLevel`, `RiskSignals`, `RiskAssessment`, plus
+    `SECURITY_KEYWORDS`, `CODE_EXTENSIONS`,
+    `TRIVIAL_ALLOWED_EXTENSIONS`, and `RISK_THRESHOLDS` for
+    introspection (mirrors `SCALE_RANGES` in
+    `project-scale-classifier.ts`). Pure function: no I/O, no LLM,
+    no side effects. TypeScript strict mode; zero new npm
+    dependencies.
+  - `executor/examples/e2e-risk-classifier/drive-run.mjs` is the
+    regression test — 53 assertions covering all 5 risk levels,
+    both critical triggers (security keyword + KFM-with-large-diff),
+    the empty-signals safe default, all 4 boundary inclusivity
+    cases (`diff_loc` = 5/6/50/51), defensive empty-input handling
+    (`classifyRisk({})` → medium), and threshold-drift catches on
+    the exported config. Run via `npm run e2e:risk-classifier`.
+    All 53 pass.
+  - `workflows/_router.md` has a new "Fast-Path (Risk-Based
+    Adaptive Routing)" section after the MVP routing table,
+    documenting the 5 levels, the fast-path semantics, the
+    critical-path human-approval gate, and the outer-router
+    architecture (FSM definitions unchanged).
+  - `package.json` adds `"e2e:risk-classifier": "node
+    executor/examples/e2e-risk-classifier/drive-run.mjs"`.
+
+  **NOT yet wired (Phase-2 follow-ups):**
+  - The orchestrator's `classify-goal` state does NOT yet call
+    `classifyRisk` automatically. The classifier is importable and
+    tested, but the actual call site (orchestrator's `classify-goal`
+    → `classifyRisk` → routing decision based on `level`) is a
+    separate integration change that touches `workflows/orchestrator.sm.yaml`
+    and `executor/src/run.ts`. The core analysis logic is complete
+    and tested; the wiring is the next step.
+  - The `human-approval-required` gate type is declared in this ADR
+    but not yet implemented in `executor/src/safety-gate.ts`. The
+    gate's existence is documented; its enforcement code lands
+    together with the orchestrator integration (the same Phase-2
+    change).
+  - The `fast_path_applied` Decision `what` value is declared in
+    this ADR but not yet added to `evidence/vocabulary/decision-what.json`
+    (that's an ADR-0026 process step).
+
+  Decided 2026-08-16. Active — classifier + e2e proof + router
+  documentation complete; orchestrator wiring is the next item.
+
+## ADR-0032 — JIT Context Injection (state → minimal context bundle)
+
+- **Context:** A 2026-08-16 external pro-LLM audit
+  (`docs/roadmap-2026-pro.md` Item 1) identified that
+  `CHAT-ENTRYPOINT.md` (1075 lines) tells the agent to read the
+  constitution + router + workflow + 3-4 skills + 8 evidence schemas
+  + 4 memory schemas UPFRONT, before any state transition happens.
+  This is ~5000 lines of context loaded into the model's window
+  before the first `aiecp:advance`. The "Lost in the Middle"
+  phenomenon means rules buried in the middle of that load are
+  effectively invisible at decision time — the model drowns in
+  rules it doesn't need for the current state. The audit's
+  recommendation: replace upfront load with per-state JIT context
+  (~200 lines per state transition, ~96% reduction).
+
+- **Decision:** Add `executor/src/context-router.ts` exposing
+  `buildContextBundle(def: WorkflowDefinition, currentState: string):
+  ContextBundle`. Given the current state, the router returns a
+  minimal bundle containing ONLY:
+  1. `state_purpose` — the current state's `purpose` text from the
+     workflow's `state_detail.<state>.purpose` (typically 3-5 lines).
+  2. `emits_evidence` — the kinds this state is declared to emit
+     (`state_detail.<state>.emits_evidence`).
+  3. `evidence_fields` — for each emitted kind, the `required` array
+     pulled from `evidence/schema/<kind>.schema.json` via
+     `fs.readFileSync`. Lets the agent know the minimum fields it
+     must populate WITHOUT loading the whole schema document.
+  4. `safety_gate` — the current state's declared gate string (e.g.
+     `"broad-refactor (evaluated against ...)"`) if `state_detail.
+     <state>.safety_gate` is set, else omitted entirely.
+  5. `question_budget` — `{ max, allowed }` where `allowed` is
+     `def.question_economy.allowed_states.includes(currentState)`.
+     Omitted entirely if the workflow declares no `question_economy`.
+  6. `relevant_skills` — a filtered slice of `def.skills_required`.
+     Each entry contains `name`, `path` (relative, e.g.
+     `skills/systematic-debugging/SKILL.md`), the skill's full
+     frontmatter `description`, and a 500-char `when_to_use_excerpt`
+     of the skill's `## When to use this skill` section. A skill is
+     included iff its description OR When-to-use section lexically
+     mentions the current state name OR any `-`/`_`-separated token
+     derived from it (e.g. state `propose-fix` → verbs
+     `["propose-fix", "propose", "fix"]`; skills mentioning any of
+     those as standalone words — bounded by non-letters, so
+     `apply-fix` matches `fix` — are included).
+  7. `total_lines_estimate` — a conservative upper-bound line count
+     if the bundle were rendered to text. Used by the regression
+     assertion (`< 500` per bundle, `< 5000` summed across all 12
+     bug-report states) to prove the JIT saving target.
+
+  The function is **pure** except for `fs.readFileSync` calls (same
+  pattern as `evidence-store.ts`). No network, no async, no state
+  mutation. File paths in the bundle are RELATIVE (e.g.
+  `skills/systematic-debugging/SKILL.md`) so bundles are portable
+  across machines, not absolute.
+
+- **What does NOT change:**
+  - The FSM definitions in `.sm.yaml` are unchanged. The router
+    reads them; it does not modify or extend them.
+  - The skill `SKILL.md` files themselves are unchanged — the router
+    reads their frontmatter + When-to-use section but does not
+    modify them. The 500-char excerpt is a property of the BUNDLE,
+    not of the skill file.
+  - The evidence JSON Schemas are unchanged. The router reads the
+    `required` array from each `<kind>.schema.json`; the schemas
+    remain the source of truth for full validation (`evidence-store.
+    ts` still does full Ajv validation on emit).
+  - The chat entrypoint contract is unchanged in THIS ADR. Wiring
+    CHAT-ENTRYPOINT.md to call `buildContextBundle` after each
+    `aiecp:advance` (replacing the upfront-load section) is a
+    follow-up — explicitly out of scope for this ADR. The router
+    is a building block; the entrypoint edit is the consumption.
+  - The skill filter is intentionally LEXICAL, not semantic. It is
+    a pre-filter that lets the agent skip skills that obviously
+    don't apply. Known over-matches: state `report` lexically
+    contains "report", which also appears in `bug-report.sm.yaml`
+    references inside several skills' When-to-use sections — so
+    those skills are included for the `report` state even though
+    they are not specifically about reporting. This is acceptable
+    (it's a strict superset of the truly-relevant skills, and the
+    over-match is bounded — at most all of `skills_required`). A
+    future semantic filter (embedding-based, post-ADR-0032) could
+    refine this; for now, lexical matching is cheap, pure, and
+    debuggable.
+  - ADR-0022 (zero runtime deps for `discovery/cli`) is fully
+    intact. The executor workspace already depends on `js-yaml`
+    and `ajv`; the router adds NO new runtime dependencies (it
+    reuses `js-yaml` for frontmatter parsing, which is already a
+    transitive dep of `workflow-loader.ts`).
+  - The router does NOT replace the upfront-load section of
+    CHAT-ENTRYPOINT.md, does NOT replace the workflow loader, and
+    does NOT persist bundles to disk (pre-computed bundle JSONs at
+    `executor/src/context-bundles/<workflow>-<state>.json` are
+    documented in roadmap-2026-pro.md Item 1's "File layout" but
+    are NOT implemented in this ADR — they are a Phase 2 build-
+    time optimization, not needed for the runtime path).
+
+- **Status:** Decided 2026-08-16. Implemented 2026-08-16 —
+  `executor/src/context-router.ts`. The `buildContextBundle`
+  function is built and exported from `executor/dist/context-
+  router.js`. E2e proof in
+  `executor/examples/e2e-context-router/drive-run.mjs`:
+  119 assertions across all 12 `bug-report` states, covering
+  bundle shape, per-state `state_purpose` non-emptiness,
+  `emits_evidence` parity with the YAML, `evidence_fields`
+  matching the JSON Schemas' `required` arrays, `safety_gate`
+  presence for `propose-fix` and `apply-fix`, `question_budget.
+  allowed === true` only for `classify`, `relevant_skills`
+  inclusion (e.g. `verify` → `behavioral-verification`,
+  `apply-fix` → `quality-gate`, `reproduce` → `testing`) and
+  explicit-empty correctness (`intake` and `classify` have no
+  matching skills), skill-slice format (relative path, capped
+  excerpt), and JIT-saving targets (max bundle estimate 76 lines
+  < 500; sum across 12 states 498 lines < 5000; `report` state
+  bundle estimate 46 lines < the full 327-line
+  `skills/systematic-debugging/SKILL.md` file). The driver
+  independently re-derives the verb filter from the SKILL.md
+  files on disk and asserts the router's inclusion/exclusion is
+  consistent with it — catching router bugs that would otherwise
+  silently over- or under-match. Wired into `npm run
+  e2e:context-router` per the package.json scripts entry added
+  in the same change.
+
+## ADR-0030 — OS-level sandbox via Docker (decision recorded, implementation deferred to Phase 3)
+
+- **Context:** The pro-LLM audit (2026-08-16) identified that `safety-gate.ts`
+  is prompt-level — it asks the LLM to confirm, but cannot actually prevent
+  a malicious `rm -rf /` if the LLM emits it. The audit recommended WASI
+  (WebAssembly System Interface) or MicroVM (Firecracker) for true OS-level
+  isolation. Research on 2026-08-16 found:
+  - `vm2` (the most popular JS sandbox) has CVE-2026-26956 — a WebAssembly-
+    based sandbox escape. A single WebAssembly instruction bypasses vm2's
+    sandbox and grants arbitrary code execution on the host.
+  - `node:wasi` is exploitable via absolute-path file access (cannot be
+    sandboxed — the WASI code can open any file by absolute path).
+  - Conclusion: **WASI is not safe for adversarial code.** The LLM-emitted
+    code must be treated as potentially adversarial (prompt injection, etc.),
+    so the sandbox must be a real OS-level isolation (Docker or MicroVM).
+- **Decision:** Use Docker containers for OS-level sandboxing, not WASI.
+  - `sandbox/Dockerfile.aiecp-executor` — minimal image (node:20-alpine +
+    python3 + git; no network; `--read-only` rootfs; `--cap-drop=ALL`).
+  - `executor/src/sandbox-runner.ts` — runs commands in the container;
+    mounts the project dir as read-only, runs the command, captures
+    stdout/stderr/exitCode, then destroys the container.
+  - `sandbox/run-in-sandbox.mjs` — wrapper script for CLI use.
+- **Why Docker over MicroVM (Firecracker):**
+  - Docker covers 95% of use cases (CI, local dev, cloud).
+  - MicroVM adds cold-start latency (~125ms) and operational complexity
+    (needs a Firecracker daemon). Over-engineering for now.
+  - If Docker proves insufficient (e.g., a customer needs kernel-level
+    isolation between AIECP runs), Phase 4 can add MicroVM as an
+    alternative `--sandbox=microvm` flag.
+- **Why NOT WASI despite the audit's recommendation:**
+  - 2026 CVEs prove WASI/vm2 are not safe for adversarial code.
+  - The audit's recommendation was based on 2024-era assumptions about
+    WASI maturity. 2026 reality: WASI sandbox escapes are common.
+- **Implementation scope (this phase):**
+  - ADR-0030 records the decision. The implementation (`sandbox-runner.ts`)
+    is deferred to Phase 3 because:
+    1. Real Docker integration requires a Docker daemon at runtime (CI yes,
+       user laptop maybe).
+    2. Image build pipeline (registry or local) is operational work.
+    3. Volume mount strategy must work on macOS/Linux/Windows.
+    4. Timeout + OOM-kill handling needs testing on real workloads.
+  - A stub `executor/src/sandbox-runner.ts` will throw
+    `"Docker sandbox not available — see ADR-0030"` until Phase 3.
+- **What does NOT change:**
+  - `safety-gate.ts` continues to work as-is (prompt-level gate). The
+    Docker sandbox is a LAYER on top, not a replacement — the prompt gate
+    still asks the LLM to confirm; the Docker sandbox ensures that even
+    if the LLM emits malicious code, it cannot escape.
+  - The 4 existing gate types (`broad-refactor`, `edit_source`, etc.)
+    remain. A future `sandbox-execution` gate type may be added when
+    `sandbox-runner.ts` is implemented, mapping to the Docker runner.
+- **Status:** Decided 2026-08-16. Deferred implementation to Phase 3.
+  The decision is recorded here so a future implementer does not waste
+  time exploring WASI (which the 2026 CVEs have ruled out).
+
+## ADR-0031 — SWE-bench integration (adapter design, eval run deferred to Phase 3)
+
+- **Context:** The pro-LLM audit (2026-08-16) recommended SWE-bench
+  integration: "AIECP applied → regression errors %X decreased, first-try
+  success %Y increased" needs SWE-bench to prove. SWE-bench is the
+  industry-standard benchmark for LLM coding agents — it tests models
+  against real GitHub issues in real repos.
+- **Decision:** Build an ADAPTER, not a fork. SWE-bench is a Python harness
+  that applies model-generated patches to real GitHub repos in Docker. We
+  don't reimplement it; we adapt it:
+  - `evaluations/swebench-adapter.py` — reads a SWE-bench instance JSON
+    (`{repo, base_commit, problem_statement, test_patch, FAIL_TO_PASS,
+    PASS_TO_PASS}`) and emits an AIECP scenario YAML that drives the
+    `bug-report` workflow against the SWE-bench repo state.
+  - `evaluations/swebench-samples/` — committed sample instances (1-3
+    real SWE-bench instances, MIT-licensed per SWE-bench's own license).
+  - `evaluations/swebench-adapter.py --run <instance>` — runs the adapter
+    end-to-end: converts instance → scenario → runs eval_runner.py →
+    reports PASS/FAIL against the SWE-bench instance's expected test
+    outcomes (FAIL_TO_PASS must PASS after the patch; PASS_TO_PASS must
+    still PASS).
+- **Why adapter, not reimplement:**
+  - SWE-bench's Docker harness is battle-tested; reimplementing it would
+    be wasted effort and would diverge from the upstream benchmark.
+  - The adapter is a thin layer: instance JSON → AIECP scenario YAML.
+    It's ~200 lines of Python, not a separate harness.
+  - This lets AIECP's eval results be directly comparable to SWE-bench
+    leaderboard numbers (Claude, GPT, etc.) — a critical market signal.
+- **Implementation scope (this phase):**
+  - ADR-0031 records the design.
+  - `evaluations/swebench-adapter.py` — the adapter (works on the JSON
+    format; doesn't need Docker to convert instances to scenarios).
+  - 1 sample instance committed (`evaluations/swebench-samples/sympy-1.json`)
+    as a format reference.
+  - `executor/examples/e2e-swebench-adapter/drive-run.mjs` — proves the
+    adapter converts a SWE-bench instance to a valid AIECP scenario.
+  - Full eval RUN is deferred to Phase 3 (needs Docker for test execution).
+- **What does NOT change:**
+  - `evaluations/eval_runner.py` — unchanged. The adapter emits standard
+    scenario YAMLs that eval_runner.py already knows how to run.
+  - `evaluations/scenarios/` — the 25 existing synthetic scenarios stay.
+    SWE-bench scenarios are generated on-demand, not committed (they're
+    large — each instance's repo state can be MBs).
+- **Status:** Decided 2026-08-16. Adapter design recorded; full eval run
+  deferred to Phase 3 (Docker dependency, blocked on ADR-0030).

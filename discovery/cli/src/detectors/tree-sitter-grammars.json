@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0.0",
+  "description": "ADR-0033 manifest: maps file extensions to Tree-sitter grammar names + per-grammar node type names. The node_types map tells universal-ast.ts which AST node names to treat as function/call/import for each language (Tree-sitter grammars use slightly different names across languages).",
+  "extensions": {
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".c": "c",
+    ".h": "c",
+    ".hpp": "cpp",
+    ".kt": "kotlin",
+    ".swift": "swift",
+    ".rb": "ruby",
+    ".php": "php",
+    ".scala": "scala",
+    ".clj": "clojure"
+  },
+  "grammars": {
+    "go": {
+      "wasm_file": "vendor/grammars/go.wasm",
+      "node_types": {
+        "function": "function_declaration",
+        "call": "call_expression",
+        "import": "import_declaration"
+      }
+    },
+    "rust": {
+      "wasm_file": "vendor/grammars/rust.wasm",
+      "node_types": {
+        "function": "function_item",
+        "call": "call_expression",
+        "import": "use_declaration"
+      }
+    },
+    "java": {
+      "wasm_file": "vendor/grammars/java.wasm",
+      "node_types": {
+        "function": "method_declaration",
+        "call": "method_invocation",
+        "import": "import_declaration"
+      }
+    },
+    "cpp": {
+      "wasm_file": "vendor/grammars/cpp.wasm",
+      "node_types": {
+        "function": "function_definition",
+        "call": "call_expression",
+        "import": "preproc_include"
+      }
+    },
+    "c": {
+      "wasm_file": "vendor/grammars/c.wasm",
+      "node_types": {
+        "function": "function_definition",
+        "call": "call_expression",
+        "import": "preproc_include"
+      }
+    },
+    "kotlin": {
+      "wasm_file": "vendor/grammars/kotlin.wasm",
+      "node_types": {
+        "function": "function_declaration",
+        "call": "call_expression",
+        "import": "import_header"
+      }
+    },
+    "swift": {
+      "wasm_file": "vendor/grammars/swift.wasm",
+      "node_types": {
+        "function": "function_declaration",
+        "call": "call_expression",
+        "import": "import_declaration"
+      }
+    },
+    "ruby": {
+      "wasm_file": "vendor/grammars/ruby.wasm",
+      "node_types": {
+        "function": "method",
+        "call": "call",
+        "import": "call"
+      }
+    },
+    "php": {
+      "wasm_file": "vendor/grammars/php.wasm",
+      "node_types": {
+        "function": "function_definition",
+        "call": "function_call_expression",
+        "import": "include_expression"
+      }
+    },
+    "scala": {
+      "wasm_file": "vendor/grammars/scala.wasm",
+      "node_types": {
+        "function": "function_definition",
+        "call": "call_expression",
+        "import": "import_declaration"
+      }
+    },
+    "clojure": {
+      "wasm_file": "vendor/grammars/clojure.wasm",
+      "node_types": {
+        "function": "fn_lit",
+        "call": "list_lit",
+        "import": "ns_clause"
+      }
+    }
+  }
+}
