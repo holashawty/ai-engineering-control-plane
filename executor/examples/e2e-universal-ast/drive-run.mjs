@@ -2,7 +2,8 @@
 //
 // Verifies the structural integrity of the universal-ast module without
 // requiring the actual Tree-sitter WASM binaries to be downloaded
-// (which is a separate ops step — see discovery/cli/vendor/README.md).
+// (which is a separate ops step — see discovery/cli/vendor/README.md
+// and `npm run download-grammars`).
 //
 // What this driver proves:
 //   1. `discovery/cli` builds clean with the new module (zero new
@@ -17,16 +18,22 @@
 //   5. The manifest JSON itself is well-formed (parses, has the
 //      expected top-level keys, has at least 5 grammars).
 //   6. `detectUniversalAst` is exported as an async function.
-//   7. Calling `detectUniversalAst` without the vendored runtime
-//      throws a clear error pointing at the download instructions.
-//   8. `vendorDir()` returns an absolute path ending in `/vendor`.
+//   7. (Phase 2.5 follow-up) Calling `detectUniversalAst` WITHOUT the
+//      vendored runtime / grammar WASM does NOT throw — it falls back
+//      to a regex-based naive parse, returning a result with
+//      `fallback: true` and a human-readable `fallback_reason`. This
+//      is the "graceful degradation" contract for offline CI/CD and
+//      fresh-clone-pre-`download-grammars` environments.
+//   8. The regex-based fallback actually extracts symbols (functions,
+//      classes, imports) — verified against a tiny JS sample.
+//   9. `vendorDir()` returns an absolute path ending in `/vendor`.
 //
 // What this driver does NOT prove (out of scope until WASMs land):
 //   - Actual AST parsing on a real Go/Rust/Java/C++ file.
-//   - Symbol/call-graph/import extraction correctness.
-//   - Cyclomatic-complexity hotspot ranking.
+//   - Symbol/call-graph/import extraction correctness on the AST path.
+//   - Cyclomatic-complexity hotspot ranking on the AST path.
 // These are deferred to a Phase-2 driver that runs after
-// `make download-grammars` populates `discovery/cli/vendor/`.
+// `npm run download-grammars` populates `discovery/cli/vendor/`.
 
 import {
   grammarForFile,
@@ -204,16 +211,137 @@ async function scenario() {
     detectUniversalAst.length === 3,
     `got length ${detectUniversalAst.length}`);
 
-  // --- Section 6: detectUniversalAst error path (no runtime vendored) ---
-  console.log("\n--- detectUniversalAst error path (runtime not vendored) ---");
-  await expectRejects(
-    "detectUniversalAst('foo.go', 'package main\\n', Buffer.alloc(0)) rejects with vendor-missing message",
-    () => detectUniversalAst("foo.go", "package main\n", Buffer.alloc(0)),
-    (m) => m.includes("Tree-sitter runtime glue not vendored") &&
-           m.includes("download-grammars"),
+  // --- Section 6: detectUniversalAst WASM-missing fallback (Phase 2.5) ---
+  //
+  // Phase 2.5 follow-up (pro-LLM audit): `detectUniversalAst` MUST NOT
+  // throw when the Tree-sitter runtime glue is missing, when the
+  // grammar WASM buffer is empty / malformed, or when the parser
+  // returns a null tree. Instead it falls back to `naiveParse()` — a
+  // regex-based parser using language-specific patterns. The result
+  // carries `fallback: true` and a human-readable `fallback_reason`.
+  //
+  // The ONE case that still throws is a truly unknown file extension
+  // (no manifest entry, no regex-inferable language) — there's nothing
+  // useful to do without knowing the language, so we surface the error
+  // rather than silently returning empty symbols.
+  console.log("\n--- detectUniversalAst WASM-missing fallback (Phase 2.5) ---");
+
+  // 6a: foo.go with empty WASM buffer — used to throw, now returns fallback.
+  // (grammarForFile('foo.go') → 'go' is in the manifest; loadTreeSitterRuntime
+  // throws because vendor/web-tree-sitter.js is missing; we catch and fall back.)
+  const fbGo = await detectUniversalAst("foo.go", "package main\n", Buffer.alloc(0));
+  check("detectUniversalAst('foo.go', ..., Buffer.alloc(0)) does NOT throw — returns fallback result",
+    fbGo.fallback === true,
+    `got fallback=${fbGo.fallback}`);
+  check("detectUniversalAst('foo.go') fallback result has fallback_reason string",
+    typeof fbGo.fallback_reason === "string" && fbGo.fallback_reason.length > 0,
+    `got reason: ${JSON.stringify(fbGo.fallback_reason)}`);
+  check("detectUniversalAst('foo.go') fallback_reason mentions 'WASM grammar not available'",
+    (fbGo.fallback_reason ?? "").includes("WASM grammar not available"),
+    `got reason: ${JSON.stringify(fbGo.fallback_reason)}`);
+  check("detectUniversalAst('foo.go') fallback result has symbols array (empty for 'package main')",
+    Array.isArray(fbGo.symbols) && fbGo.symbols.length === 0,
+    `got symbols: ${JSON.stringify(fbGo.symbols)}`);
+  check("detectUniversalAst('foo.go') fallback result has call_graph array",
+    Array.isArray(fbGo.call_graph),
+    `got call_graph: ${typeof fbGo.call_graph}`);
+  check("detectUniversalAst('foo.go') fallback result has imports array",
+    Array.isArray(fbGo.imports),
+    `got imports: ${typeof fbGo.imports}`);
+  check("detectUniversalAst('foo.go') fallback result has complexity_hotspots array",
+    Array.isArray(fbGo.complexity_hotspots),
+    `got complexity_hotspots: ${typeof fbGo.complexity_hotspots}`);
+
+  // 6b: foo.go with actual Go content — fallback should still extract
+  // symbols via the Go regex patterns (functions only; classes are
+  // `type X struct` which we don't trigger here).
+  const fbGoWithFunc = await detectUniversalAst(
+    "foo.go",
+    "package main\nfunc main() {}\nfunc helper() {}\n",
+    Buffer.alloc(0),
   );
+  check("detectUniversalAst('foo.go' with funcs, empty WASM) returns fallback",
+    fbGoWithFunc.fallback === true,
+    `got fallback=${fbGoWithFunc.fallback}`);
+  check("detectUniversalAst('foo.go' with funcs) extracts 'main' via Go regex",
+    fbGoWithFunc.symbols.some((s) => s.name === "main" && s.kind === "function"),
+    `got symbols: ${JSON.stringify(fbGoWithFunc.symbols)}`);
+  check("detectUniversalAst('foo.go' with funcs) extracts 'helper' via Go regex",
+    fbGoWithFunc.symbols.some((s) => s.name === "helper" && s.kind === "function"));
+  check("detectUniversalAst('foo.go' with funcs) returns exactly 2 symbols",
+    fbGoWithFunc.symbols.length === 2,
+    `got ${fbGoWithFunc.symbols.length}`);
+  check("detectUniversalAst('foo.go' with funcs) hotspots: 1 per function, complexity=1",
+    fbGoWithFunc.complexity_hotspots.length === 2 &&
+    fbGoWithFunc.complexity_hotspots.every((h) => h.cyclomatic_complexity === 1),
+    `got: ${JSON.stringify(fbGoWithFunc.complexity_hotspots)}`);
+
+  // 6c: foo.js — NOT in the manifest, but inferable from `.js` extension.
+  // universal-ast should regex-parse it as "typescript" (JS is a subset of TS).
+  // This is the explicit assertion requested in the task: a tiny JS sample
+  // `function foo() {} class Bar {}` must yield a non-empty symbols array.
+  const fbJs = await detectUniversalAst(
+    "foo.js",
+    "function foo() {}\nclass Bar {}\n",
+    Buffer.alloc(0),
+  );
+  check("detectUniversalAst('foo.js', 'function foo() {} class Bar {}') returns fallback (manifest has no .js grammar)",
+    fbJs.fallback === true,
+    `got fallback=${fbJs.fallback}`);
+  check("detectUniversalAst('foo.js' JS sample) symbols array is non-empty",
+    Array.isArray(fbJs.symbols) && fbJs.symbols.length >= 1,
+    `got ${fbJs.symbols.length} symbols`);
+  check("detectUniversalAst('foo.js' JS sample) extracts 'foo' as a function",
+    fbJs.symbols.some((s) => s.name === "foo" && s.kind === "function"),
+    `got symbols: ${JSON.stringify(fbJs.symbols)}`);
+  check("detectUniversalAst('foo.js' JS sample) extracts 'Bar' as a class",
+    fbJs.symbols.some((s) => s.name === "Bar" && s.kind === "class"));
+  check("detectUniversalAst('foo.js' JS sample) fallback_reason is set",
+    typeof fbJs.fallback_reason === "string" && fbJs.fallback_reason.length > 0);
+
+  // 6d: foo.js with imports — verify imports extraction works and that
+  // the local-vs-external heuristic marks relative imports as local.
+  const fbJsImports = await detectUniversalAst(
+    "foo.js",
+    "import foo from './local.js';\nimport bar from 'react';\n",
+    Buffer.alloc(0),
+  );
+  check("detectUniversalAst('foo.js' with imports) returns fallback",
+    fbJsImports.fallback === true);
+  check("detectUniversalAst('foo.js' with imports) extracts 2 imports",
+    Array.isArray(fbJsImports.imports) && fbJsImports.imports.length === 2,
+    `got imports: ${JSON.stringify(fbJsImports.imports)}`);
+  check("detectUniversalAst('foo.js' with imports) marks './local.js' as local",
+    fbJsImports.imports.some((i) => i.module === "./local.js" && i.isLocal === true),
+    `got: ${JSON.stringify(fbJsImports.imports)}`);
+  check("detectUniversalAst('foo.js' with imports) marks 'react' as non-local",
+    fbJsImports.imports.some((i) => i.module === "react" && i.isLocal === false));
+
+  // 6e: foo.kt (Kotlin — manifest grammar, no regex patterns defined).
+  // Naive parser returns an empty fallback with an extended reason noting
+  // the unmatched language. This is the most graceful possible degradation
+  // for languages we don't have regex patterns for (kotlin, swift, ruby,
+  // php, scala, clojure).
+  const fbKt = await detectUniversalAst(
+    "foo.kt",
+    "fun main() { println() }",
+    Buffer.alloc(0),
+  );
+  check("detectUniversalAst('foo.kt', ...) returns fallback (WASM missing)",
+    fbKt.fallback === true,
+    `got fallback=${fbKt.fallback}`);
+  check("detectUniversalAst('foo.kt') fallback_reason notes 'no regex patterns for language \"kotlin\"'",
+    (fbKt.fallback_reason ?? "").includes("no regex patterns for language \"kotlin\""),
+    `got reason: ${JSON.stringify(fbKt.fallback_reason)}`);
+  check("detectUniversalAst('foo.kt') returns empty symbols (no regex patterns available)",
+    Array.isArray(fbKt.symbols) && fbKt.symbols.length === 0,
+    `got: ${JSON.stringify(fbKt.symbols)}`);
+
+  // 6f: foo.xyz — truly unknown extension (no manifest, no inference).
+  // This is the ONE case that still throws — better to surface the error
+  // than silently return empty symbols (which would mask the misconfiguration).
   await expectRejects(
-    "detectUniversalAst('foo.xyz', ...) rejects with no-grammar message",
+    "detectUniversalAst('foo.xyz', ...) STILL rejects with no-grammar message",
     () => detectUniversalAst("foo.xyz", "whatever", Buffer.alloc(0)),
     (m) => m.includes("no grammar registered"),
   );

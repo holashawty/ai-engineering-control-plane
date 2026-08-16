@@ -22,11 +22,15 @@
 // entrypoint conventions — things AST analysis alone cannot recover).
 // universal-ast.ts is a structural-analysis companion, not a
 // replacement. Per roadmap-2026-pro.md Item 2 "What does NOT change".
-import { join, dirname } from "node:path";
+import { join, dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { grammarForFile, getGrammarConfig } from "./grammar-loader.js";
+// Standard reason string used by `naiveParse` when WASM/grammar is
+// unavailable. Centralised here so callers can match on the exact text
+// (see e2e-universal-ast/drive-run.mjs fallback assertions).
+export const UNIVERSAL_AST_FALLBACK_REASON = "WASM grammar not available — using regex-based naive parse (degraded accuracy)";
 const DEFAULT_DECISION_NODES = [
     "if_statement",
     "for_statement",
@@ -283,94 +287,137 @@ async function loadTreeSitterRuntime() {
  *      buffer from `vendor/grammars/<name>.wasm`.
  *   3. Passing the resulting buffer here.
  *
- * Throws if the web-tree-sitter runtime glue is not vendored (see
- * `loadTreeSitterRuntime`), or if the grammar buffer is malformed.
+ * ADR-0033 follow-up (Phase 2.5 wiring sprint) — GRACEFUL DEGRADATION:
+ * If the Tree-sitter runtime glue is not vendored, the grammar WASM is
+ * missing/empty/malformed, or the parser returns null, this function
+ * does NOT throw. Instead it falls back to `naiveParse()` — a
+ * regex-based parser using language-specific patterns (functions,
+ * classes, imports). The returned `UniversalAstResult` carries
+ * `fallback: true` and a human-readable `fallback_reason` so callers
+ * can flag the degraded-accuracy path in their UI / evidence.
+ *
+ * The ONLY case that still throws is when neither a manifest grammar
+ * NOR a regex-inferable language can be determined for `filePath`
+ * (e.g., `foo.xyz`) — there is genuinely nothing useful we can do
+ * without knowing the language.
  */
 export async function detectUniversalAst(filePath, content, grammarWasm) {
     const grammarName = grammarForFile(filePath);
-    if (!grammarName) {
+    const regexLang = inferLanguageForRegex(filePath);
+    // Neither manifest nor inference knows the language → throw.
+    // (We deliberately keep this throw: regex-fallback for a totally
+    // unknown language would silently return empty symbols, masking
+    // the configuration error from the caller. Better to surface it.)
+    if (!grammarName && !regexLang) {
         throw new Error(`universal-ast: no grammar registered for file ${filePath}`);
     }
-    const nt = nodeTypesForGrammar(grammarName);
-    const runtime = await loadTreeSitterRuntime();
-    // Build the language + parser. The `web-tree-sitter` API expects an
-    // ArrayBuffer / Uint8Array view of the grammar WASM.
-    const language = new runtime.Language(grammarWasm);
-    const parser = new runtime.Parser();
-    parser.setLanguage(language);
-    const tree = parser.parse(content);
-    if (!tree) {
-        parser.delete();
-        throw new Error(`universal-ast: parser returned null tree for ${filePath}`);
+    // If the manifest has no grammar for this extension BUT the regex
+    // inferrer knows the language (e.g. `.js`/`.ts` — JS-family files
+    // are NOT in the tree-sitter-grammars.json manifest because the
+    // dedicated `typescript.ts` detector handles them, but they're
+    // trivially regex-parseable), short-circuit straight to naive parse
+    // rather than attempting a WASM load we know will fail.
+    if (!grammarName && regexLang) {
+        return naiveParse(filePath, content, regexLang);
     }
-    const funcTypes = new Set([nt.function, ...(nt.method ?? [])]);
-    const classTypes = new Set(nt.class ?? []);
-    const interfaceTypes = new Set(nt.interface ?? []);
-    const typeTypes = new Set(nt.type ?? []);
-    const variableTypes = new Set(nt.variable ?? []);
-    const callTypes = new Set([nt.call]);
-    const importTypes = new Set([nt.import]);
-    const symbols = [];
-    const callGraph = [];
-    const imports = [];
-    const hotspotByFunc = new Map();
-    // First pass: collect symbols + hotspots (so call-edge resolution can
-    // look up the caller name from the enclosing function node).
-    const funcNameByStartIndex = new Map();
-    for (const node of walk(tree.rootNode)) {
-        const startLine = node.startPosition.row + 1;
-        const endLine = node.endPosition.row + 1;
-        if (funcTypes.has(node.type)) {
-            // Disambiguate method vs function — Go has both function_declaration
-            // (top-level) and method_declaration (in a receiver). Java's only
-            // method_declaration; treat top-level as function, nested-in-class
-            // as method.
-            let kind = "function";
-            const isInClass = isWithinClass(node, classTypes);
-            if (nt.method?.includes(node.type) || (isInClass && node.type === nt.function)) {
-                kind = "method";
+    // grammarName is non-null here (the only path that reaches this point).
+    // Try the full WASM-backed AST path; on ANY failure (missing glue,
+    // missing grammar WASM, malformed WASM, parser null tree, etc.) fall
+    // back to regex-based naive parse so callers in offline / pre-download
+    // environments still get a usable (if degraded) result.
+    try {
+        const nt = nodeTypesForGrammar(grammarName);
+        const runtime = await loadTreeSitterRuntime();
+        // Build the language + parser. The `web-tree-sitter` API expects an
+        // ArrayBuffer / Uint8Array view of the grammar WASM.
+        const language = new runtime.Language(grammarWasm);
+        const parser = new runtime.Parser();
+        parser.setLanguage(language);
+        const tree = parser.parse(content);
+        if (!tree) {
+            parser.delete();
+            throw new Error(`universal-ast: parser returned null tree for ${filePath}`);
+        }
+        const funcTypes = new Set([nt.function, ...(nt.method ?? [])]);
+        const classTypes = new Set(nt.class ?? []);
+        const interfaceTypes = new Set(nt.interface ?? []);
+        const typeTypes = new Set(nt.type ?? []);
+        const variableTypes = new Set(nt.variable ?? []);
+        const callTypes = new Set([nt.call]);
+        const importTypes = new Set([nt.import]);
+        const symbols = [];
+        const callGraph = [];
+        const imports = [];
+        const hotspotByFunc = new Map();
+        // First pass: collect symbols + hotspots (so call-edge resolution can
+        // look up the caller name from the enclosing function node).
+        const funcNameByStartIndex = new Map();
+        for (const node of walk(tree.rootNode)) {
+            const startLine = node.startPosition.row + 1;
+            const endLine = node.endPosition.row + 1;
+            if (funcTypes.has(node.type)) {
+                // Disambiguate method vs function — Go has both function_declaration
+                // (top-level) and method_declaration (in a receiver). Java's only
+                // method_declaration; treat top-level as function, nested-in-class
+                // as method.
+                let kind = "function";
+                const isInClass = isWithinClass(node, classTypes);
+                if (nt.method?.includes(node.type) || (isInClass && node.type === nt.function)) {
+                    kind = "method";
+                }
+                const name = extractName(node);
+                symbols.push({ name, kind, file: filePath, line: startLine, endLine });
+                funcNameByStartIndex.set(node.startIndex, name);
+                const decisions = countDecisionPoints(node);
+                hotspotByFunc.set(`${filePath}::${name}::${startLine}`, {
+                    function: name,
+                    file: filePath,
+                    line: startLine,
+                    cyclomatic_complexity: 1 + decisions,
+                });
             }
-            const name = extractName(node);
-            symbols.push({ name, kind, file: filePath, line: startLine, endLine });
-            funcNameByStartIndex.set(node.startIndex, name);
-            const decisions = countDecisionPoints(node);
-            hotspotByFunc.set(`${filePath}::${name}::${startLine}`, {
-                function: name,
-                file: filePath,
-                line: startLine,
-                cyclomatic_complexity: 1 + decisions,
-            });
+            else if (classTypes.has(node.type)) {
+                symbols.push({ name: extractName(node), kind: "class", file: filePath, line: startLine, endLine });
+            }
+            else if (interfaceTypes.has(node.type)) {
+                symbols.push({ name: extractName(node), kind: "interface", file: filePath, line: startLine, endLine });
+            }
+            else if (typeTypes.has(node.type)) {
+                symbols.push({ name: extractName(node), kind: "type", file: filePath, line: startLine, endLine });
+            }
+            else if (variableTypes.has(node.type)) {
+                symbols.push({ name: extractName(node), kind: "variable", file: filePath, line: startLine, endLine });
+            }
+            else if (callTypes.has(node.type)) {
+                const caller = findEnclosingFunctionName(node, funcTypes);
+                const callee = extractCallee(node, grammarName);
+                callGraph.push({ caller, callee, file: filePath, line: startLine });
+            }
+            else if (importTypes.has(node.type)) {
+                const mod = extractImportModule(node, grammarName);
+                if (mod)
+                    imports.push({ file: filePath, module: mod.module, isLocal: mod.isLocal });
+            }
         }
-        else if (classTypes.has(node.type)) {
-            symbols.push({ name: extractName(node), kind: "class", file: filePath, line: startLine, endLine });
-        }
-        else if (interfaceTypes.has(node.type)) {
-            symbols.push({ name: extractName(node), kind: "interface", file: filePath, line: startLine, endLine });
-        }
-        else if (typeTypes.has(node.type)) {
-            symbols.push({ name: extractName(node), kind: "type", file: filePath, line: startLine, endLine });
-        }
-        else if (variableTypes.has(node.type)) {
-            symbols.push({ name: extractName(node), kind: "variable", file: filePath, line: startLine, endLine });
-        }
-        else if (callTypes.has(node.type)) {
-            const caller = findEnclosingFunctionName(node, funcTypes);
-            const callee = extractCallee(node, grammarName);
-            callGraph.push({ caller, callee, file: filePath, line: startLine });
-        }
-        else if (importTypes.has(node.type)) {
-            const mod = extractImportModule(node, grammarName);
-            if (mod)
-                imports.push({ file: filePath, module: mod.module, isLocal: mod.isLocal });
-        }
+        // Top-N hotspots by complexity. Default N = 10 (caller can slice).
+        const complexity_hotspots = Array.from(hotspotByFunc.values())
+            .sort((a, b) => b.cyclomatic_complexity - a.cyclomatic_complexity)
+            .slice(0, 10);
+        tree.delete();
+        parser.delete();
+        return { symbols, call_graph: callGraph, imports, complexity_hotspots };
     }
-    // Top-N hotspots by complexity. Default N = 10 (caller can slice).
-    const complexity_hotspots = Array.from(hotspotByFunc.values())
-        .sort((a, b) => b.cyclomatic_complexity - a.cyclomatic_complexity)
-        .slice(0, 10);
-    tree.delete();
-    parser.delete();
-    return { symbols, call_graph: callGraph, imports, complexity_hotspots };
+    catch (err) {
+        // WASM not available — fall back to regex-based naive parse.
+        // `naiveParse` always returns a UniversalAstResult with fallback=true
+        // and a human-readable fallback_reason. We deliberately swallow the
+        // error here (after letting it log nothing — the caller inspects
+        // `fallback` on the result to detect degraded mode) per the
+        // "graceful degradation" contract documented at the top of this
+        // function. Partial coverage beats no coverage in offline CI/CD.
+        const lang = grammarName ?? regexLang;
+        return naiveParse(filePath, content, lang);
+    }
 }
 /** Is `node` lexically inside a class-like node? Used to disambiguate
  *  method vs function for grammars (Java) that use one node type. */
@@ -408,4 +455,227 @@ function extractCallee(node, grammarName) {
     // Last resort: the node's own text, truncated.
     void grammarName;
     return node.text.slice(0, 40);
+}
+// Per-language regex patterns. Patterns use the `g` + `m` flags so
+// `^` matches at the start of any line (not just the start of input)
+// and `exec` can be called repeatedly to iterate matches.
+//
+// Capture group 1 is always the symbol/module name being extracted.
+//
+// IMPORTANT: regexes are stateful (they track `lastIndex` across calls).
+// `naiveParse` resets `lastIndex = 0` before iterating each pattern.
+const NAIVE_PATTERNS = {
+    // JS/TS share syntax for function/class/import — we treat them
+    // uniformly as "typescript" for regex purposes (JS is a syntactic
+    // subset of TS at this level of analysis).
+    typescript: {
+        functions: /^(?:export\s+)?(?:async\s+)?function\s+(\w+)/gm,
+        classes: /^class\s+(\w+)/gm,
+        imports: /^import\s+.*?from\s+['"](.+?)['"]/gm,
+    },
+    go: {
+        functions: /^func\s+(\w+)/gm,
+        classes: /^type\s+(\w+)\s+struct\b/gm, // Go has no `class` keyword; structs are closest.
+        imports: /^import\s+"(.+?)"/gm,
+    },
+    rust: {
+        functions: /^fn\s+(\w+)/gm,
+        classes: /^(?:struct|enum)\s+(\w+)/gm, // Rust uses struct/enum, not `class`.
+        imports: /^use\s+(.+)/gm,
+    },
+    python: {
+        functions: /^def\s+(\w+)/gm,
+        classes: /^class\s+(\w+)/gm,
+        imports: /^from\s+(\S+)\s+import|^import\s+(\S+)/gm,
+    },
+    java: {
+        functions: /^\s*(?:public|private|protected)?\s*(?:static\s+)?\w+(?:\[\])?\s+(\w+)\s*\(/gm,
+        classes: /^class\s+(\w+)/gm,
+        imports: /^import\s+(.+);/gm,
+    },
+    cpp: {
+        functions: /^\w[\w\s\*]*\s+(\w+)\s*\([^)]*\)\s*{/gm,
+        classes: /^class\s+(\w+)/gm,
+        imports: /^#include\s+[<"]([^>"]+)[>"]/gm,
+    },
+    c: {
+        functions: /^\w[\w\s\*]*\s+(\w+)\s*\([^)]*\)\s*{/gm,
+        classes: /^struct\s+(\w+)\s*{/gm, // C has no `class` keyword; structs are closest.
+        imports: /^#include\s+[<"]([^>"]+)[>"]/gm,
+    },
+};
+// Map file extensions to a regex-friendly language name. Used when:
+//   - The extension is NOT in `tree-sitter-grammars.json` (e.g., `.js`,
+//     `.ts` — JS/TS files are handled by the dedicated `typescript.ts`
+//     detector, not the universal-ast manifest, but they're trivially
+//     regex-parseable).
+//   - The Tree-sitter manifest grammar is missing its WASM on disk
+//     (e.g., `foo.go` when `vendor/grammars/go.wasm` hasn't been
+//     downloaded yet) — the manifest grammar name is passed straight
+//     to `naiveParse`, which looks it up in `NAIVE_PATTERNS` instead.
+//
+// Returns `null` for truly unknown extensions (e.g., `.xyz`) — the
+// caller (`detectUniversalAst`) treats this as a hard error since
+// there's no language to regex-parse AS.
+function inferLanguageForRegex(filePath) {
+    const ext = extname(filePath).toLowerCase();
+    if (!ext)
+        return null;
+    const map = {
+        // JS/TS family — all regex-parsed as "typescript" (JS subset of TS).
+        ".js": "typescript",
+        ".jsx": "typescript",
+        ".ts": "typescript",
+        ".tsx": "typescript",
+        ".mjs": "typescript",
+        ".cjs": "typescript",
+        // Go.
+        ".go": "go",
+        // Rust.
+        ".rs": "rust",
+        // Python.
+        ".py": "python",
+        // Java.
+        ".java": "java",
+        // C / C++.
+        ".c": "c",
+        ".h": "c",
+        ".cpp": "cpp",
+        ".cc": "cpp",
+        ".cxx": "cpp",
+        ".hpp": "cpp",
+    };
+    return map[ext] ?? null;
+}
+// Map manifest grammar names to regex-language names. Most are 1:1
+// (`go` → `go`, `rust` → `rust`); `kotlin`/`swift`/`ruby`/`php`/
+// `scala`/`clojure` have no regex patterns defined and fall through to
+// `null`, which `naiveParse` handles by returning an empty result with
+// `fallback: true` (better than nothing — the caller still sees the
+// degraded-mode marker).
+function regexLangForGrammar(grammarName) {
+    // Manifest names that map 1:1 to NAIVE_PATTERNS keys.
+    if (grammarName in NAIVE_PATTERNS)
+        return grammarName;
+    // Aliases: none currently (manifest uses `cpp` and `c` directly,
+    // matching NAIVE_PATTERNS keys).
+    return null;
+}
+/** Convert a character index `index` into `content` to a 1-indexed
+ *  line number. (Used by `naiveParse` to convert regex match offsets
+ *  to the same 1-indexed `line` field the AST path emits.) */
+function charIndexToLine(content, index) {
+    let line = 1;
+    const limit = Math.min(index, content.length);
+    for (let i = 0; i < limit; i++) {
+        if (content.charCodeAt(i) === 0x0a /* '\n' */)
+            line++;
+    }
+    return line;
+}
+/**
+ * Regex-based naive parse — the WASM-missing fallback path.
+ *
+ * Extracts functions, classes, and imports from `content` using
+ * language-specific regex patterns. Always returns a `UniversalAstResult`
+ * with `fallback: true` and a human-readable `fallback_reason`.
+ *
+ * `language` should be a key into `NAIVE_PATTERNS` (e.g., `"typescript"`,
+ * `"go"`, `"rust"`, `"python"`, `"java"`, `"cpp"`, `"c"`). If the
+ * language is unknown or has no patterns, an empty result is returned
+ * with `fallback: true` and a reason noting no patterns were available
+ * — this is the most graceful possible degradation (the caller still
+ * sees the degraded-mode marker, rather than getting a thrown error).
+ *
+ * Returned shape (always present, even when empty):
+ *   { symbols: [], call_graph: [], imports: [], complexity_hotspots: [],
+ *     fallback: true, fallback_reason: "..." }
+ */
+function naiveParse(filePath, content, language) {
+    const lang = regexLangForGrammar(language) ?? language;
+    const patterns = NAIVE_PATTERNS[lang];
+    // No patterns for this language — return an empty fallback result
+    // with an extended reason noting which language was unmatched.
+    if (!patterns) {
+        return {
+            symbols: [],
+            call_graph: [],
+            imports: [],
+            complexity_hotspots: [],
+            fallback: true,
+            fallback_reason: `${UNIVERSAL_AST_FALLBACK_REASON} [no regex patterns for language "${language}"]`,
+        };
+    }
+    const symbols = [];
+    const imports = [];
+    // --- Functions ---
+    patterns.functions.lastIndex = 0;
+    let m;
+    while ((m = patterns.functions.exec(content)) !== null) {
+        // Python's import regex has two alternates (group 1 for `from X import`,
+        // group 2 for `import X`); for the function regex, group 1 is always
+        // the function name. (See `python.imports` below for the dual case.)
+        const name = m[1];
+        if (!name)
+            continue;
+        const line = charIndexToLine(content, m.index);
+        symbols.push({
+            name,
+            kind: "function",
+            file: filePath,
+            line,
+            endLine: line,
+        });
+    }
+    // --- Classes ---
+    patterns.classes.lastIndex = 0;
+    while ((m = patterns.classes.exec(content)) !== null) {
+        const name = m[1];
+        if (!name)
+            continue;
+        const line = charIndexToLine(content, m.index);
+        symbols.push({
+            name,
+            kind: "class",
+            file: filePath,
+            line,
+            endLine: line,
+        });
+    }
+    // --- Imports ---
+    patterns.imports.lastIndex = 0;
+    while ((m = patterns.imports.exec(content)) !== null) {
+        // Python's import regex has two alternates; pick whichever group
+        // matched (group 1 for `from X import Y`, group 2 for `import X`).
+        const mod = m[1] ?? m[2];
+        if (!mod)
+            continue;
+        const line = charIndexToLine(content, m.index);
+        // Local import heuristic: starts with `.` or `/` (relative path),
+        // or starts with `@/` (common JS/TS alias). Bare module names
+        // (e.g., `"react"`, `"fmt"`, `<stdio.h>`) are treated as non-local.
+        const isLocal = mod.startsWith(".") ||
+            mod.startsWith("/") ||
+            mod.startsWith("@/") ||
+            mod.startsWith("./") ||
+            mod.startsWith("../");
+        imports.push({ file: filePath, module: mod, isLocal });
+    }
+    // --- Complexity hotspots (degraded: 1 per function, no decision counting) ---
+    const complexity_hotspots = symbols
+        .filter((s) => s.kind === "function" || s.kind === "method")
+        .map((s) => ({
+        function: s.name,
+        file: s.file,
+        line: s.line,
+        cyclomatic_complexity: 1,
+    }));
+    return {
+        symbols,
+        call_graph: [], // not recoverable from regex alone
+        imports,
+        complexity_hotspots,
+        fallback: true,
+        fallback_reason: UNIVERSAL_AST_FALLBACK_REASON,
+    };
 }

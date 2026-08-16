@@ -133,11 +133,11 @@ async function scenarioHappyPath(runDir) {
 
   check("workflow loaded with name 'orchestrator'", def.workflow === "orchestrator");
   check("initial state is intake", run.currentState === "intake");
-  check("workflow declares safety_gates at execute-workflow (broad-refactor)",
+  check("workflow declares safety_gates at execute-workflow (broad-refactor) + execute-workflow-critical (human-approval-required)",
     Array.isArray(def.safety_gates) &&
-      def.safety_gates.length === 1 &&
-      def.safety_gates[0].state === "execute-workflow" &&
-      def.safety_gates[0].gate === "broad-refactor");
+      def.safety_gates.length === 2 &&
+      def.safety_gates.some(g => g.state === "execute-workflow" && g.gate === "broad-refactor") &&
+      def.safety_gates.some(g => g.state === "execute-workflow-critical" && g.gate === "human-approval-required"));
   check("question_economy budget is 1, allowed_states=[classify-goal]",
     def.question_economy.max_questions === 1 &&
       JSON.stringify(def.question_economy.allowed_states) === JSON.stringify(["classify-goal"]));

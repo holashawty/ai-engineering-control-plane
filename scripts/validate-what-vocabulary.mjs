@@ -162,6 +162,13 @@ function selfTest() {
     "self_heal_failed",
     "self_heal_unavailable",
     "fact_verified_via_tool:web_search",
+    // ADR-0034/0035 wiring sprint
+    "fast_path_applied",
+    "risk_classified:trivial",
+    "risk_classified:low",
+    "risk_classified:medium",
+    "risk_classified:high",
+    "risk_classified:critical",
   ];
 
   // Known-bad values (the typos / drift the linter exists to catch)

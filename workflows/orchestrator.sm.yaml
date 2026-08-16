@@ -79,8 +79,10 @@ description: >
 states:
   - intake
   - classify-goal
+  - fast-path
   - route
   - execute-workflow
+  - execute-workflow-critical
   - evaluate-result
   - report
   - blocked
@@ -90,12 +92,23 @@ terminal_states: [report, blocked]
 
 transitions:
   - { from: intake, to: classify-goal, on: intent_classified }
+  # ADR-0034/0035 wiring: classify-goal now emits a risk_classified:<level>
+  # Decision. If risk is trivial, transition to fast-path (skip full FSM).
+  # If risk is critical, the execute-workflow state's safety_gate becomes
+  # human-approval-required (cannot be auto-confirmed; see run.ts).
   - { from: classify-goal, to: route, on: goal_classified }
+  - { from: classify-goal, to: fast-path, on: risk_trivial }
   - { from: classify-goal, to: blocked, on: goal_too_ambiguous }
+  # Fast-path: apply directly + verify + report (skip route/execute/evaluate loop)
+  - { from: fast-path, to: report, on: fast_path_complete }
+  - { from: fast-path, to: blocked, on: fast_path_failed }
   - { from: route, to: execute-workflow, on: workflow_selected }
+  - { from: route, to: execute-workflow-critical, on: workflow_selected_critical }
   - { from: route, to: blocked, on: no_workflow_matches }
   - { from: execute-workflow, to: evaluate-result, on: workflow_complete }
   - { from: execute-workflow, to: blocked, on: workflow_failed }
+  - { from: execute-workflow-critical, to: evaluate-result, on: workflow_complete }
+  - { from: execute-workflow-critical, to: blocked, on: workflow_failed }
   # LOOP BACK EDGE — the structural feature that makes this
   # workflow distinct from every other in the catalog. After a
   # workflow completes and its result is evaluated, if the
@@ -265,8 +278,46 @@ state_detail:
       multi-platform mention scan) — per `tool-use-discipline`
       and constitution §8, the classification is derived from
       inspected signals, not recalled patterns.
+
+      **ADR-0034/0035 wiring — risk classification (mandatory).** In
+      ADDITION to the goal decomposition above, `classify-goal` MUST
+      call `classifyRisk(signals)` from `executor/src/risk-classifier.ts`
+      and emit a `Decision` with `what: "risk_classified:<level>"` where
+      `<level>` is one of `trivial | low | medium | high | critical`.
+      The signals are constructed from the goal text + git diff stat +
+      known-failure memory lookup. Based on the risk level:
+        - `trivial` → transition to `fast-path` on `risk_trivial` (skip
+          the full FSM; apply directly + verify + report)
+        - `low` / `medium` / `high` → transition to `route` on
+          `goal_classified` (normal full FSM; `high` adds mandatory
+          code-review after)
+        - `critical` → transition to `route` on `goal_classified`, but
+          the `execute-workflow` state's `human-approval-required` gate
+          will fire (cannot be auto-confirmed; see `run.ts`)
+      This is the **adaptive routing** layer — trivial work doesn't
+      need the full 8-state FSM, critical work needs human sign-off.
     emits_evidence: [decision]
     reads_memory: [project, known-failure, environment]
+
+  fast-path:
+    purpose: >
+      ADR-0034/0035: The fast-path state — entered when `classifyRisk()`
+      returned `trivial` (≤5 LOC, .md/.txt/.json only, no security
+      keywords, no known-failure match). The full FSM (route →
+      execute-workflow → evaluate-result loop) is SKIPPED.
+
+      The agent applies the change directly, verifies it, and emits a
+      `Decision` with `what: "fast_path_applied"` recording what was
+      changed + how it was verified. Then transitions to `report` on
+      `fast_path_complete` (success) or `blocked` on `fast_path_failed`
+      (the change didn't apply cleanly, or verification failed — fall
+      back to the full FSM for a proper investigation).
+
+      This state has NO safety_gate — trivial work (≤5 LOC, docs-only)
+      does not need the broad-refactor gate. The risk classifier's
+      `trivial` classification IS the safety assessment.
+    emits_evidence: [decision]
+    reads_memory: [project]
 
   route:
     purpose: >
@@ -336,6 +387,24 @@ state_detail:
       not escape the bound).
     emits_evidence: [decision, event]
     safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold; capability edit_source per executor/src/run.ts GATE_TO_CAPABILITY map)
+
+  execute-workflow-critical:
+    purpose: >
+      ADR-0034/0035: Identical to `execute-workflow` but entered when
+      `classify-goal` emitted `risk_classified:critical` (security
+      keywords present, or known-failure match with >50 LOC). The
+      `human-approval-required` gate fires here — `advance()` throws
+      `safety-gate-needs-human-approval`, and `advanceWithConfirmation()`
+      also throws (confirmation is NOT enough). ONLY
+      `advanceWithHumanApproval()` can proceed — representing a real
+      human approving out-of-band (e.g., `--user-prompt` on the CLI).
+
+      This is the strongest gate in the AIECP catalog: critical-risk
+      work (auth, password, payment, security vulnerabilities) NEVER
+      auto-executes. A human must explicitly approve each critical-risk
+      workflow spawn.
+    emits_evidence: [decision, event]
+    safety_gate: human-approval-required (capability human_approval per executor/src/run.ts GATE_TO_CAPABILITY map; default policy deny; only advanceWithHumanApproval() bypasses)
 
   evaluate-result:
     purpose: >
@@ -504,6 +573,14 @@ capabilities_required:
 safety_gates:
   - state: execute-workflow
     gate: broad-refactor
+  # ADR-0034/0035 wiring: critical-risk work uses a SEPARATE state with
+  # a STRONGER gate. human-approval-required CANNOT be bypassed by
+  # advanceWithConfirmation() (aiecp:confirm) — only by
+  # advanceWithHumanApproval() (real human out-of-band, e.g. --user-prompt).
+  # Route: classify-goal emits risk_classified:critical → route emits
+  # workflow_selected_critical → execute-workflow-critical fires this gate.
+  - state: execute-workflow-critical
+    gate: human-approval-required
   # The orchestrator's own code does not modify source — it
   # spawns child workflows that do. But "causes" is gated just
   # as "applies" is gated, per constitution/safety-rules.md

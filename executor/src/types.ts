@@ -64,6 +64,10 @@ export const DEFAULT_AUTONOMY_POLICY: AutonomyPolicy = {
     credential_access: "deny",
     force_push: "deny",
     branch_deletion: "deny",
+    // ADR-0034/0035: human-approval-required gate maps to this capability.
+    // Default "deny" — critical-risk work NEVER auto-approves; requires
+    // explicit advanceWithHumanApproval() call from a real human.
+    human_approval: "deny",
   },
   broad_refactor_threshold: { max_files: 10, max_loc: 300 },
 };

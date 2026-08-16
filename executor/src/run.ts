@@ -1,7 +1,7 @@
 import { StateMachine } from "./state-machine.js";
 import { QuestionBudget } from "./question-budget.js";
 import { EvidenceStore } from "./evidence-store.js";
-import { enforceGate, GateDecision } from "./safety-gate.js";
+import { enforceGate, checkCapability, GateDecision } from "./safety-gate.js";
 import {
   WorkflowDefinition,
   AutonomyPolicy,
@@ -14,9 +14,19 @@ import {
 // the autonomy-policy capability it should be checked against. This
 // mapping is intentionally explicit and small rather than clever, so a
 // new gate requires a deliberate one-line addition, not inference.
+//
+// ADR-0034/0035 wiring sprint: added "human-approval-required" → "human_approval".
+// This gate type is DIFFERENT from broad-refactor/edit_source:
+//   - broad-refactor (edit_source): can be bypassed by advanceWithConfirmation()
+//     (the agent confirmed; the user said "ok" via aiecp:confirm)
+//   - human-approval-required (human_approval): CANNOT be bypassed by
+//     advanceWithConfirmation() — requires advanceWithHumanApproval(),
+//     which represents a real human approving out-of-band (e.g., via
+//     --user-prompt on the CLI, or a manual review step).
 const GATE_TO_CAPABILITY: Record<string, string> = {
   "broad-refactor": "edit_source",
   edit_source: "edit_source",
+  "human-approval-required": "human_approval",
 };
 
 export interface WorkflowRunOptions {
@@ -87,11 +97,40 @@ export class WorkflowRun {
           "unmapped-safety-gate"
         );
       }
-      gateDecision = enforceGate(this.policy, gateBinding.gate, capability);
+      // Use checkCapability (not enforceGate) so we can throw a SPECIFIC
+      // violation for human-approval-required gates before enforceGate's
+      // generic safety-gate-denied fires. ADR-0034/0035 wiring sprint.
+      gateDecision = checkCapability(this.policy, capability);
       this.recordLog({
         type: "gate-check",
         detail: { state: fromState, gate: gateBinding.gate, capability, decision: gateDecision },
       });
+
+      // ADR-0034/0035: human-approval-required gate gets a DIFFERENT
+      // violation kind than broad-refactor. This lets the caller
+      // distinguish "ask for confirmation" (aiecp:confirm) from
+      // "ask for human approval" (real human out-of-band). The
+      // default policy has human_approval: "deny", so this fires
+      // every time a critical-risk gate is hit without prior approval.
+      if (gateBinding.gate === "human-approval-required" && gateDecision === "denied") {
+        throw new WorkflowViolation(
+          `transition from "${fromState}" is gated by "human-approval-required" ` +
+            `(capability "${capability}") and requires EXPLICIT HUMAN APPROVAL ` +
+            `before proceeding — advanceWithConfirmation() is NOT sufficient for ` +
+            `this gate; use advanceWithHumanApproval() after obtaining approval ` +
+            `out-of-band (e.g., via --user-prompt on the CLI, or a manual review step)`,
+          "safety-gate-needs-human-approval"
+        );
+      }
+
+      if (gateDecision === "denied") {
+        throw new WorkflowViolation(
+          `safety gate "${gateBinding.gate}" denied: capability "${capability}" is ` +
+            `set to deny in the active autonomy policy`,
+          "safety-gate-denied"
+        );
+      }
+
       if (gateDecision === "requires-confirmation") {
         throw new WorkflowViolation(
           `transition from "${fromState}" is gated by "${gateBinding.gate}" ` +
@@ -110,15 +149,53 @@ export class WorkflowRun {
   /**
    * Same as advance(), but treats "requires-confirmation" as granted —
    * used only when the caller has already obtained explicit human
-   * confirmation out-of-band. Never call this speculatively.
+   * confirmation out-of-band (e.g., the user sent aiecp:confirm).
+   * Never call this speculatively.
+   *
+   * ADR-0034/0035: This method does NOT bypass "human-approval-required"
+   * gates — those require advanceWithHumanApproval() (a stronger signal).
+   * Calling advanceWithConfirmation() on a state gated by
+   * human-approval-required will throw safety-gate-needs-human-approval.
    */
   advanceWithConfirmation(on: string): { newState: string } {
     const fromState = this.machine.currentState;
     const gateBinding = this.def.safety_gates?.find((g) => g.state === fromState);
     if (gateBinding) {
+      if (gateBinding.gate === "human-approval-required") {
+        throw new WorkflowViolation(
+          `transition from "${fromState}" is gated by "human-approval-required" — ` +
+            `advanceWithConfirmation() is NOT sufficient; use ` +
+            `advanceWithHumanApproval() after obtaining explicit human ` +
+            `approval out-of-band (e.g., via --user-prompt)`,
+          "safety-gate-needs-human-approval"
+        );
+      }
       this.recordLog({
         type: "gate-check",
         detail: { state: fromState, gate: gateBinding.gate, decision: "confirmed-by-human" },
+      });
+    }
+    const newState = this.machine.advance(on);
+    this.recordLog({ type: "transition", detail: { from: fromState, to: newState, on } });
+    return { newState };
+  }
+
+  /**
+   * Bypasses ALL gates, including "human-approval-required". This is the
+   * "nuclear option" — only call when a REAL HUMAN has approved the
+   * transition out-of-band (e.g., the user reviewed the diff and typed
+   * --user-prompt on the CLI, or a security officer signed off).
+   *
+   * ADR-0034/0035: This is the ONLY method that can bypass a
+   * "human-approval-required" gate. advanceWithConfirmation() will throw.
+   */
+  advanceWithHumanApproval(on: string): { newState: string } {
+    const fromState = this.machine.currentState;
+    const gateBinding = this.def.safety_gates?.find((g) => g.state === fromState);
+    if (gateBinding) {
+      this.recordLog({
+        type: "gate-check",
+        detail: { state: fromState, gate: gateBinding.gate, decision: "human-approved" },
       });
     }
     const newState = this.machine.advance(on);

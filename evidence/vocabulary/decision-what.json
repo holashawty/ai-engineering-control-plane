@@ -382,6 +382,33 @@
       "examples": ["tool_use_skipped:test_runner", "tool_use_skipped:web_search"],
       "emitted_by": ["skills/tool-use-discipline/SKILL.md"],
       "introduced_in": "commit 3bcb6c3"
+    },
+
+    {
+      "pattern_type": "exact",
+      "pattern": "fast_path_applied",
+      "category": "risk-routing",
+      "description": "ADR-0034 risk classifier determined the task is 'trivial' (≤5 LOC, .md/.txt/.json only, no security keywords). The fast-path was taken: the full FSM was skipped, the change was applied directly, and this Decision records that the fast-path was used. Emitted by the orchestrator's fast-path state (per ADR-0034).",
+      "examples": ["fast_path_applied"],
+      "emitted_by": ["workflows/orchestrator.sm.yaml fast-path state"],
+      "consumed_by": ["evaluate-result state (to know the fast-path was taken, not the full FSM)"],
+      "introduced_in": "ADR-0034 + ADR-0035 wiring sprint"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^risk_classified:(trivial|low|medium|high|critical)$",
+      "category": "risk-routing",
+      "description": "ADR-0034 risk classifier produced a risk assessment. The suffix is the risk level. Emitted by the orchestrator's classify-goal state (or classify-risk state) after calling classifyRisk().",
+      "examples": [
+        "risk_classified:trivial",
+        "risk_classified:low",
+        "risk_classified:medium",
+        "risk_classified:high",
+        "risk_classified:critical"
+      ],
+      "emitted_by": ["workflows/orchestrator.sm.yaml classify-goal state"],
+      "consumed_by": ["route state (to decide fast-path vs full FSM vs human-approval)"],
+      "introduced_in": "ADR-0034 + ADR-0035 wiring sprint"
     }
   ],
 
