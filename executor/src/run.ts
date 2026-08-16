@@ -20,7 +20,10 @@ const GATE_TO_CAPABILITY: Record<string, string> = {
 };
 
 export interface WorkflowRunOptions {
-  runDir: string;
+  /** Directory for evidence/memory persistence. Defaults to `.aiecp/`
+   * in the project root (per ADR-0024). E2e drivers may override
+   * with a temp directory for test isolation. */
+  runDir?: string;
   autonomyPolicy?: AutonomyPolicy;
 }
 
@@ -34,7 +37,7 @@ export class WorkflowRun {
   constructor(private readonly def: WorkflowDefinition, opts: WorkflowRunOptions) {
     this.machine = new StateMachine(def);
     this.questions = new QuestionBudget(def.question_economy);
-    this.evidence = new EvidenceStore(opts.runDir);
+    this.evidence = new EvidenceStore(opts.runDir ?? ".aiecp");
     this.policy = opts.autonomyPolicy ?? DEFAULT_AUTONOMY_POLICY;
   }
 

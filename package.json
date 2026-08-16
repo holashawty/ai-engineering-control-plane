@@ -33,6 +33,7 @@
     "e2e:release-demo": "node executor/examples/e2e-release/drive-run.mjs",
     "e2e:incident-demo": "node executor/examples/e2e-incident/drive-run.mjs",
     "e2e:unknown-failure-demo": "node executor/examples/e2e-unknown-failure/drive-run.mjs",
-    "e2e:discovery-refresh-demo": "node executor/examples/e2e-discovery-refresh/drive-run.mjs"
+    "e2e:discovery-refresh-demo": "node executor/examples/e2e-discovery-refresh/drive-run.mjs",
+    "init": "node scripts/init-aiecp.mjs"
   }
 }

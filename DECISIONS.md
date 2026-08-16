@@ -627,3 +627,55 @@ Every framework-level decision — especially anything touching
   block type. Adds `--adapter` and `--user-prompt` arguments.
   Adds `already-terminal` violation handling (catches the "extra
   block past terminal state" bug from the 4th ChatGPT test).
+
+## ADR-0024 — Memory and evidence persist to `.aiecp/` (not temp dir)
+- **Decision:** The EvidenceStore and MemoryStore write to
+  `.aiecp/evidence/` and `.aiecp/memory/` in the project's own
+  directory (not a temporary directory). This makes evidence and
+  memory persistent across sessions — a future agent run can read
+  prior `known-failure` entries, `project` memory, and `environment`
+  memory without re-deriving them.
+- **Reason:** The original implementation wrote to `mkdtempSync()`
+  (temp dir) — evidence and memory were lost when the process exited.
+  This is fine for a single scripted e2e driver run, but unacceptable
+  for real agent sessions where the agent needs to remember what
+  was diagnosed and fixed in prior runs. Per ADR-0007 (Memory is
+  typed, validated, and small), memory must persist to be useful.
+- **What changes:**
+  - `executor/src/evidence-store.ts`: `runDir` defaults to
+    `.aiecp/` in the project root (not temp dir).
+  - `executor/src/run.ts`: `WorkflowRunOptions.runDir` defaults
+    to `.aiecp/` if not specified.
+  - E2e drivers still use temp dirs (for test isolation).
+  - `.gitignore`: `.aiecp/evidence/` and `.aiecp/memory/` are
+    NOT gitignored — they are project artifacts that should be
+    committed (like `.aiecp/project-intelligence.json`).
+- **What does NOT change:**
+  - `.aiecp/policy.local.yaml` stays gitignored (sensitive).
+  - Temp dirs are still used for e2e driver isolation.
+  - The schema validation behavior is unchanged.
+- **Tradeoffs:** `.aiecp/` directory grows over time. Mitigated by
+  the `context-engineering` skill which compresses old evidence.
+- **Status:** Decided 2026-08-16. Active.
+
+## ADR-0025 — Auto-activation: AGENTS.md contains AIECP hook
+- **Decision:** When AIECP is installed in a project (via
+  `scripts/init-aiecp.mjs`), the `AGENTS.md` file gets an
+  "AIECP Auto-Activation" section appended. This section tells any
+  AI agent reading `AGENTS.md` that AIECP is active and provides
+  5 key rules + a pointer to the full entrypoint.
+- **Reason:** The patron's vision is "just say [task]" — the
+  agent should auto-detect AIECP and follow it without being told.
+  The auto-activation hook in `AGENTS.md` achieves this: any agent
+  that reads `AGENTS.md` (Claude Code, Codex, Cursor, Copilot,
+  etc.) will see the AIECP section and know to follow it.
+- **What changes:**
+  - `scripts/init-aiecp.mjs`: appends "## AIECP Auto-Activation"
+    section to `AGENTS.md` if not already present.
+  - `.aiecp/auto-activate.json`: marker file recording activation
+    timestamp, framework path, version, and entrypoints.
+- **What does NOT change:**
+  - `AGENTS.md` remains the canonical entrypoint (ADR-0006).
+  - `CLAUDE.md` is still generated from `AGENTS.md` (the hook is
+    in `AGENTS.md` source, so it appears in `CLAUDE.md` too).
+- **Status:** Decided 2026-08-16. Active.
