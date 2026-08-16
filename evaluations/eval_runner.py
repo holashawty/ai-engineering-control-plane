@@ -175,12 +175,18 @@ def run_workflow_scenario(scenario: dict) -> EvalResult:
                 cwd=str(REPO_ROOT),
             )
 
-            output = proc.stdout + proc.stderr
+            # Use ONLY stdout for JSON parsing. stderr may contain soft
+            # warnings (e.g. ADR-0026 vocabulary linter warnings emitted
+            # by evidence-store.ts) that are not errors — mixing them
+            # into the JSON parse buffer breaks parse. stderr is still
+            # surfaced in error messages for debugging.
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
             result.duration_ms = int((time.time() - start_time) * 1000)
 
             if proc.returncode != 0:
                 # The driver itself crashed
-                result.error = f"Driver exited {proc.returncode}: {output[:500]}"
+                result.error = f"Driver exited {proc.returncode}: stdout={stdout[:400]} stderr={stderr[:400]}"
                 result.assertions.append(Assertion(
                     description="driver executes without error",
                     passed=False,
@@ -189,11 +195,11 @@ def run_workflow_scenario(scenario: dict) -> EvalResult:
                 result.assertions_failed += 1
                 return result
 
-            # Parse the JSON output from the driver
+            # Parse the JSON output from the driver (stdout only)
             try:
-                driver_result = json.loads(output.strip().split("\n")[-1])
+                driver_result = json.loads(stdout.strip().split("\n")[-1])
             except (json.JSONDecodeError, IndexError):
-                result.error = f"Could not parse driver output as JSON: {output[:500]}"
+                result.error = f"Could not parse driver stdout as JSON: stdout={stdout[:400]} stderr={stderr[:400]}"
                 result.assertions.append(Assertion(
                     description="driver produces valid JSON output",
                     passed=False,

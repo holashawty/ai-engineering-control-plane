@@ -34,6 +34,10 @@
     "e2e:incident-demo": "node executor/examples/e2e-incident/drive-run.mjs",
     "e2e:unknown-failure-demo": "node executor/examples/e2e-unknown-failure/drive-run.mjs",
     "e2e:discovery-refresh-demo": "node executor/examples/e2e-discovery-refresh/drive-run.mjs",
+    "e2e:vocab-linter": "node executor/examples/e2e-vocab-linter/drive-run.mjs",
+    "e2e:scale-classifier": "node executor/examples/e2e-scale-classifier/drive-run.mjs",
+    "e2e:skill-tier": "node executor/examples/e2e-skill-tier/drive-run.mjs",
+    "validate:vocab": "node scripts/validate-what-vocabulary.mjs --self-test",
     "count-assertions": "node scripts/count-assertions.mjs",
     "init": "node scripts/init-aiecp.mjs"
   }

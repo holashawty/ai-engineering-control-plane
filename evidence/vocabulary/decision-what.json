@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiecp.dev/schema/evidence/vocabulary/decision-what.json",
+  "title": "Decision.what vocabulary registry",
+  "description": "Canonical Decision.what values emitted across AIECP. Per ADR-0026, a procedural linter (scripts/validate-what-vocabulary.mjs) scans every Decision entity's `what` field against this registry and warns on unknown values. This is a soft linter (warnings, not errors) — backwards-compatible, no schema_version bump required. Each entry has: pattern (exact string OR regex), category, description, examples, emitted_by (which skill/workflow produces it), introduced_in (ADR or commit).",
+
+  "version": "1.0.0",
+  "last_updated": "2026-08-16",
+
+  "entries": [
+    {
+      "pattern_type": "exact",
+      "pattern": "architecture_constraint_conflict",
+      "category": "planning-feedback",
+      "description": "architecture-design skill detected a conflict between architectural constraints and requirements. Triggers orchestrator's plan_revision_needed transition (NOT goal_not_yet_met).",
+      "examples": ["architecture_constraint_conflict"],
+      "emitted_by": ["skills/architecture-design/SKILL.md step 7"],
+      "consumed_by": ["workflows/orchestrator.sm.yaml evaluate-result state"],
+      "introduced_in": "ADR-0026 (this registry), skill added in commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "architecture_ok",
+      "category": "planning-feedback",
+      "description": "architecture-design skill confirmed the plan has no conflict (re-run after plan_revision_needed).",
+      "examples": ["architecture_ok"],
+      "emitted_by": ["skills/architecture-design/SKILL.md"],
+      "consumed_by": ["workflows/orchestrator.sm.yaml evaluate-result state"],
+      "introduced_in": "ADR-0026"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "architecture_designed",
+      "category": "planning",
+      "description": "architecture-design skill completed and wrote specs/architecture.md.",
+      "examples": ["architecture_designed"],
+      "emitted_by": ["skills/architecture-design/SKILL.md"],
+      "introduced_in": "commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "requirements_gathered",
+      "category": "planning",
+      "description": "requirements-gathering skill completed and wrote specs/requirements.md.",
+      "examples": ["requirements_gathered"],
+      "emitted_by": ["skills/requirements-gathering/SKILL.md"],
+      "introduced_in": "commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "plan_created",
+      "category": "planning",
+      "description": "project-planning skill completed and wrote specs/plan.md + specs/tasks.md.",
+      "examples": ["plan_created"],
+      "emitted_by": ["skills/project-planning/SKILL.md"],
+      "introduced_in": "commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "project_scaffolded",
+      "category": "planning",
+      "description": "project-scaffolding skill completed repo skeleton.",
+      "examples": ["project_scaffolded"],
+      "emitted_by": ["skills/project-scaffolding/SKILL.md"],
+      "introduced_in": "commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "ux_designed",
+      "category": "planning",
+      "description": "ux-design skill completed and wrote specs/ux-spec.md.",
+      "examples": ["ux_designed"],
+      "emitted_by": ["skills/ux-design/SKILL.md"],
+      "introduced_in": "commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "regression_recorded",
+      "category": "regression",
+      "description": "regression workflow recorded a known-failure memory entry as regression guard.",
+      "examples": ["regression_recorded"],
+      "emitted_by": ["workflows/regression.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "tool_use_skipped",
+      "category": "tool-discipline",
+      "description": "tool-use-discipline skill recorded a skip (tool was available but not used). Generic form.",
+      "examples": ["tool_use_skipped"],
+      "emitted_by": ["skills/tool-use-discipline/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "self_heal_failed",
+      "category": "self-healing",
+      "description": "self-healing skill attempted a fix but could not apply it.",
+      "examples": ["self_heal_failed"],
+      "emitted_by": ["skills/self-healing/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "self_heal_unavailable",
+      "category": "self-healing",
+      "description": "self-healing skill was invoked but no test runner / selector recovery was possible in this environment.",
+      "examples": ["self_heal_unavailable"],
+      "emitted_by": ["skills/self-healing/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "recency_unverifiable",
+      "category": "verification",
+      "description": "recency-verification skill could not establish the recency of a dependency / fact.",
+      "examples": ["recency_unverifiable"],
+      "emitted_by": ["skills/recency-verification/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "fact_verified_via_tool:web_search",
+      "category": "verification",
+      "description": "recency-verification skill used a web_search tool to confirm a fact's recency.",
+      "examples": ["fact_verified_via_tool:web_search"],
+      "emitted_by": ["skills/recency-verification/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+
+    {
+      "pattern_type": "regex",
+      "pattern": "^acceptance:proceed(_with_[a-z_-]+)?$",
+      "category": "intake",
+      "description": "An intake/classify state in any workflow accepted the request and is proceeding. Suffix names the workflow (e.g., acceptance:proceed_with_feature_request).",
+      "examples": [
+        "acceptance:proceed",
+        "acceptance:proceed_with_feature_request",
+        "acceptance:proceed_with_change_request",
+        "acceptance:proceed_with_code_review",
+        "acceptance:proceed_with_refactor",
+        "acceptance:proceed_with_onboarding",
+        "acceptance:proceed_with_regression",
+        "acceptance:proceed_with_performance_problem",
+        "acceptance:proceed_with_release",
+        "acceptance:proceed_with_incident",
+        "acceptance:proceed_with_security_problem",
+        "acceptance:proceed_with_user_complaint",
+        "acceptance:proceed_with_refresh"
+      ],
+      "emitted_by": ["every workflow's intake/classify state"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^ai_proposal:[a-z][a-z0-9_]*$",
+      "category": "ai-proposal",
+      "description": "An AI agent proposed a code/architecture change. Free-form suffix describes the proposed change (snake_case). Per ADR-0014, validated:false until external Validation confirms.",
+      "examples": [
+        "ai_proposal:apply_patch",
+        "ai_proposal:apply_patch_to_items_handler",
+        "ai_proposal:change_gt_to_gte",
+        "ai_proposal:guard_csrf_token",
+        "ai_proposal:applied_three_layer_mitigation",
+        "ai_proposal:apply_optimization_replace_N+1_with_JOIN",
+        "ai_proposal:apply_refactor_extract_parseExpiryDate"
+      ],
+      "emitted_by": ["bug-report/propose-fix", "feature-request/implement", "refactor/implement", "change-request/migrate"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^design:[a-z][a-z0-9_]*$",
+      "category": "design",
+      "description": "A design decision was made (feature-request/design, refactor/design-refactor, etc.). Free-form suffix describes the design choice.",
+      "examples": [
+        "design:add_tag_filtering",
+        "design:change_sender_to_noreply",
+        "design:extract_helper_function"
+      ],
+      "emitted_by": ["feature-request/design", "refactor/design-refactor"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^assessment:(clean|needs_changes|block)$",
+      "category": "code-review",
+      "description": "code-review workflow's assessment state outcome.",
+      "examples": ["assessment:clean", "assessment:needs_changes", "assessment:block"],
+      "emitted_by": ["workflows/code-review.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^bottleneck(:[a-z][a-z0-9_]*)?$",
+      "category": "performance",
+      "description": "performance-problem workflow identified a bottleneck. Suffix names the bottleneck (snake_case).",
+      "examples": [
+        "bottleneck:n_plus_one_query_in_get_items",
+        "bottleneck_candidate:listItems_N+1_query"
+      ],
+      "emitted_by": ["workflows/performance-problem.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^mitigation:[a-z][a-z0-9_]*$",
+      "category": "incident",
+      "description": "incident workflow's mitigation decision. Suffix names the mitigation action.",
+      "examples": ["mitigation:add_auth_check", "mitigation:rollback_to_abc122"],
+      "emitted_by": ["workflows/incident.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^changelog:[a-z][a-z0-9_]*$",
+      "category": "release",
+      "description": "release workflow's changelog-format decision.",
+      "examples": ["changelog:keepachangelog_format"],
+      "emitted_by": ["workflows/release.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^routing_candidate:[a-z-]+$",
+      "category": "unknown-failure",
+      "description": "unknown-failure workflow's route-or-block state considers routing to a candidate workflow.",
+      "examples": ["routing_candidate:bug-report", "routing_candidate:feature-request"],
+      "emitted_by": ["workflows/unknown-failure.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^workflow_routed:[a-z-]+$",
+      "category": "routing",
+      "description": "Final routing decision — which workflow will handle the request. Used by unknown-failure (then transitions to report) AND orchestrator (then transitions to execute-workflow).",
+      "examples": ["workflow_routed:bug-report", "workflow_routed:feature-request", "workflow_routed:regression", "workflow_routed:project-planning", "workflow_routed:architecture-design"],
+      "emitted_by": ["workflows/unknown-failure.sm.yaml", "workflows/orchestrator.sm.yaml route state"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^child_workflow_outcome:[a-z-]+:(report|blocked)$",
+      "category": "orchestrator",
+      "description": "orchestrator's execute-workflow state records the outcome of a spawned child workflow.",
+      "examples": [
+        "child_workflow_outcome:bug-report:report",
+        "child_workflow_outcome:feature-request:report",
+        "child_workflow_outcome:project-planning:report",
+        "child_workflow_outcome:architecture-design:report"
+      ],
+      "emitted_by": ["workflows/orchestrator.sm.yaml execute-workflow state"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^goal_decomposition:.+$",
+      "category": "orchestrator",
+      "description": "orchestrator's classify-goal state decomposed the user goal into an ordered list of sub-goals. Suffix is semicolon-separated sub-goals.",
+      "examples": [
+        "goal_decomposition:bug-report(shipping);feature-request(batch-labels)",
+        "goal_decomposition:project-planning;architecture-design;feature-request",
+        "goal_decomposition:none"
+      ],
+      "emitted_by": ["workflows/orchestrator.sm.yaml classify-goal state"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^goal_evaluation:(achieved|not_yet_met|unachievable|plan_revision_needed|plan_revision_limit_reached)$",
+      "category": "orchestrator",
+      "description": "orchestrator's evaluate-result state's evaluation of whether the original goal is met. The 5 outcomes drive the 5 transitions out of evaluate-result (goal_achieved, goal_not_yet_met, goal_unachievable, plan_revision_needed, plan_revision_limit_reached).",
+      "examples": [
+        "goal_evaluation:achieved",
+        "goal_evaluation:not_yet_met",
+        "goal_evaluation:plan_revision_needed",
+        "goal_evaluation:plan_revision_limit_reached"
+      ],
+      "emitted_by": ["workflows/orchestrator.sm.yaml evaluate-result state"],
+      "consumed_by": ["orchestrator transition table (lines 112-142 of orchestrator.sm.yaml)"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^goal_achieved:.+$",
+      "category": "orchestrator",
+      "description": "orchestrator's terminal report state's final Decision recording goal achievement with a summary.",
+      "examples": ["goal_achieved:shipping_bug_fixed_and_batch_labels_added"],
+      "emitted_by": ["workflows/orchestrator.sm.yaml report state"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^project_scale:(small|medium|large)$",
+      "category": "orchestrator",
+      "description": "orchestrator's classify-goal state's project-scale classification. Per ADR-0027, this drives which planning phases run (small=skip, medium=requirements-only, large=full chain).",
+      "examples": ["project_scale:small", "project_scale:medium", "project_scale:large"],
+      "emitted_by": ["workflows/orchestrator.sm.yaml classify-goal state"],
+      "consumed_by": ["orchestrator route state (drives planning phase selection)"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^plan_revised:.+$",
+      "category": "planning-feedback",
+      "description": "project-planning skill revised the plan (per LIVING PLAN rule, after architecture-design emitted architecture_constraint_conflict). Suffix names the phase just completed or the revision reason.",
+      "examples": ["plan_revised:<phase-just-completed>", "plan_revised:<reason>"],
+      "emitted_by": ["skills/project-planning/SKILL.md LIVING PLAN rule"],
+      "introduced_in": "commit 2ee6f2f"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^root_cause_candidate:.+$",
+      "category": "debugging",
+      "description": "systematic-debugging skill's diagnose state emitted a root-cause candidate. Suffix names the candidate (free-form).",
+      "examples": ["root_cause_candidate:off_by_one_in_weight_comparison"],
+      "emitted_by": ["skills/systematic-debugging/SKILL.md Phase 4"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^api_change:[a-zA-Z][a-zA-Z0-9_]*:[a-z_]+$",
+      "category": "change-request",
+      "description": "change-request workflow recorded an API contract change. Format: api_change:<endpoint_id>:<change_kind>.",
+      "examples": ["api_change:GET_users_id_memberships:add", "api_change:POST_users:contract_change", "api_change:UserService.GetUser:contract_change"],
+      "emitted_by": ["workflows/change-request.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^db_migration:[a-z][a-z0-9_]*$",
+      "category": "change-request",
+      "description": "change-request workflow recorded a DB migration. Suffix is the migration id (snake_case).",
+      "examples": ["db_migration:add_email_verified_at", "db_migration:drop_legacy_status"],
+      "emitted_by": ["workflows/change-request.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^ui_change:[a-zA-Z][a-zA-Z0-9_-]*:[a-z_]+$",
+      "category": "change-request",
+      "description": "change-request workflow recorded a UI component change. Format: ui_change:<component_id>:<change_kind>.",
+      "examples": ["ui_change:SaveButton:add", "ui_change:my-datepicker:prop_api_change"],
+      "emitted_by": ["workflows/change-request.sm.yaml"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^ui_snapshot_update:[a-zA-Z][a-zA-Z0-9_-]*:[a-zA-Z0-9_-]+$",
+      "category": "visual-regression",
+      "description": "visual-regression skill recorded a UI snapshot update. Format: ui_snapshot_update:<component_id>:<snapshot_name>.",
+      "examples": ["ui_snapshot_update:SaveButton:default-rendered"],
+      "emitted_by": ["skills/visual-regression/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^visual_snapshot_update:[a-z][a-z0-9_-]*:[a-z_]+$",
+      "category": "visual-regression",
+      "description": "visual-regression skill recorded a route-state snapshot update. Format: visual_snapshot_update:<route>:<state>.",
+      "examples": ["visual_snapshot_update:login:loading_state"],
+      "emitted_by": ["skills/visual-regression/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^self_heal(:.+)?$",
+      "category": "self-healing",
+      "description": "self-healing skill recorded a successful selector/test recovery. Suffix is free-form (test_file:test_name:old_selector→new_selector) but the linter does not enforce internal structure — only that the prefix is 'self_heal'. The literal 'self_heal:...' (three dots) is also accepted as a placeholder for the skill's example.",
+      "examples": [
+        "self_heal:login.spec.ts:renders-button:button.primary→button.primary[role=submit]",
+        "self_heal:..."
+      ],
+      "emitted_by": ["skills/self-healing/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^tool_use_skipped:[a-z_]+$",
+      "category": "tool-discipline",
+      "description": "tool-use-discipline skill recorded a skip with the specific tool name. Suffix is the tool identifier.",
+      "examples": ["tool_use_skipped:test_runner", "tool_use_skipped:web_search"],
+      "emitted_by": ["skills/tool-use-discipline/SKILL.md"],
+      "introduced_in": "commit 3bcb6c3"
+    }
+  ],
+
+  "notes": [
+    "This registry is a SOFT linter — warnings only, never errors. A Decision with an unknown `what` is still schema-valid (decision.schema.json allows any string); this linter only flags potential typos / vocabulary drift.",
+    "To add a new `what` value: add an entry here AND emit it from the skill/workflow. If you emit a new value without registering it, the linter will warn — that's the prompt to either register it or fix the typo.",
+    "Pattern types: 'exact' for fixed strings (e.g., 'architecture_constraint_conflict'), 'regex' for templated patterns (e.g., 'workflow_routed:<workflow-name>').",
+    "The registry is consumed by scripts/validate-what-vocabulary.mjs (CLI scanner) and executor/src/evidence-store.ts (runtime warning on emit). Both emit warnings, neither blocks execution."
+  ]
+}

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ const addFormatsFn = addFormats as unknown as (ajv: import("ajv").default) => vo
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_SCHEMA_DIR = join(__dirname, "..", "..", "evidence", "schema");
 const MEMORY_SCHEMA_DIR = join(__dirname, "..", "..", "memory", "schemas");
+const VOCAB_REGISTRY_PATH = join(__dirname, "..", "..", "evidence", "vocabulary", "decision-what.json");
 
 const EVIDENCE_KIND_TO_FILE: Record<string, string> = {
   incident: "incident.schema.json",
@@ -30,6 +31,49 @@ const MEMORY_TYPE_TO_FILE: Record<string, string> = {
   "known-failure": "known-failure.schema.json",
   environment: "environment.schema.json",
 };
+
+/**
+ * Vocabulary registry for Decision.what soft-linting (per ADR-0026).
+ * Lazily loaded on first Decision emit. If the registry file is missing
+ * or unparseable, vocabulary checking is silently skipped — this is a
+ * soft linter, and missing registry MUST NOT block workflow execution.
+ */
+interface VocabEntry {
+  pattern_type: "exact" | "regex";
+  pattern: string;
+  category: string;
+  description: string;
+}
+interface VocabRegistry {
+  version: string;
+  entries: VocabEntry[];
+}
+let cachedVocabRegistry: VocabRegistry | null = null;
+function loadVocabRegistry(): VocabRegistry | null {
+  if (cachedVocabRegistry !== null) return cachedVocabRegistry;
+  if (!existsSync(VOCAB_REGISTRY_PATH)) {
+    return null;
+  }
+  try {
+    cachedVocabRegistry = JSON.parse(readFileSync(VOCAB_REGISTRY_PATH, "utf-8"));
+    return cachedVocabRegistry;
+  } catch {
+    return null;
+  }
+}
+function vocabMatch(value: string, registry: VocabRegistry): VocabEntry | null {
+  for (const entry of registry.entries) {
+    if (entry.pattern_type === "exact" && value === entry.pattern) return entry;
+    if (entry.pattern_type === "regex") {
+      try {
+        if (new RegExp(entry.pattern).test(value)) return entry;
+      } catch {
+        // Skip invalid regex entries silently.
+      }
+    }
+  }
+  return null;
+}
 
 export class EvidenceStore {
   private readonly ajv = new AjvCtor({ strict: false, allErrors: true });
@@ -63,6 +107,30 @@ export class EvidenceStore {
         `evidence "${kind}" (id: ${id ?? "?"}) failed schema validation: ${JSON.stringify(validate.errors)}`,
         "evidence-schema-invalid"
       );
+    }
+    // ADR-0026: soft vocabulary lint for Decision.what. Emits a stderr
+    // WARNING if the value does not match any canonical pattern in
+    // evidence/vocabulary/decision-what.json. This is a SOFT lint — the
+    // Decision is still written and is still schema-valid. The warning
+    // is the prompt for the emitter to either register the new value
+    // or fix the typo. See ADR-0026 for rationale (silent-break risk
+    // in orchestrator's evaluate-result string-match against
+    // "architecture_constraint_conflict").
+    if (kind === "decision" && typeof data.what === "string") {
+      const registry = loadVocabRegistry();
+      if (registry) {
+        const matched = vocabMatch(data.what, registry);
+        if (!matched) {
+          process.stderr.write(
+            `WARNING (ADR-0026 vocabulary linter): Decision "${id ?? "?"}" has unrecognized \`what\` value: "${data.what}".\n` +
+            `  This may be a typo or an unregistered new vocabulary entry. The Decision is still written\n` +
+            `  (schema-valid), but downstream consumers (e.g. orchestrator's evaluate-result state)\n` +
+            `  that string-match on canonical \`what\` values may silently fail to detect this case.\n` +
+            `  Register the value in evidence/vocabulary/decision-what.json if it is a new canonical\n` +
+            `  entry, or fix the emitter if it is a typo.\n`
+          );
+        }
+      }
     }
     const dir = join(this.runDir, "evidence", kind);
     await mkdir(dir, { recursive: true });

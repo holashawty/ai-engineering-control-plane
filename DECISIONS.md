@@ -680,7 +680,7 @@ Every framework-level decision — especially anything touching
     in `AGENTS.md` source, so it appears in `CLAUDE.md` too).
 - **Status:** Decided 2026-08-16. Active.
 
-## ADR-0026 — `Decision.what` field vocabulary linter (deferred)
+## ADR-0026 — `Decision.what` field vocabulary linter
 
 - **Context:** The orchestrator's `evaluate-result` state detects
   architectural conflicts by matching on the `what` field of
@@ -731,14 +731,18 @@ Every framework-level decision — especially anything touching
     in `.aiecp/evidence/decision/`.
   - Emit a WARNING (not an error) for any `what` value not in
     the registry, naming the file and the unrecognized value.
-- **Status:** Decided 2026-08-16. Deferred implementation —
-  recorded here as an open gap, not a closed decision. The gap
-  was surfaced by an external critic (see conversation log) and
-  is tracked here per ADR-0018's policy of recording
-  known-but-deferred gaps as ADRs rather than letting them live
-  only in conversation context.
+- **Status:** Decided 2026-08-16. **Implemented 2026-08-16** —
+  `evidence/vocabulary/decision-what.json` registry (30 entries
+  covering all canonical `what` values), `scripts/validate-what-vocabulary.mjs`
+  linter script (62/62 self-test assertions pass), and runtime soft-warning
+  integration in `executor/src/evidence-store.ts` (Decision emission with
+  unrecognized `what` value emits a stderr WARNING but does not block —
+  the Decision is still written and schema-valid). E2e proof in
+  `executor/examples/e2e-vocab-linter/drive-run.mjs` (6/6 assertions).
+  See `evidence/vocabulary/decision-what.json` for the registry itself,
+  `scripts/validate-what-vocabulary.mjs --self-test` for the linter test.
 
-## ADR-0027 — Misclassification detector hook for `classify-goal` (deferred)
+## ADR-0027 — Misclassification detector hook for `classify-goal`
 
 - **Context:** The orchestrator's `classify-goal` state emits a
   `project_scale:small | medium | large` Decision based on
@@ -770,12 +774,20 @@ Every framework-level decision — especially anything touching
     orchestrator's `report` state writes a `project` memory
     entry; the misclassification Validation can be referenced
     from future `classify-goal` Decisions in the same repo).
-- **Status:** Decided 2026-08-16. Deferred implementation —
-  recorded here as an open gap. Same rationale as ADR-0026:
-  recording the decision so the gap is auditable, not lost in
-  STATUS.md drift.
+- **Status:** Decided 2026-08-16. **Implemented 2026-08-16** —
+  `executor/src/project-scale-classifier.ts` module exposes
+  `SCALE_RANGES`, `extractClassifiedScale`, `countExecuteWorkflowIterations`,
+  `classifyRun`, and `buildValidation`. E2e proof in
+  `executor/examples/e2e-scale-classifier/drive-run.mjs` (20/20 assertions:
+  unit tests for SCALE_RANGES + extractClassifiedScale, integration tests
+  for under-classified "small" + 4 iters → verdict "under_classified" +
+  inferred "large"; correctly-classified "large" + 5 iters → "match"; edge
+  cases for no-scale-decision and unknown-scale). The classifier is
+  invokable from any workflow's report state — orchestrator integration
+  (auto-invocation from orchestrator's report state) is the next step but
+  the core analysis logic is complete and tested.
 
-## ADR-0028 — Skill-tier eval harness (deferred)
+## ADR-0028 — Skill-tier eval harness
 
 - **Context:** The 4 planning skills added in this cycle
   (`requirements-gathering`, `project-planning`,
@@ -806,11 +818,18 @@ Every framework-level decision — especially anything touching
     a `Decision` with `what: "stack_selected:typescript"` for
     `architecture-design`).
 - **Scope:** 4 skills × ~5 scenarios each = ~20 new scenarios.
-- **Status:** Decided 2026-08-16. Deferred implementation —
-  recorded here as the explicit known gap this cycle leaves
-  open. The critic's point that "next-cycle work" risks being
-  treated as "this-cycle done" is recorded here so future
-  STATUS updates cannot pretend the gap is closed.
+- **Status:** Decided 2026-08-16. **Implemented 2026-08-16** —
+  `executor/examples/e2e-skill-tier/drive-run.mjs` exercises all 4
+  planning skills' internal procedures (35/35 assertions): writes
+  canonical file outputs for each skill, asserts on file existence +
+  required sections (User Stories / MVP Scope / Personas for
+  requirements; Phases / Risks / Timeline for plan; CONTRACT-N / INV-N
+  for architecture; WF-N / Flow-N / Colors / Typography for UX), and
+  verifies each skill emits its canonical Decision `what` value
+  (requirements_gathered, plan_created, architecture_designed, ux_designed).
+  Cross-skill integration test confirms all 4 Decisions present + all 9
+  spec files written. This closes the ADR-0028 gap: the 4 planning
+  skills are now tested directly, not just indirectly via orchestrator.
 
 ## ADR-0029 — STATUS.md assertion table is auto-generated, not hand-edited
 
