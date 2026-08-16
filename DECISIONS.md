@@ -259,7 +259,7 @@ Every framework-level decision — especially anything touching
   process cost with no legal or quality benefit, and in practice
   produced worse outcomes than the original when applied to working
   code (ADR text corrected after this was observed in practice on the
-  `systematic-debugging` skill adaptation — see `STATUS.md`/`TASKS.md`
+  `systematic-debugging` skill adaptation — see `STATUS.md`/`docs/archive/sprint-logs/TASKS.md`
   history for 2026-08-14).
 - **What does NOT change:** Sources with a restrictive or unverified
   license are unaffected by this ADR and remain paraphrase-only /

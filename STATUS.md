@@ -6,7 +6,7 @@ up this project should read this file before touching anything else.
 
 **For the detailed, prioritized task list for the current phase
 (post-MVP: real upstream integration + expanding beyond bug-report),
-see [`TASKS.md`](TASKS.md).** That file also documents which tasks
+see [`TASKS.md`](docs/archive/sprint-logs/TASKS.md).** That file also documents which tasks
 Z.ai can actually execute (research, content drafting) versus which
 require Claude (real repo cloning, code, schema/architecture
 decisions) — Z.ai has no GitHub API/clone access, only web search.

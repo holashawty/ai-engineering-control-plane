@@ -12,7 +12,7 @@ bir arada, tek bir anayasaya (constitution) bağlı.
 > **Bu dosyayı 5 dakikada okuyan bir AI ajanı (chat veya IDE), projenin ne
 > olduğunu, nasıl çalıştığını ve hangi durumda olduğunu anlamalıdır.** Detaylı
 > durum için [`STATUS.md`](STATUS.md), kararlar için [`DECISIONS.md`](DECISIONS.md)
-> ve güncel görev listesi için [`TASKS.md`](TASKS.md) tek doğruluk kaynağıdır.
+> ve güncel görev listesi için [`TASKS.md`](docs/archive/sprint-logs/TASKS.md) tek doğruluk kaynağıdır.
 
 ---
 
@@ -137,7 +137,7 @@ shell-out'una bağlanması) bekliyor. Tüm aşama kırılımı için
 | Anayasa kuralları | **8** | 8 | [`constitution/constitution.md`](constitution/constitution.md) |
 
 **Tamamlanan önemli kilometre taşları** (detaylı liste [`STATUS.md`](STATUS.md)
-ve [`DELIVERABLES.md`](DELIVERABLES.md)):
+ve [`DELIVERABLES.md`](docs/archive/sprint-logs/DELIVERABLES.md)):
 
 - Phase 0 araştırma + mimari + 16 ADR → commit `cc2d2db`; sonrasında canlı
   lisans doğrulama (6 gerçek hata düzeltildi).

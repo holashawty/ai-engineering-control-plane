@@ -316,7 +316,7 @@ console.log("Step 1/4: Setting up framework...");
 const essentialDirs = ["workflows", "skills", "constitution", "evidence", "memory", "discovery", "executor", "adapters", "agents", "specs", "scripts"];
 const essentialFiles = [
   "AGENTS.md", "CHAT-ENTRYPOINT.md", "CHAT-ENTRYPOINT-SANDBOX.md",
-  "MCP-ENTRYPOINT.md", "NOTICE", "DECISIONS.md", "STATUS.md", "TASKS.md", "DELIVERABLES.md",
+  "MCP-ENTRYPOINT.md", "NOTICE", "DECISIONS.md", "STATUS.md", "docs/archive/sprint-logs/TASKS.md", "docs/archive/sprint-logs/DELIVERABLES.md",
   "package.json", ".gitattributes", "SECURITY.md", "LICENSE", "CONTRIBUTING.md",
   "docs/evidence-model.md", "docs/architecture.md", "docs/workflow-model.md",
   "docs/memory-model.md", "docs/portability.md", "docs/security-model.md",
