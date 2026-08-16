@@ -68,4 +68,4 @@ serializations are adapters (see ADR-0012).
 This model is novel — no upstream prior art was found (see
 `docs/research.md`). Each entity must be validated against at least 3
 real bug scenarios before Phase 5 (Engineering Skills) begins, per
-ADR-0004 and the risk register in `docs/implementation-roadmap.md`.
+ADR-0004 and the risk register in `docs/archive/implementation-roadmap.md`.

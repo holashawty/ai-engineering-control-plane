@@ -38,7 +38,7 @@ bir arada, tek bir anayasaya (constitution) bağlı.
 
 **Faz:** Phase 2 (Core) — **MVP dikey dilim tamamlandı**, Phase 3+ kapsamına
 geçiliyor. Phase 0 (Araştırma + Mimari) ve Phase 1 (Şemalar) tamamlanıp merge
-edildi. Tüm aşama kırılımı için [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md).
+edildi. Tüm aşama kırılımı için [`docs/archive/implementation-roadmap.md`](docs/archive/implementation-roadmap.md).
 
 | Alan | Tamamlandı | Hedef | Not |
 |---|---|---|---|

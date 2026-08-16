@@ -2,7 +2,7 @@
   "name": "aiecp",
   "version": "0.1.0",
   "private": true,
-  "description": "AI Engineering Control Plane \u2014 root orchestrator. Ties discovery/cli, executor, and adapters/agents into one install/build/test flow. See STATUS.md for current phase.",
+  "description": "AI Engineering Control Plane — portable, agent-agnostic framework that makes any LLM (chat, IDE, CLI) operate with senior-engineer discipline: evidence-driven debugging, mandatory tool use, safety gates, workflow state machines. 35 skills, 15 workflows, 5 agent adapters, 29 ADRs, 953 assertions passing.",
   "license": "MIT",
   "workspaces": [
     "discovery/cli",

@@ -4,7 +4,7 @@ This project is in **Phase 2 (Core)** — the MVP vertical slice is complete:
 all 15 workflows are implemented as runnable `.sm.yaml` files and proven
 end-to-end, 35 skills are authored, and 5 agent adapters are wired up.
 See `STATUS.md` for the live assertion count table (953 pass / 5 fail as of
-2026-08-16), `docs/implementation-roadmap.md` for the phased plan, and
+2026-08-16), `docs/archive/implementation-roadmap.md` for the phased plan, and
 `DECISIONS.md` for the architecture decision log (29 ADRs).
 
 ## Before contributing code

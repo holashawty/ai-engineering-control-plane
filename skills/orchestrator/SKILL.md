@@ -16,7 +16,7 @@ large for any one workflow" and "the goal is met, or refused
 safely with a precise gap."
 
 This is the **loop engineering** workflow of the AIECP catalog.
-Per `docs/controller-audit-and-roadmap-2026.md` §3.3, the 2026
+Per `docs/archive/controller-audit-and-roadmap-2026.md` §3.3, the 2026
 industry progression is `prompt engineering → context
 engineering → harness engineering → loop engineering`. AIECP
 already implements the first three: skills prompt the agent,

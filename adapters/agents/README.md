@@ -74,6 +74,6 @@ trusting the self-test's boolean assertions alone. Fixed in
 - No disk-writing CLI wrapper around `syncAll()`.
 - `.cursor/rules/*.mdc`, `.windsurfrules`,
   `.github/copilot-instructions.md`, `GEMINI.md` adapters — post-MVP
-  per `docs/implementation-roadmap.md` Phase 7.
+  per `docs/archive/implementation-roadmap.md` Phase 7.
 - No live Claude Code / Codex session has exercised these adapters —
   only realistic shapes have been tested.

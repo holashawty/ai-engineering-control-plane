@@ -157,7 +157,7 @@ Every framework-level decision — especially anything touching
 - **Tradeoffs:** Adds one more schema/config surface. Justified because
   it directly implements ADR-0011 rather than leaving it as prose.
 - **Status:** Decided 2026-08-11. Active. Scheduled for Phase 1
-  finalization (see `docs/implementation-roadmap.md`). CSA (Cloud
+  finalization (see `docs/archive/implementation-roadmap.md`). CSA (Cloud
   Security Alliance) Ocak 2026'da AI ajanları için yayınladığı
   resmi L0-L5 otonomi seviyeleri standardıyla neredeyse birebir
   örtüşmektedir — bu paralellik, AIECP'nin tasarım kararlarının
@@ -195,7 +195,7 @@ Every framework-level decision — especially anything touching
   wide-but-shallow framework is a higher risk than a narrow-but-proven
   one; the wide surface can be built once the slice is proven correct.
 - **Tradeoffs:** Slower perceived breadth early on. Accepted — see
-  `docs/implementation-roadmap.md` MVP definition.
+  `docs/archive/implementation-roadmap.md` MVP definition.
 - **Status:** Decided 2026-08-14. Active. MVP vertical slice expanded to 14/14 workflows (was 8 at decision time).
 
 ## ADR-0017 — Tooling language: Node.js/TypeScript for the CLI, Python for the eval harness

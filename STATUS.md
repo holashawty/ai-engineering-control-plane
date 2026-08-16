@@ -23,7 +23,7 @@ that's `docs/`. This file only tracks *what's done and what's next*.
 ## Current phase: Phase 2 (Core) — MVP vertical slice complete, entering Phase 3+ scope
 
 Phase 0 (Research + Architecture) and Phase 1 (Schemas) are complete and
-merged. See `docs/implementation-roadmap.md` for the full phase
+merged. See `docs/archive/implementation-roadmap.md` for the full phase
 breakdown and `DECISIONS.md` for all 29 ADRs governing these choices.
 
 ## Sequencing decision (2026-08-11)

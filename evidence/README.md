@@ -22,4 +22,4 @@ Environment Fingerprint, Reproduction, Regression) are long-term scope
 Each schema instance must validate before being written to the
 `examples/` corpus or consumed by a workflow. No implementation of the
 *writer* (the code that actually emits these JSON documents during a
-workflow run) exists yet — that is Phase 4 in `docs/implementation-roadmap.md`.
+workflow run) exists yet — that is Phase 4 in `docs/archive/implementation-roadmap.md`.
