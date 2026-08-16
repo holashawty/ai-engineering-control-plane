@@ -220,3 +220,54 @@ ise tam anayasal FSM devreye girmelidir."
 - 5 new e2e drivers (context-router, universal-ast, risk-classifier,
   swebench-adapter, + 1 for sandbox stub if applicable)
 - Target: ~40 new assertions, bringing total from 997 → ~1037
+
+---
+
+## Phase 3 — Production Hardening (Sandbox + SWE-bench Pass@1)
+
+> Pro-LLM'in nihai tavsiyesi: "Phase 3'e geçerken tek odak noktanız
+> SWE-bench adaptörünü 10 gerçek Python/TS issue'su üzerinde koşturup
+> ilk somut başarı skorunu (Pass@1) belgelemek ve Docker sandbox
+> çalıştırıcısını run.ts içine bağlamak olmalıdır."
+
+### Hedef 1 — Docker Sandbox Çalıştırıcısı
+
+**Durum**: ADR-0030'da karar kayıtlı, stub yok. Bu fazda gerçek
+implementasyon.
+
+**Dosyalar**:
+- `executor/src/sandbox-runner.ts` — Docker daemon varsa container'da
+  komut çalıştırır; yoksa `execSync`'e fallback yapar (development mode,
+  clear WARNING ile). Asla sessizce unsafe moda düşmez.
+- `sandbox/Dockerfile.aiecp-executor` — minimal image: node:20-alpine +
+  python3 + git. `--read-only` rootfs, `--cap-drop=ALL`, no network.
+- `sandbox/run-in-sandbox.mjs` — CLI wrapper.
+
+**run.ts entegrasyonu**: `execute-workflow` state'inde sandbox-runner
+çağrılacak — child workflow'un komutları container içinde çalışacak.
+Bu opsiyonel: `WorkflowRunOptions.sandbox: true` ile aktive edilir.
+
+**Test**: `executor/examples/e2e-sandbox/drive-run.mjs` — Docker yoksa
+fallback modunu test eder; Docker varsa real container run yapar.
+
+### Hedef 2 — SWE-bench Adapter + Pass@1
+
+**Durum**: ADR-0031'de tasarım kayıtlı, adapter yok. Bu fazda gerçek
+implementasyon.
+
+**Dosyalar**:
+- `evaluations/swebench-adapter.py` — SWE-bench instance JSON'ı okur,
+  AIECP scenario YAML'ye çevirir. ~200 satır Python.
+- `evaluations/swebench-samples/` — 1-3 gerçek SWE-bench instance
+  (MIT lisanslı, küçük — sadece metadata, repo state değil).
+- `executor/examples/e2e-swebench-adapter/drive-run.mjs` — adapter'ın
+  instance → scenario dönüşümünü kanıtlar.
+
+**Pass@1 hedefi**: Pro model "10 issue'da en az 1 başarı" dedi. Bu
+fazda adapter'ın çalıştığını + 1 örnek instance'ın doğru scenario'ya
+dönüştüğünü kanıtlıyoruz. Gerçek 10-issue run Docker gerekir (Hedef 1'e
+bağımlı) — bu fazda Docker varsa koştururuz, yoksa simulated.
+
+### Phase 3 Test Budget
+- 2 new e2e drivers (sandbox, swebench-adapter)
+- Target: ~30 new assertions, total 1265 → ~1295

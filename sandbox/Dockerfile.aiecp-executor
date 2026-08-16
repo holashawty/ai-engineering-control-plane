@@ -1,0 +1,58 @@
+# sandbox/Dockerfile.aiecp-executor
+#
+# ADR-0030 / ADR-0035: minimal image for OS-level isolation of LLM-emitted
+# commands. Built on `node:20-alpine` so the same image can run the AIECP
+# executor's TS-built dist/ AND any python3 / git tooling a workflow skill
+# shells out to (e.g. testing/behavioral-verification SKILL).
+#
+# Hardening (most is enforced AT `docker run` TIME, not in the image —
+# see `executor/src/sandbox-runner.ts` for the runtime flags):
+#
+#   --read-only          rootfs is immutable; only /workspace (bind mount) is writable
+#   --cap-drop=ALL       no Linux capabilities (no ptrace, no mknod, no net_admin, ...)
+#   --network=none       no network egress (the LLM cannot exfiltrate data)
+#   --rm                 container is destroyed after the command exits
+#   -v <workDir>:/workspace
+#                        project dir bind-mounted as the only writable path
+#   -w /workspace        cwd inside the container
+#
+# Why node:20-alpine (not distroless):
+#   - Skills (e.g. testing, behavioral-verification) frequently shell out
+#     to `node`, `python3`, and `git`. A distroless image would force us
+#     to maintain a fat toolchain layer. alpine keeps the image at ~120MB
+#     while still providing `apk` for adding new tools deliberately.
+#   - ADR-0017: "Tooling language: Node.js/TypeScript for the CLI, Python
+#     for the eval harness" — the sandbox image mirrors the host's
+#     toolchain so a workflow can run either.
+#
+# Why no USER directive (we keep root inside the container):
+#   - alpine's `node:20-alpine` runs as `root` by default. Dropping to a
+#     non-root user is good defense-in-depth but it COMPLICATES the
+#     bind-mount write-permission story on macOS (uid mismatch). We
+#     instead rely on `--cap-drop=ALL --read-only --network=none` to
+#     neuter what root can do. A future ADR may add a `sandbox` user
+#     with explicit `chown` of /workspace if a real-world attack path
+#     demands it.
+#
+# Build:
+#   docker build -t aiecp-executor:latest -f sandbox/Dockerfile.aiecp-executor sandbox/
+#
+# Phase 3 status (ADR-0035): Implemented with graceful fallback. The image
+# build is OPTIONAL at dev time — `executor/src/sandbox-runner.ts` detects
+# Docker availability at runtime and falls back to `execSync` with a LOUD
+# WARNING when the daemon is missing (development mode, not for production).
+
+FROM node:20-alpine
+
+# python3 + py3-pip: SWE-bench adapter and some skills shell out to python.
+# git: required by behavioral-verification + recency-verification skills.
+# No network at runtime (--network=none), so apk add is build-time only.
+RUN apk add --no-cache python3 py3-pip git
+
+# The bind-mounted project dir appears here at runtime (read-write, so
+# test artifacts can be written). The container's own rootfs stays
+# read-only — only /workspace is mutable.
+WORKDIR /workspace
+
+# Drop ALL capabilities; read-only rootfs enforced at `docker run` time.
+# (Image-level directives cannot enforce these — they are runtime flags.)

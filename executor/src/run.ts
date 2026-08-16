@@ -35,6 +35,28 @@ export interface WorkflowRunOptions {
    * with a temp directory for test isolation. */
   runDir?: string;
   autonomyPolicy?: AutonomyPolicy;
+  /** ADR-0030 / ADR-0035 (Phase 3): when true, child workflow commands
+   *  invoked from the `execute-workflow` state (orchestrator) run inside
+   *  the Docker sandbox via `executor/src/sandbox-runner.ts` —
+   *  `--read-only --cap-drop=ALL --network=none`, with /workspace
+   *  bind-mounted from `runDir`.
+   *
+   *  When false (default): commands run on the host directly (the
+   *  current behavior; safety-gate.ts still gates them at the prompt
+   *  level). When true: each command is wrapped in `runInSandbox()`,
+   *  which auto-detects Docker availability and falls back to host
+   *  execution with a LOUD WARNING if Docker is not installed.
+   *
+   *  WIRING NOTE (Phase 3 scope): this option is DECLARED and
+   *  DOCUMENTED here, but the actual interception of every
+   *  `execSync`/`spawnSync` call inside child workflows is a Phase
+   *  3.5 follow-up. In Phase 3, the option is honored only by code
+   *  that explicitly opts in (e.g. adapters/agents/src/chat-sandbox/
+   *  adapter.ts and the e2e-sandbox driver). Wiring the sandbox into
+   *  every workflow's command-execution paths requires touching every
+   *  skill's shell-out sites — out of scope for this phase per
+   *  roadmap-2026-pro.md Item 3. */
+  sandbox?: boolean;
 }
 
 export class WorkflowRun {

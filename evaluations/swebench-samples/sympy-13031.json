@@ -1,0 +1,9 @@
+{
+  "instance_id": "sympy-13031",
+  "repo": "https://github.com/sympy/sympy",
+  "base_commit": "abc123def456789012345678901234567890abcd",
+  "problem_statement": "When calling simplify() on an expression containing both a Symbol with positive=True assumption and an unevaluated Pow with a negative exponent, simplify() returns the wrong sign on the exponent. Reproduce with: x = Symbol('x', positive=True); simplify(1/(x**2)) should return x**(-2) but returns -x**(-2). The bug is in sympy.core.expr.Expr._eval_simplify which does not check the positive assumption before applying the negation rewrite rule.",
+  "test_patch": "diff --git a/sympy/core/tests/test_simplify.py b/sympy/core/tests/test_simplify.py\nindex 1234567..abcdefg 100644\n--- a/sympy/core/tests/test_simplify.py\n+++ b/sympy/core/tests/test_simplify.py\n@@ -100,6 +100,12 @@ def test_simplify_basic():\n     assert simplify(x + x) == 2*x\n+\n+def test_simplify_edge_case():\n+    # ADR-0031 synthetic instance — checks simplify() sign handling\n+    # for positive-assumption Symbols with negative-exponent Pows.\n+    x = Symbol('x', positive=True)\n+    assert simplify(1/(x**2)) == x**(-2)\n",
+  "FAIL_TO_PASS": ["test_simplify_edge_case"],
+  "PASS_TO_PASS": ["test_simplify_basic"]
+}

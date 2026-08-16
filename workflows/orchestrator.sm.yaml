@@ -385,6 +385,20 @@ state_detail:
       "applies" is gated, per `constitution/safety-rules.md`
       ("autonomy is bounded, not implicit" — delegation does
       not escape the bound).
+
+      ADR-0030 / ADR-0035 (Phase 3): when the orchestrator's
+      `WorkflowRunOptions.sandbox === true`, the child workflow's
+      LLM-emitted commands (execSync/spawnSync shell-outs in skills)
+      MUST be routed through `executor/src/sandbox-runner.ts`'s
+      `runInSandbox()` — i.e. into a hardened Docker container
+      (--read-only --cap-drop=ALL --network=none, /workspace bind-mount).
+      The sandbox-runner auto-detects Docker availability and falls
+      back to host execution with a LOUD WARNING when Docker is missing
+      (development mode only; production deployments MUST install Docker
+      and build the aiecp-executor image). NOTE: the actual interception
+      of every shell-out site is a Phase 3.5 follow-up — in Phase 3 the
+      option is declared and documented, and opt-in callers
+      (chat-sandbox adapter, e2e-sandbox driver) honor it.
     emits_evidence: [decision, event]
     safety_gate: broad-refactor (evaluated against constitution/autonomy-policy.schema.json broad_refactor_threshold; capability edit_source per executor/src/run.ts GATE_TO_CAPABILITY map)
 
