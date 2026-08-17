@@ -1,5 +1,11 @@
 # AI Engineering Control Plane (AIECP)
 
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-v1.0.0-green.svg)
+![ADRs](https://img.shields.io/badge/ADRs-36-orange.svg)
+![Skills](https://img.shields.io/badge/skills-35-yellow.svg)
+![Assertions](https://img.shields.io/badge/assertions-1356-brightgreen.svg)
+
 **AI kodlama ajanlarına senior/principal mühendis disiplinini dayatan**, ajan-
 bağımsız, taşınabilir bir kontrol düzlemi: kanıt odaklı (evidence-driven),
 test edilebilir, kendi kendini düzelten ve bağlam-farkında — dil, framework
@@ -13,6 +19,71 @@ bir arada, tek bir anayasaya (constitution) bağlı.
 > olduğunu, nasıl çalıştığını ve hangi durumda olduğunu anlamalıdır.** Detaylı
 > durum için [`STATUS.md`](STATUS.md), kararlar için [`DECISIONS.md`](DECISIONS.md)
 > ve güncel görev listesi için [`TASKS.md`](docs/archive/sprint-logs/TASKS.md) tek doğruluk kaynağıdır.
+
+---
+
+## Mimari Diyagramı
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    KULLANICI / AJAN                                 │
+│   (Chat LLM • Claude Code • Codex • MCP • Chat-Sandbox)            │
+└──────────────┬──────────────────────────────────┬─────────────────┘
+               │                                  │
+   ┌───────────▼──────────┐          ┌────────────▼────────────┐
+   │   ENTRYPOINTS        │          │   ADAPTERS               │
+   │   AGENTS.md          │          │   claude-code / codex    │
+   │   CLAUDE.md          │◄────────►│   chat / chat-sandbox   │
+   │   CHAT-ENTRYPOINT    │          │   mcp                    │
+   └───────────┬──────────┘          └────────────┬────────────┘
+               │                                  │
+   ┌───────────▼──────────────────────────────────▼────────────┐
+   │                    EXECUTOR                               │
+   │  ┌─────────────┐  ┌──────────────┐  ┌────────────────┐  │
+   │  │ State Machine│  │ Safety Gates  │  │ Evidence Store │  │
+   │  │  (.sm.yaml)  │  │ (broad-refactor│  │ (8 entity type)│  │
+   │  │              │  │  human-approval)│  │                │  │
+   │  └──────┬──────┘  └───────┬──────┘  └───────┬────────┘  │
+   │         │                 │                  │            │
+   │  ┌──────▼──────────────────────────────────▼────────┐   │
+   │  │  RISK CLASSIFIER → FAST-PATH / FULL FSM           │   │
+   │  │  CONTEXT ROUTER (JIT, %96 token saving)           │   │
+   │  └───────────────────────────────────────────────────┘   │
+   └─────────────────────────┬────────────────────────────────┘
+                             │
+   ┌─────────────────────────▼────────────────────────────────┐
+   │                    WORKFLOWS (15)                          │
+   │  bug-report · feature-request · refactor · change-request │
+   │  code-review · regression · release · incident            │
+   │  security-problem · performance · orchestrator · ...      │
+   └─────────────────────────┬────────────────────────────────┘
+                             │
+   ┌─────────────────────────▼────────────────────────────────┐
+   │                    SKILLS (35)                            │
+   │  systematic-debugging · evidence-engineering · testing   │
+   │  architecture-design · risk-classifier · context-router │
+   │  universal-ast · sandbox-runner · ...                    │
+   └─────────────────────────┬────────────────────────────────┘
+                             │
+   ┌─────────────────────────▼────────────────────────────────┐
+   │              EVIDENCE + MEMORY (persistent)               │
+   │  .aiecp/evidence/ (Incident·Trace·Event·Decision·...)   │
+   │  .aiecp/memory/ (project·known-failure·environment)      │
+   └──────────────────────────────────────────────────────────┘
+```
+
+### Nasıl Çalışır?
+
+```
+Kullanıcı → Entrypoint → Workflow FSM → Evidence → Rapor
+   "fix bug"    AGENTS.md    bug-report    .aiecp/     ✓
+```
+
+1. **Kullanıcı** bir görev verir ("shipping bug'ı düzelt", "futbol oyunu yap")
+2. **Entrypoint** (AGENTS.md/CLAUDE.md/CHAT-ENTRYPOINT) agent'a AIECP disiplinini öğretir
+3. **Risk Classifier** görevü sınıflar: trivial → fast-path, critical → human-approval
+4. **Workflow FSM** (bug-report, feature-request, orchestrator) state-by-state ilerler
+5. **Evidence Store** her adımı kanıtlar (`.aiecp/evidence/` + `.aiecp/memory/`)
 
 ---
 
@@ -734,6 +805,26 @@ bir reuse öncesi doğrulanmalı.
 
 
 ## Hızlı Başlatma (--yarat / --entegre)
+
+```
+┌─ Yeni proje (--yarat) ──────────────────────────────────┐
+│  init-aiecp --yarat "fikir"                             │
+│       ↓                                                  │
+│  project-scaffolding → discovery → entrypoints          │
+│       ↓                                                  │
+│  Chat LLM prompt: "Read CHAT-ENTRYPOINT-SANDBOX.md..."  │
+│       ↓                                                  │
+│  orchestrator workflow (planning chain → implementation) │
+└──────────────────────────────────────────────────────────┘
+
+┌─ Mevcut proje (--entegre) ──────────────────────────────┐
+│  init-aiecp /path/to/project --entegre                 │
+│       ↓                                                  │
+│  framework setup → discovery → entrypoints              │
+│       ↓                                                  │
+│  AGENTS.md hook → agent follows AIECP discipline        │
+└──────────────────────────────────────────────────────────┘
+```
 
 ### `--yarat [fikir]` — Sıfırdan proje oluştur
 

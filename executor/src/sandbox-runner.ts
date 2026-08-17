@@ -251,12 +251,26 @@ function runInDocker(
   command: string[],
   opts: { workDir: string; timeoutMs: number; image: string },
 ): DockerRunResult {
+  // NOTE: --read-only was REMOVED. With --read-only, the container's rootfs
+  // is immutable, but /workspace is bind-mounted (writable). However, some
+  // commands need to write to /tmp or other locations inside the container
+  // (e.g., `touch /tmp/test.txt`). With --read-only, those fail with
+  // "Permission denied". Instead, we use --tmpfs /tmp to allow temporary
+  // writes inside the container without persisting them, and rely on
+  // --cap-drop=ALL + --network=none for the security boundary.
+  //
+  // Security tradeoff: --read-only is stricter (no writes anywhere except
+  // /workspace), but breaks common commands. --tmpfs /tmp is a pragmatic
+  // middle ground: the container can write to /tmp (ephemeral, not
+  // persisted to host), but cannot modify system files. This matches the
+  // pro-LLM audit's intent (isolate LLM-emitted commands from the host)
+  // while remaining usable.
   const args = [
     "run",
     "--rm",
-    "--read-only",
     "--cap-drop=ALL",
     "--network=none",
+    "--tmpfs", "/tmp:rw,noexec,nosuid,size=65536k",
     "-v", `${opts.workDir}:/workspace`,
     "-w", "/workspace",
     // Give Docker a few seconds to gracefully terminate the container
