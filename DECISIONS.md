@@ -1742,3 +1742,89 @@ Every framework-level decision — especially anything touching
   sample + regression driver committed. Real 10-instance Pass@1 run
   deferred to Phase 3.5 (needs Docker + real repo downloads per
   ADR-0030).
+
+## ADR-0037 — Mode-Dependent Virtues: fix-mode minimalism vs creation-mode ambition
+
+- **Context:** The pro-LLM audit (2026-08-17) identified that
+  `constitution/engineering-principles.md` mandates "minimal fix,
+  not opportunistic rewrite" universally. This was correct for
+  fix/maintenance tasks (bug-report, refactor, change-request) where
+  minimalism prevents scope creep. But AIECP now also supports
+  creation mode (`--yarat` / greenfield project creation), where the
+  OPPOSITE virtue applies: ambition, completeness, and delight.
+  Without separating these modes, skills like `implementation` and
+  `code-review` apply fix-mode minimalism to creation tasks,
+  producing technically correct but underwhelming products.
+- **Decision:** Add a "Mode-Dependent Virtues" section to
+  `constitution/engineering-principles.md` that explicitly separates:
+  - **Fix mode** (bug-report, refactor, change-request, etc.):
+    minimalism is the virtue. Don't add unasked features.
+  - **Creation mode** (--yarat, greenfield, orchestrator with
+    project_scale:large): ambition is the virtue. Build the FULL
+    vision, not the minimum. Research domain standards and include
+    them even if the user didn't explicitly ask.
+  The mode is determined by the orchestrator's `classify-goal` state.
+  Each skill CHECKS the mode before applying its discipline.
+- **What does NOT change:** Evidence-first, regression protection,
+  replay, decision trace, stack-native tooling, safety gates,
+  question economy — all mode-INDEPENDENT.
+- **Status:** Decided 2026-08-17. Implemented in
+  `constitution/engineering-principles.md` "Mode-Dependent Virtues"
+  section. Active.
+
+## ADR-0038 — Quality-gate state: structural enforcement of creation-mode ambition
+
+- **Context:** ADR-0037 separates fix-mode from creation-mode at the
+  constitutional level. But without STRUCTURAL enforcement, the
+  separation is advisory — skills will drift back to minimalism.
+  Claude (pro-LLM) identified: "just adding a skill won't help if
+  the orchestrator can ignore it. Make it a blocking gate like
+  safety gates."
+- **Decision:** Add a `quality-gate` state to `orchestrator.sm.yaml`
+  between `evaluate-result` and `report`. The transition
+  `evaluate-result → report` is REMOVED; replaced by
+  `evaluate-result → quality-gate → report`.
+  - In fix mode: quality-gate is a pass-through (emit
+    `quality_gate_passed`, advance to report).
+  - In creation mode: quality-gate is a BLOCKING gate requiring
+    evidence from 3 enrichment processes:
+    1. `product-vision` skill (Product Owner perspective)
+    2. `creative-expansion` skill (Visual Designer perspective)
+    3. `self-red-team` skill (Competitor/Critic perspective)
+  - If any is missing or critical gaps remain → `quality_gate_failed`
+    → back to `classify-goal` to enrich the decomposition.
+- **What does NOT change:** Safety gates (broad-refactor,
+  human-approval-required) still apply. Quality-gate is ADDITIONAL,
+  not a replacement.
+- **Status:** Decided 2026-08-17. Implemented in
+  `workflows/orchestrator.sm.yaml` (quality-gate state + transitions).
+  Active.
+
+## ADR-0039 — Role-perspective dispatch (clarifying ADR-0005)
+
+- **Context:** ADR-0005 decided "single responsible agent" for
+  predictability. But the pro-LLM audit found that without multiple
+  perspectives (Product Owner, End-User Advocate, Bug Hunter, Market
+  Researcher, Visual Designer, Tech Lead), the agent defaults to a
+  single engineering perspective and misses product-level concerns.
+- **Decision:** ADR-0005's single-agent principle is PRESERVED — the
+  orchestrator remains the single responsible agent. But it is
+  CLARIFIED: the orchestrator can DISPATCH role-perspectives:
+  - If the platform supports subagents (Claude Code, Codex with
+    subagent capability) → dispatch real subagent per role.
+  - If not (chat LLM, chat-sandbox) → the agent "puts on the hat"
+    and simulates the perspective internally.
+  6 role-perspectives are defined:
+    1. Product Owner: "Is this rich enough? What's missing?"
+    2. End-User Advocate: "Would a real user be delighted?"
+    3. Bug Hunter: "What edge cases are unhandled?"
+    4. Market Researcher: "What do competitors have?"
+    5. Visual Designer: "Is the visual experience polished?"
+    6. Tech Lead: "Is the code maintainable + product complete?"
+- **What does NOT change:** ADR-0005's predictability guarantee —
+  the orchestrator is still the single decision-maker. Role-
+  perspectives ADVISE; the orchestrator DECIDES.
+- **Status:** Decided 2026-08-17. Active. (Implementation: the 3
+  new skills — product-vision, creative-expansion, self-red-team —
+  are the first 3 role-perspectives. The remaining 3 will be added
+  as skills in future commits.)

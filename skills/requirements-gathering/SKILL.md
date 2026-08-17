@@ -167,32 +167,80 @@ happy" is untestable and therefore not a valid story; rewrite the
 displays the user's 5 most-recent items sorted by `updated_at`
 descending").
 
-### 4. Define MVP scope
+### 4. Define Launch-Ready V1 scope (creation mode) or MVP scope (fix mode)
 
-Under a `## MVP Scope` heading, write three subsections:
+**Mode detection (per `constitution/engineering-principles.md`
+"Mode-Dependent Virtues"):** the framing of this step depends on
+the orchestrator's `classify-goal` outcome:
 
-- **In scope (MVP)** — the user stories from step 3 that MUST
-  ship for the product to be usable by its target persona. Each
-  story cites its `US-N` id.
-- **Out of scope (MVP)** — capabilities a stakeholder might
-  *assume* are in MVP but are explicitly NOT. Naming these
-  prevents scope creep at planning time: when
-  `project-planning` decomposes the work, it will not accidentally
-  include "out of scope" items as tasks.
-- **Phase 2+** — capabilities deferred to a later phase. These
-  are real future work, not rejections — they get re-prioritized
-  when MVP ships and the team assesses what users actually used.
+- If this is a `--yarat` / creation session (greenfield project,
+  feature-request on a new codebase, orchestrator with
+  `project_scale:large`) → use the **"Launch-Ready V1"** framing
+  below. The term "MVP" is BANNED in creation mode because it
+  triggers "minimum work" behavior in engineering culture;
+  "Launch-Ready V1" triggers "complete first version" behavior.
+- If this is a fix/maintenance task (bug-report, refactor,
+  change-request, regression, performance-problem, incident,
+  security-problem on an existing codebase) → use the traditional
+  **"MVP"** framing: the three subsections below keep their
+  original labels ("In scope (MVP)", "Out of scope (MVP)",
+  "Phase 2+") and minimalism is the virtue.
 
-The MVP boundary is the single most consequential decision this
-skill makes. A common failure mode: an MVP that includes
+**KEY PRINCIPLE (creation mode only):** "Launch-Ready V1" means
+the product is COMPLETE enough that a user would be delighted,
+not just "it works". A game without progression is not
+Launch-Ready V1. An e-commerce without cart is not Launch-Ready
+V1. If the `product-vision` skill found domain standards, those
+standards are NON-NEGOTIABLE for Launch-Ready V1.
+
+Under a `## Launch-Ready V1 Scope` (creation mode) or
+`## MVP Scope` (fix mode) heading, write the following
+subsections. The labels differ by mode:
+
+- **Launch-Ready V1 Scope** (creation mode) / **In scope (MVP)**
+  (fix mode) — the user stories from step 3 that MUST ship for
+  the product to be usable by its target persona. Each story
+  cites its `US-N` id. In creation mode, this is "everything
+  needed for a DELIGHTFUL first release" — not the minimum that
+  technically satisfies the literal request.
+- **Post-Launch Enhancements** (creation mode) / **Out of scope
+  (MVP)** (fix mode) — capabilities a stakeholder might *assume*
+  are in scope but are explicitly NOT. Naming these prevents
+  scope creep at planning time: when `project-planning`
+  decomposes the work, it will not accidentally include these as
+  tasks. In creation mode, these must be GENUINELY future work,
+  NOT deferred core features — deferring a domain-standard
+  feature here is the underwhelming-prototype failure mode (see
+  below). The creation-mode "Phase 2+" subsection is MERGED into
+  this one (both are "things that ship after Launch-Ready V1");
+  in fix mode, "Phase 2+" remains a separate third subsection
+  (see below).
+- **Phase 2+** (fix mode ONLY) — capabilities deferred to a
+  later phase. These are real future work, not rejections — they
+  get re-prioritized when MVP ships and the team assesses what
+  users actually used. In creation mode, this subsection does
+  NOT exist; its content is merged into "Post-Launch
+  Enhancements" above.
+
+The scope boundary is the single most consequential decision this
+skill makes. A common failure mode: a scope that includes
 everything the user mentioned ("we'll just build it all") is not
-an MVP — it is a v1.0 with no priority ordering, and
-`project-planning` cannot sequence what it cannot prioritize.
-Conversely, an MVP that is too narrow ("just login, nothing else")
-is not a product — it is a feature demo. The test: can the target
-persona achieve the benefit named in the top-priority user story
-using ONLY the in-scope items? If yes, the MVP is coherent. If
-no, either narrow the story or widen the scope.
+a Launch-Ready V1 / MVP — it is a v1.0 with no priority ordering,
+and `project-planning` cannot sequence what it cannot prioritize.
+Conversely, a scope that is too narrow ("just login, nothing
+else") is not a product — it is a feature demo. The test: can
+the target persona achieve the benefit named in the top-priority
+user story using ONLY the in-scope items? If yes, the scope is
+coherent. If no, either narrow the story or widen the scope. In
+creation mode, the OPPOSITE failure mode also exists: a
+Launch-Ready V1 that omits domain-standard features ("the user
+didn't explicitly ask for upgrades") is not a Launch-Ready V1 —
+it is an underwhelming prototype. Domain standards discovered by
+`product-vision` (via `recency-verification` + web search) are
+non-negotiable for Launch-Ready V1; omitting them produces a
+product that technically satisfies the letter of the request
+while violating its spirit (per `constitution/engineering-
+principles.md` "Why this matters").
 
 ### 5. Identify 1-3 user personas
 

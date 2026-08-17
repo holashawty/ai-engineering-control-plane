@@ -406,7 +406,20 @@ async function scenarioHappyPath(runDir) {
     ],
   });
   advanceResults.push(run.advance("goal_achieved"));
-  check("state is report (terminal — goal achieved, no loop back)", run.currentState === "report" && run.isTerminal());
+  // ADR-0037/0038: goal_achieved now goes to quality-gate (not report directly).
+  // This is a fix-mode run (no planning skills in decomposition), so quality-gate
+  // is a pass-through: emit quality_gate_passed + advance to report.
+  check("state is quality-gate (not report directly — ADR-0037/0038)", run.currentState === "quality-gate");
+  await run.emitEvidence("decision", {
+    id: "decision-quality-gate-passed-1",
+    trace_ref: "trace-classify-goal-1",
+    what: "quality_gate_passed",
+    why: "fix-mode orchestrator run (no planning skills in decomposition) — quality-gate is pass-through per ADR-0037",
+    validated: true,
+    result: "accepted",
+  });
+  advanceResults.push(run.advance("quality_gate_passed"));
+  check("state is report (terminal — quality gate passed, goal achieved)", run.currentState === "report" && run.isTerminal());
 
   // ------------------------------------------------------------------
   // report: emit the final goal_achieved Decision + write project memory
@@ -591,14 +604,17 @@ async function scenarioHappyPath(runDir) {
     existsSync(join(runDir, "evidence", "validation", `${validation.id}.json`)));
 
   // (i) State machine history — the orchestrator's run walked the
-  // full multi-iteration path: 9 transitions total (intake→classify-
+  // full multi-iteration path: 10 transitions total (intake→classify-
   // goal, classify-goal→route, route→execute-workflow, execute-
   // workflow→evaluate-result, evaluate-result→route (LOOP BACK),
   // route→execute-workflow, execute-workflow→evaluate-result,
-  // evaluate-result→report). Plus the report state's terminal
-  // nature means no further transitions are possible.
-  check(`state machine history has 8 transitions (intake→classify-goal, classify-goal→route, route→execute-workflow ×2, execute-workflow→evaluate-result ×2, evaluate-result→route LOOP BACK ×1, evaluate-result→report)`,
-    run.machine.history.length === 8);
+  // evaluate-result→quality-gate, quality-gate→report). Plus the
+  // report state's terminal nature means no further transitions.
+  // ADR-0037/0038: goal_achieved now goes to quality-gate (not report
+  // directly), adding 1 transition (quality-gate→report via
+  // quality_gate_passed).
+  check(`state machine history has 9 transitions (intake→classify-goal, classify-goal→route, route→execute-workflow ×2, execute-workflow→evaluate-result ×2, evaluate-result→route LOOP BACK ×1, evaluate-result→quality-gate, quality-gate→report)`,
+    run.machine.history.length === 9);
 
   // (j) Non-execute-workflow advances returned gateDecision=undefined
   // (no gate fired on those transitions). All confirmed advances

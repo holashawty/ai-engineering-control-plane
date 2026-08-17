@@ -1,6 +1,6 @@
 # Skills (Agent Skills format)
 
-**Status: 35 skills authored — 4 MVP + 5 workflow-driven + 2 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend) + 2 new-verification (visual-regression, self-healing) + 4 planning (requirements-gathering, project-planning, architecture-design, ux-design) + 9 other (orchestrator, incident, release, security-problem, discovery-refresh, unknown-failure, user-complaint, project-scaffolding, context-engineering).**
+**Status: 38 skills authored — 4 MVP + 5 workflow-driven + 3 meta + 3 tool-discipline + 3 new-workflow (project-onboarding, regression, performance-problem) + 3 new-domain (database, frontend, backend) + 2 new-verification (visual-regression, self-healing) + 4 planning (requirements-gathering, project-planning, architecture-design, ux-design) + 3 creation-mode-enrichment (product-vision, creative-expansion, self-red-team) + 9 other (orchestrator, incident, release, security-problem, discovery-refresh, unknown-failure, user-complaint, project-scaffolding, context-engineering).**
 
 All skills are written as real, procedural Agent Skills
 (`SKILL.md` + YAML frontmatter, per ADR-0001), not placeholders.
@@ -75,6 +75,74 @@ All skills are written as real, procedural Agent Skills
   plus a 6-item self-review checklist. `result: "mismatch"` →
   transition back to the code-changing state.
 
+## Creation-mode enrichment skills (ADR-0037/0038)
+
+These skills are invoked by the orchestrator's `quality-gate` state
+in **creation mode** (greenfield `--yarat` projects, per
+`constitution/engineering-principles.md` ADR-0037 "Mode-Dependent
+Virtues"). The quality-gate is a BLOCKING gate: in creation mode it
+requires evidence from THREE enrichment processes before
+transitioning to `report` — without all three, `quality_gate_passed`
+cannot be emitted and the run loops back to `classify-goal` with an
+enriched decomposition. In fix mode (bug fixes, refactors) the
+quality-gate is a pass-through and these skills skip themselves.
+
+- [`product-vision/`](product-vision/SKILL.md) — the **Product
+  Owner perspective** (ADR-0037/0038): runs AFTER
+  `requirements-gathering` and BEFORE `project-planning` in
+  creation mode (`--yarat`). Researches domain standards via
+  web search (`recency-verification`), builds a Domain Standards
+  table marking every standard feature the user didn't mention
+  as a GAP ("in creation mode, domain standards are EXPECTED,
+  not optional"), defines the product's Core Loop, and writes a
+  Launch-Ready V1 scope (the term "MVP" is BANNED in this
+  skill's output) with four subsections: must-have features,
+  Wow Factor Targets (1-3 specific delights), core-loop
+  completeness, post-launch enhancements. Emits
+  `Decision(what: "product_vision_defined")` with evidence_refs
+  to the web_search Events. Writes `specs/product-vision.md`.
+  Distinct from `requirements-gathering` (captures user intent;
+  this skill enriches it with market awareness). Distinct from
+  `ux-design` (decides HOW the product looks; this skill
+  decides WHAT the product IS). Novel to AIECP; inspired by
+  BMAD-METHOD's Product Owner persona.
+- [`creative-expansion/`](creative-expansion/SKILL.md) — the
+  **Visual Designer + End-User Advocate perspective**: runs
+  DURING/AFTER implementation in creation mode. Audits the
+  implemented product across three dimensions (visual feedback,
+  interaction richness, domain-specific progression/
+  completeness) and emits `Decision(what:
+  "creative_expansion_suggested")` with four arrays:
+  `suggestions` (each with priority must-have/should-have/
+  nice-to-have and a target_surface file/component path),
+  `implemented` (already present, with evidence), `missing`
+  (actionable asks), and `rejected` (explicitly rejected with
+  documented reason — unaddressed must-haves with no
+  `rejected` entry cause `quality_gate_failed`). Every
+  suggestion traces to a Wow Factor Target from
+  `specs/product-vision.md` OR is a domain_standard. Distinct
+  from `frontend` (code-writing discipline; this skill is
+  CREATIVE IDEATION). Distinct from `self-red-team` (critical
+  "what's missing?"; this skill is creative "what would make
+  this more delightful?"). Novel to AIECP.
+- [`self-red-team/`](self-red-team/SKILL.md) — the
+  **competitor/critic perspective**: the agent puts on the hat of a
+  harsh critic/competitor and asks "what's missing? what would a
+  competitor have that this doesn't?" Runs minimum N tours based on
+  `project_scale` (small:1, medium:2, large:3+ per ADR-0027's
+  SCALE_RANGES). Tour 1 (competitor) is MANDATORY web-search-backed
+  per `recency-verification`; Tour 2 (critic) inspects source for
+  polish/completeness/accessibility/robustness gaps; Tour 3+
+  (user perspective, large only) walks the first-time user journey.
+  Each tour emits `Decision(what:
+  "red_team_finding:<severity>:<slug>")`; the synthesis emits
+  `red_team_complete` with `verdict: "pass" | "fail"`. Critical/high
+  findings → `quality_gate_failed` → back to `classify-goal` with
+  the findings cited in the enriched decomposition. Distinct from
+  `behavioral-simulation` (which finds *bugs* at `verify`; this
+  finds *product-completeness gaps* at `quality-gate`). Novel to
+  AIECP; inspired by red-team testing methodology.
+
 ## New-workflow skills (D-sprint)
 
 - [`project-onboarding/`](project-onboarding/SKILL.md) — drives the
@@ -113,7 +181,8 @@ in `docs/research.md`.
 
 | File | Who WRITES | Who READS |
 |---|---|---|
-| `specs/requirements.md` | requirements-gathering | planning, arch, ux |
+| `specs/requirements.md` | requirements-gathering | product-vision, planning, arch, ux |
+| `specs/product-vision.md` | product-vision | planning, ux, creative-expansion, orchestrator quality-gate |
 | `specs/plan.md` | project-planning | arch, ux |
 | `specs/tasks.md` | project-planning | arch, ux |
 | `specs/contracts.md` | architecture-design | planning |

@@ -325,7 +325,147 @@ from design-system to implementation: a `frontend` component
 that hardcodes `#3B82F6` instead of `var(--color-primary)` is a
 design-system violation.
 
-### 6. Emit a Decision
+### 6. Domain Conventions & Visual Polish
+
+This step is **creation-mode only**. In fix/maintenance mode
+(per `constitution/engineering-principles.md` "Mode-Dependent
+Virtues"), this step is SKIPPED — fix mode does not add visual
+polish to a bug fix. If the orchestrator's `classify-goal`
+classified this session as fix/maintenance, jump to step 7 (Emit
+a Decision) and note in the Decision's `why` that step 6 was
+skipped per mode-dependent virtues.
+
+In creation mode, this step ensures the UX is not just internally
+consistent (step 5) but also **externally competitive** — that
+it matches what users in this product domain have come to expect.
+A design-system in isolation produces a coherent-but-generic UI;
+this step pulls in the domain-specific visual/interactive
+conventions that make the product feel native to its genre. This
+is the UX-design analogue of `recency-verification`: do NOT
+assert "a game should have particle effects" from training-data
+memory — verify what similar products in THIS domain actually
+ship today.
+
+#### 6a. Research domain conventions (live, not static)
+
+Use the `recency-verification` skill (`skills/recency-
+verification/SKILL.md`) plus web search to research what similar
+products in this domain typically have visually and
+interactively. This is NOT a static checklist — the conventions
+evolve (e.g., toast notifications displaced alert dialogs for
+transient feedback ~2018; skeleton loaders displaced spinners
+for above-the-fold content ~2020). Live research each time.
+
+Run web searches shaped like `"<product-type> UI conventions
+<year>"` or `"<domain> app design patterns <year>"`. For each
+search, emit an `Event` (`evidence/schema/event.schema.json`)
+with `kind: "action"`, `source: "web_search"`, `payload.query`
+and `payload.result_summary` (one-sentence paraphrase of the top
+result, plus `payload.result_url` if available). These Events are
+the audit trail that the conventions cited in
+`specs/ux/domain-conventions.md` came from current research, not
+training-data memory — the same audit trail `recency-
+verification` step 2 requires for any time-sensitive claim.
+
+Indicative examples (NOT a static list — verify each time):
+the actual conventions in each domain shift, and the list below
+is illustrative of the *kind* of convention to look for, not the
+definitive set:
+
+- **Game domain** — particle effects on click, evolution/
+  transformation animations, floating score numbers, achievement
+  toasts, background atmosphere (star field, gradient, parallax),
+  sound-effect-on-action feedback, progress bars for long
+  actions.
+- **E-commerce** — product hover zoom, cart badge count animation
+  on add, checkout progress steps (cart → shipping → payment →
+  confirm), wishlist heart animation, image gallery with
+  thumbnails, "recently viewed" carousel.
+- **SaaS dashboard** — loading skeleton (not spinner) for above-
+  the-fold data, data-viz charts (line/bar/donut), toast
+  notifications for save success, empty states with
+  illustrations + CTA, keyboard shortcuts (cmd+K command
+  palette).
+- **CLI tool** — colored output (success green, error red,
+  warning yellow), progress bar for long operations, spinner
+  for indeterminate waits, `--help` formatting with usage /
+  flags / examples, exit codes that follow the POSIX convention.
+
+If `product-vision` skill has already run and produced
+`specs/product-vision.md` with domain standards + wow-factor
+targets, READ it first — this step should BUILD ON that research,
+not duplicate it. Cite `specs/product-vision.md` in the Events
+emitted here.
+
+#### 6b. Define which domain conventions to include
+
+For each convention discovered in 6a, decide:
+**include in Launch-Ready V1** / **defer to Post-Launch** /
+**reject**. Record the decision inline. Domain-standard
+conventions default to INCLUDE — rejecting a domain-standard
+convention requires a documented reason (e.g., "rejected hover
+zoom: target platform is mobile-first, hover is not a primary
+input"). This mirrors `requirements-gathering`'s step 4 KEY
+PRINCIPLE: domain standards are non-negotiable for Launch-Ready
+V1.
+
+#### 6c. Define Visual Polish Targets
+
+Identify 1-3 specific visual/interactive elements that would
+make a user say "wow" — not just "it works" but "this is
+delightful." These are the creation-mode analogue of the
+"stretch goals" in `product-vision`: concrete, nameable
+elements the implementation skill will cite. Each target must
+be:
+
+- **Specific** — "particle burst on score increment" not "nice
+  animations".
+- **Implementable** — names the technical mechanism (Canvas
+  particle system, CSS keyframe, SVG morph, etc.).
+- **Testable** — names an observable behavior (`behavioral-
+  simulation` can verify the particle burst fires on score
+  change).
+
+These targets become `Expected` entities (per `specification`)
+with `source_ref: "specs/ux/domain-conventions.md#visual-polish-
+targets"` so the implementation phase can be checked against
+them — without this, "delightful" is subjective and
+unverifiable.
+
+#### 6d. Write findings to specs/ux/domain-conventions.md
+
+Write the research findings, decisions, and Visual Polish
+Targets to `specs/ux/domain-conventions.md` (a FOURTH file under
+`specs/ux/`, alongside `flows.md` / `wireframes.md` / `design-
+system.md`). Structure:
+
+```
+## Domain Conventions (researched <iso-date>)
+
+### Research sources
+- <Event id> — <query> → <result_summary> (<result_url>)
+
+### Conventions included in Launch-Ready V1
+- <convention> — <why include> — <wireframe ref>
+
+### Conventions deferred to Post-Launch
+- <convention> — <why defer>
+
+### Rejected conventions
+- <convention> — <why reject>
+
+## Visual Polish Targets
+1. <target> — <mechanism> — <observable behavior>
+2. <target> — <mechanism> — <observable behavior>
+3. <target> — <mechanism> — <observable behavior>
+```
+
+If the file already exists (a prior ux-design run), APPEND a
+new `## Domain Conventions Revision — <iso-date>` section rather
+than overwriting, mirroring the append-don't-overwrite discipline
+this skill applies to its other three output files.
+
+### 7. Emit a Decision
 
 Emit a `Decision` (`evidence/schema/decision.schema.json`) with:
 
@@ -355,13 +495,16 @@ Emit a `Decision` (`evidence/schema/decision.schema.json`) with:
 The `Decision.trace_ref` MUST point at the `Trace` wrapping the
 inspection events (reading requirements + plan + contracts).
 
-### 7. Write to specs/ux/ (create directory if needed)
+### 8. Write to specs/ux/ (create directory if needed)
 
-Write three files under `specs/ux/`:
+Write four files under `specs/ux/` (three in fix mode, where step
+6 is skipped):
 
 - `specs/ux/flows.md` — user flows (step 2) + journey maps (step 4).
 - `specs/ux/wireframes.md` — wireframes (step 3).
 - `specs/ux/design-system.md` — design system (step 5).
+- `specs/ux/domain-conventions.md` — domain conventions + Visual
+  Polish Targets (step 6, creation mode only).
 
 If the `specs/ux/` directory does not exist, create it. This is
 the home for all UX artifacts; per the file-level contract,

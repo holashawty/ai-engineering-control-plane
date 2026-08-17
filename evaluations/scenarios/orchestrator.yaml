@@ -163,6 +163,20 @@
         evidence_refs: ["decision-orch-route-2", "decision-orch-exec-2"]
     - action: advance
       on: goal_achieved
+    # ADR-0037/0038: goal_achieved now goes to quality-gate (not report directly).
+    # In fix mode (this scenario simulates a fix-mode orchestrator run — no
+    # planning skills in decomposition), quality-gate is a pass-through.
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-quality-gate-passed-1
+        trace_ref: trace-orch-1
+        what: "quality_gate_passed"
+        why: "fix-mode orchestrator run — quality-gate is pass-through (no planning skills in decomposition)"
+        validated: true
+        result: accepted
+    - action: advance
+      on: quality_gate_passed
     - action: writeMemory
       type: project
       data:
@@ -371,6 +385,18 @@
         evidence_refs: ["decision-orch-pr-route-4", "decision-orch-pr-exec-4"]
     - action: advance
       on: goal_achieved
+    # ADR-0037/0038: quality-gate pass-through for fix-mode run
+    - action: emitEvidence
+      kind: decision
+      data:
+        id: decision-quality-gate-passed-pr
+        trace_ref: trace-orch-pr-1
+        what: "quality_gate_passed"
+        why: "fix-mode orchestrator run — quality-gate is pass-through"
+        validated: true
+        result: accepted
+    - action: advance
+      on: quality_gate_passed
   expected:
     terminal_state: report
     is_terminal: true

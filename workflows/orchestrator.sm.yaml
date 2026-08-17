@@ -84,6 +84,7 @@ states:
   - execute-workflow
   - execute-workflow-critical
   - evaluate-result
+  - quality-gate
   - report
   - blocked
 
@@ -123,8 +124,20 @@ transitions:
   # sub-goal, or transitions to `report` (goal achieved) or
   # `blocked` (goal unachievable with the available workflows).
   - { from: evaluate-result, to: route, on: goal_not_yet_met }
-  - { from: evaluate-result, to: report, on: goal_achieved }
+  # ADR-0037/0038: In creation mode, goal_achieved does NOT go directly
+  # to report. It goes through quality-gate first — a BLOCKING gate that
+  # requires evidence from product-vision + creative-expansion + self-red-team.
+  # This is structural, not advisory: the transition to report REQUIRES
+  # quality_gate_passed, just like broad-refactor requires aiecp:confirm.
+  # In fix mode, quality-gate is a pass-through (goal_achieved → quality-gate
+  # → quality_gate_passed → report, no enrichment needed).
+  - { from: evaluate-result, to: quality-gate, on: goal_achieved }
   - { from: evaluate-result, to: blocked, on: goal_unachievable }
+  # QUALITY GATE — creation mode's enrichment + red-team loop.
+  # quality_gate_passed → report (all enrichment done, no critical gaps)
+  # quality_gate_failed → classify-goal (go back, enrich the decomposition)
+  - { from: quality-gate, to: report, on: quality_gate_passed }
+  - { from: quality-gate, to: classify-goal, on: quality_gate_failed }
   # PLAN REVISION BACK EDGE — when the just-executed workflow
   # emitted a Decision with `what: "architecture_constraint_
   # conflict"` (the architecture-design skill's conflict
@@ -507,6 +520,59 @@ state_detail:
       cite the prior `blocked` outcome in its `Decision.why`
       when transitioning back to `route` so the loop does not
       silently retry the same workflow forever.
+    emits_evidence: [decision]
+
+  quality-gate:
+    purpose: >
+      ADR-0037/0038: The quality-gate state — entered when
+      `evaluate-result` says `goal_achieved`. In **fix mode**, this is
+      a pass-through: emit `quality_gate_passed` and proceed to `report`.
+      In **creation mode** (--yarat / greenfield), this is a BLOCKING
+      gate that requires evidence from THREE enrichment processes before
+      transitioning to `report`:
+
+
+      1. **product-vision** (Product Owner perspective): Did the
+         `product-vision` skill run and produce `specs/product-vision.md`?
+         Did it research domain standards via web search
+         (`recency-verification`)? Does the product include the
+         domain-standard features found in that research?
+
+      2. **creative-expansion** (Visual Designer + End-User Advocate
+         perspective): Did the `creative-expansion` skill run? Did it
+         suggest enrichments (visual feedback, animations, micro-
+         interactions, progression systems)? Were those enrichments
+         implemented OR explicitly rejected with documented reasons?
+
+      3. **self-red-team** (Competitor/Critic perspective): Did the
+         `self-red-team` skill run the minimum tour count (based on
+         `project_scale` from `classify-goal`: small=1, medium=2,
+         large=3+)? Did each tour produce a `Decision` recording
+         findings? Were all critical/high findings addressed?
+
+      If ALL three are satisfied → emit `Decision(what:
+      "quality_gate_passed")` → transition to `report`.
+
+      If ANY is missing OR critical gaps remain → emit
+      `Decision(what: "quality_gate_failed")` with the specific gap
+      → transition back to `classify-goal` to enrich the decomposition
+      with the missing sub-goals.
+
+      **Mode detection**: The mode is determined by the original
+      `classify-goal` Decomposition Decision. If the decomposition
+      includes planning skills (requirements-gathering, project-planning,
+      architecture-design, ux-design) → creation mode → full quality
+      gate. If the decomposition is only fix/maintenance workflows
+      (bug-report, refactor, change-request) → fix mode → pass-through.
+
+      **Minimum tour count** (self-red-team, per ADR-0027 scale):
+      - small (1 iteration): 1 red-team tour
+      - medium (1-3 iterations): 2 red-team tours
+      - large (3+ iterations): 3+ red-team tours
+
+      This state is the structural enforcement of ADR-0037's
+      "Mode-Dependent Virtues" — without it, the mode separation is
+      advisory and skills will drift back to minimalism.
     emits_evidence: [decision]
 
   report:

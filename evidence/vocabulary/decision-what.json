@@ -5,7 +5,7 @@
   "description": "Canonical Decision.what values emitted across AIECP. Per ADR-0026, a procedural linter (scripts/validate-what-vocabulary.mjs) scans every Decision entity's `what` field against this registry and warns on unknown values. This is a soft linter (warnings, not errors) — backwards-compatible, no schema_version bump required. Each entry has: pattern (exact string OR regex), category, description, examples, emitted_by (which skill/workflow produces it), introduced_in (ADR or commit).",
 
   "version": "1.0.0",
-  "last_updated": "2026-08-16",
+  "last_updated": "2026-08-17",
 
   "entries": [
     {
@@ -409,6 +409,62 @@
       "emitted_by": ["workflows/orchestrator.sm.yaml classify-goal state"],
       "consumed_by": ["route state (to decide fast-path vs full FSM vs human-approval)"],
       "introduced_in": "ADR-0034 + ADR-0035 wiring sprint"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "product_vision_defined",
+      "category": "creation-mode-enrichment",
+      "description": "product-vision skill completed its market-aware enrichment of requirements-gathering's output. Researched domain standards via web_search (recency-verification), built the Domain Standards table, defined the Core Loop, and wrote the Launch-Ready V1 scope (must-have / wow-factor-targets / core-loop-completeness / post-launch). The orchestrator's quality-gate state REQUIRES this Decision before emitting quality_gate_passed (ADR-0037/0038).",
+      "examples": ["product_vision_defined"],
+      "emitted_by": ["skills/product-vision/SKILL.md step 7"],
+      "consumed_by": ["workflows/orchestrator.sm.yaml quality-gate state", "skills/creative-expansion/SKILL.md step 1 (reads specs/product-vision.md for Wow Factor Targets)"],
+      "introduced_in": "ADR-0037/0038 (Mode-Dependent Virtues + quality-gate enforcement)"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "creative_expansion_suggested",
+      "category": "creation-mode-enrichment",
+      "description": "creative-expansion skill completed its visual/interactive enrichment audit of the implementation. Emitted with four structured arrays in the Decision payload: suggestions (each with priority must-have/should-have/nice-to-have + target_surface), implemented (already present, with evidence), missing (actionable asks), rejected (explicitly rejected with documented reason). The orchestrator's quality-gate state REQUIRES this Decision before emitting quality_gate_passed (ADR-0038); unaddressed must-haves (missing AND no rejected entry with a legitimate reason) cause quality_gate_failed.",
+      "examples": ["creative_expansion_suggested"],
+      "emitted_by": ["skills/creative-expansion/SKILL.md step 6"],
+      "consumed_by": ["workflows/orchestrator.sm.yaml quality-gate state"],
+      "introduced_in": "ADR-0037/0038 (Mode-Dependent Virtues + quality-gate enforcement)"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "quality_gate_passed",
+      "category": "quality-gate",
+      "description": "orchestrator's quality-gate state verified all three creation-mode enrichment processes ran AND no critical/high gaps remain. Transition to report. In fix mode this is a pass-through (no enrichment needed); in creation mode it requires product_vision_defined + creative_expansion_suggested + red_team findings all addressed. Per ADR-0038 this is a BLOCKING gate, not advisory.",
+      "examples": ["quality_gate_passed"],
+      "emitted_by": ["workflows/orchestrator.sm.yaml quality-gate state"],
+      "consumed_by": ["orchestrator transition table (quality-gate → report on quality_gate_passed)"],
+      "introduced_in": "ADR-0037/0038"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "quality_gate_failed",
+      "category": "quality-gate",
+      "description": "orchestrator's quality-gate state found that one or more creation-mode enrichment processes did NOT run, OR critical/high findings remain unaddressed. Transition back to classify-goal with an enriched decomposition naming the missing sub-goals. Per ADR-0038 this is the structural enforcement of Mode-Dependent Virtues — without it, creation mode drifts back to fix-mode minimalism.",
+      "examples": ["quality_gate_failed"],
+      "emitted_by": ["workflows/orchestrator.sm.yaml quality-gate state"],
+      "consumed_by": ["orchestrator transition table (quality-gate → classify-goal on quality_gate_failed)"],
+      "introduced_in": "ADR-0037/0038"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^red_team_finding:(critical|high|medium|low|info)(:[a-z][a-z0-9_-]*)?$",
+      "category": "creation-mode-enrichment",
+      "description": "self-red-team skill's tour produced a finding (per ADR-0037/0038 creation-mode enrichment). Format: red_team_finding:<severity>:<slug>. Severity is one of critical/high/medium/low/info (mirrors CVSS-style ranking and the risk_classified vocabulary). Slug is free-form snake/kebab-case naming the gap (e.g., missing_upgrade_tree, no_help_flag, save_load_silent). Critical/high findings force quality_gate_failed; medium/low/info are advisory.",
+      "examples": [
+        "red_team_finding:critical:missing_core_loop_stage",
+        "red_team_finding:high:no_help_flag",
+        "red_team_finding:medium:save_success_silent",
+        "red_team_finding:low:missing_favicon",
+        "red_team_finding:info:typo_in_about_page"
+      ],
+      "emitted_by": ["skills/self-red-team/SKILL.md (each tour)"],
+      "consumed_by": ["workflows/orchestrator.sm.yaml quality-gate state (critical/high → quality_gate_failed)"],
+      "introduced_in": "ADR-0037/0038 (Mode-Dependent Virtues + quality-gate enforcement)"
     }
   ],
 

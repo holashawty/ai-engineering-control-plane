@@ -54,6 +54,37 @@ that is exactly the failure mode this framework exists to prevent.
 
 ---
 
+## Creation-Mode Checklist (--yarat)
+
+When operating in creation mode (--yarat / greenfield project), before
+declaring goal_achieved, verify ALL of these:
+
+1. **Domain research**: Did you web-search what similar products have?
+   (Use recency-verification skill.) A game without progression is NOT
+   Launch-Ready V1. An e-commerce without cart is NOT Launch-Ready V1.
+
+2. **Launch-Ready V1, not MVP**: Did you define "Launch-Ready V1" scope
+   (not "MVP")? MVP triggers minimum-work; Launch-Ready V1 triggers
+   "complete first version that delights."
+
+3. **Product vision**: Did you run product-vision skill and produce
+   specs/product-vision.md with domain standards + wow factor targets?
+
+4. **Creative expansion**: Did you run creative-expansion skill? Were
+   enrichment suggestions implemented OR explicitly rejected with reason?
+
+5. **Self-red-team**: Did you run self-red-team with minimum tours
+   (small:1, medium:2, large:3+)? Were critical/high findings addressed?
+
+6. **User delight test**: Would a real user say "wow" or just "it works"?
+   "It works" is NOT sufficient in creation mode.
+
+In fix mode (bug-report, refactor, change-request), this checklist does
+NOT apply — fix mode uses minimalism (see engineering-principles.md
+Mode-Dependent Virtues).
+
+---
+
 ## Step 0 (BEFORE step 1): Self-identify your adapter
 
 **This is the most important step.** Before doing anything else,
