@@ -85,6 +85,73 @@ Mode-Dependent Virtues).
 
 ---
 
+## Zero-Prompt Mode (repo yüklediğinde otomatik başlatma)
+
+Kullanıcı uzun bir prompt yazmak ZORUNDA DEĞİL. Yeterli komutlar:
+
+### Sadece repoyu yükle + tek kelime:
+
+| Komut | Ne yapar |
+|-------|----------|
+| `--yarat` | "Sıfırdan proje yap" — agent "ne yapmak istiyorsun?" diye sorar |
+| `--yarat "fikir"` | Sıfırdan proje yap, fikir verildi |
+| `--geliştir` | Mevcut projeyi tara, eksiklikleri bul, v2'ye taşı |
+| `--entegre` | Mevcut projeye AIECP ekle |
+| (komut yok) | Agent kontrol eder: AIECP kurulu mu? Kuruluysa "ne yapmak istersin?" sorar |
+
+### Örnek kısa prompt'lar:
+
+```
+--yarat "futbol oyunu"
+```
+```
+--geliştir
+```
+```
+Bu repoyu oku ve --yarat "e-ticaret API" ile başlat.
+```
+
+Agent, bu komutlardan birini gördüğünde CHAT-ENTRYPOINT'i okumaya GEREK YOK —
+doğrudan çalışmaya başlar. Bu dosya, agent'ın "nasıl" çalışacağını anlatır;
+kullanıcının "ne" yapacağını komut belirler.
+
+---
+
+## --geliştir Modu (v1 → v2 "wow" seviyesi)
+
+`--geliştir` komutu, mevcut bir AIECP projesini tarar ve eksiklikleri
+otomatik bulup düzeltir. Kullanıcının "şunu ekle" demesine gerek yok.
+
+### Agent ne yapar:
+
+1. **Proje tarama**: tüm `src/` dosyalarını okur, LOC + dosya sayısı + specs + tests sayar
+2. **Web search**: bu domain'de rakip/standart ürünleri araştırır (recency-verification)
+3. **creative-expansion**: görsel feedback, animasyon, mikro-etkileşim, progression eksikliklerini bulur
+4. **self-red-team**: "rakip olsam ne eksik görürdüm?" diye sorar (3+ tur, scale-based)
+5. **Uygulama**: bulunan tüm eksiklikleri kodlar, evidence emit eder
+6. **quality_gate_passed**: v2 "wow" seviyesine ulaşıldığında teslim eder
+
+### Kullanım:
+
+```
+# v1 oluşturulduktan sonra:
+node init-aiecp.mjs . --geliştir
+
+# veya chat LLM'e:
+Bu projeyi --geliştir modunda tara ve v2'ye taşı.
+```
+
+### İteratif kullanım:
+
+Her `--geliştir` çalıştırması projeyi bir seviye yukarı taşır:
+- v1 → `--geliştir` → v2 (wow factor)
+- v2 → `--geliştir` → v3 (polish + edge cases)
+- v3 → `--geliştir` → v4 (production hardening)
+
+Agent her seferinde daha az şey bulana kadar devam eder.
+
+---
+
 ## Step 0 (BEFORE step 1): Self-identify your adapter
 
 **This is the most important step.** Before doing anything else,

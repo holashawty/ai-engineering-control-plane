@@ -59,12 +59,21 @@ const HELP_TEXT = `Usage:
     Runs: project-scaffolding → integrate flow → prints chat LLM prompt.
     [path] must be empty or non-existent.
 
+  node init-aiecp.mjs [path] --geliştir
+    Scan an EXISTING AIECP-initialized project and produce a v2
+    enhancement plan. The agent reads all source files, runs
+    creative-expansion + self-red-team skills, and emits a chat LLM
+    prompt that drives the orchestrator to add missing features,
+    polish, and "wow" enhancements. The user does NOT need to
+    specify what's missing — the agent discovers it autonomously.
+
   node init-aiecp.mjs --help
     Print this message and exit.
 
 Flags:
   --entegre   Integrate mode (default if no flag given)
   --yarat     Create mode (requires idea text as next argument)
+  --geliştir  Enhance mode (scan existing project → v2 enhancement plan)
   --help      Show this help
   --force-self  Allow running against the AIECP framework repo itself
                 (DANGEROUS — only for framework development/testing)
@@ -81,7 +90,7 @@ let ideaText = null;
 let targetPath = null;
 let forceSelf = false;
 
-const KNOWN_FLAGS = new Set(["--entegre", "--yarat", "--help", "--force-self"]);
+const KNOWN_FLAGS = new Set(["--entegre", "--yarat", "--geliştir", "--gelistir", "--help", "--force-self"]);
 
 for (let i = 0; i < rawArgs.length; i++) {
   const arg = rawArgs[i];
@@ -104,6 +113,11 @@ for (let i = 0; i < rawArgs.length; i++) {
       i++; // consume the idea text
     }
     // If no idea provided, we'll prompt the user later (not an error here)
+    continue;
+  }
+
+  if (arg === "--geliştir" || arg === "--gelistir") {
+    mode = "geliştir";
     continue;
   }
 
@@ -204,6 +218,123 @@ if (mode === "entegre") {
     console.log("Continuing to complete the setup (will re-add auto-activate marker)...");
     // Don't exit
   }
+}
+
+if (mode === "geliştir") {
+  // --geliştir mode: scan existing AIECP-initialized project and produce
+  // a v2 enhancement prompt for the chat LLM.
+  //
+  // This mode does NOT modify files — it READS the project, runs the
+  // creative-expansion + self-red-team mental model, and prints a
+  // ready-to-paste prompt that tells the chat LLM to enhance the project.
+  //
+  // The user runs this AFTER --yarat has produced a working v1, and wants
+  // the agent to autonomously discover what's missing and add it.
+
+  console.log("=== AIECP --geliştir (Enhance Mode) ===");
+  console.log("");
+  console.log("Scanning existing project for enhancement opportunities...");
+  console.log("");
+
+  // 1. Verify AIECP is initialized
+  const piExists = existsSync(join(aiecpDir, "project-intelligence.json"));
+  if (!piExists) {
+    console.error("ERROR: .aiecp/project-intelligence.json not found.");
+    console.error("This project has not been initialized with AIECP.");
+    console.error("Run: node init-aiecp.mjs . --entegre first, then --geliştir.");
+    process.exit(1);
+  }
+
+  // 2. Read project intelligence
+  const pi = JSON.parse(readFileSync(join(aiecpDir, "project-intelligence.json"), "utf-8"));
+  console.log(`Project: ${pi.project?.stack?.join(", ") || "unknown stack"}`);
+  console.log(`Layer: ${pi.project?.layer?.join(", ") || "unknown"}`);
+  console.log("");
+
+  // 3. Scan source files
+  const srcDir = join(targetPath, "src");
+  let srcFileCount = 0;
+  let totalLoc = 0;
+  const sourceFiles = [];
+  if (existsSync(srcDir)) {
+    function scanDir(dir) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          scanDir(fullPath);
+        } else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx") || entry.name.endsWith(".js") || entry.name.endsWith(".jsx") || entry.name.endsWith(".py")) {
+          srcFileCount++;
+          const content = readFileSync(fullPath, "utf-8");
+          totalLoc += content.split("\n").length;
+          sourceFiles.push({
+            path: fullPath.replace(targetPath + "/", ""),
+            loc: content.split("\n").length,
+          });
+        }
+      }
+    }
+    scanDir(srcDir);
+  }
+
+  // 4. Check for specs (evidence of prior planning)
+  const specsDir = join(targetPath, "specs");
+  let hasSpecs = false;
+  let specFiles = [];
+  if (existsSync(specsDir)) {
+    hasSpecs = true;
+    specFiles = readdirSync(specsDir).filter(f => f.endsWith(".md"));
+  }
+
+  // 5. Check for tests
+  const testsDir = join(targetPath, "tests");
+  let hasTests = false;
+  let testFileCount = 0;
+  if (existsSync(testsDir)) {
+    hasTests = true;
+    testFileCount = readdirSync(testsDir).filter(f => f.endsWith(".test.ts") || f.endsWith(".test.tsx") || f.endsWith(".test.js")).length;
+  }
+
+  console.log(`Source files: ${srcFileCount} (${totalLoc} LOC)`);
+  console.log(`Specs: ${hasSpecs ? specFiles.length + " files" : "none"}`);
+  console.log(`Tests: ${hasTests ? testFileCount + " files" : "none"}`);
+  console.log("");
+
+  // 6. Generate the enhancement prompt
+  console.log("═".repeat(70));
+  console.log("ENHANCEMENT PROMPT (paste this into your chat LLM):");
+  console.log("═".repeat(70));
+  console.log("");
+  console.log(`Bu projeyi --geliştir modunda taradım. Mevcut durum:`);
+  console.log("");
+  console.log(`- ${srcFileCount} kaynak dosya, ${totalLoc} LOC`);
+  console.log(`- Specs: ${hasSpecs ? specFiles.join(", ") : "yok"}`);
+  console.log(`- Tests: ${hasTests ? testFileCount + " dosya" : "yok"}`);
+  console.log("");
+  console.log(`Şimdi AIECP creation-mode quality-gate'in 3 adımını çalıştır:`);
+  console.log("");
+  console.log(`1. PRODUCT-VISION: Web search ile bu domain'deki rakip/standart`);
+  console.log(`   ürünleri ara. Bu projede EKSİK olan standart özellikleri bul.`);
+  console.log(`   (creative-expansion skill'i)`); 
+  console.log("");
+  console.log(`2. CREATIVE-EXPANSION: Mevcut implementasyonu tara. Görsel`);
+  console.log(`   feedback, animasyon, mikro-etkileşim, progression eksiklikleri`);
+  console.log(`   var mı? (ux-design skill'i step 6: Domain Conventions)`);
+  console.log("");
+  console.log(`3. SELF-RED-TEAM: "Rakip olsam bu üründe ne eksik görürdüm?"`);
+  console.log(`   diye sor. Critical/high bulgu varsa düzelt.`);
+  console.log(`   (self-red-team skill'i, project_scale: large → 3+ tur)`);
+  console.log("");
+  console.log(`Bulduğun tüm eksiklikleri uygula. evidence emit et. quality_gate_passed`);
+  console.log(`olana kadar durma. Hedef: v1 → v2 "wow" seviyesine taşı.`);
+  console.log("");
+  console.log("═".repeat(70));
+  console.log("");
+  console.log("Next steps:");
+  console.log("  1. Copy the prompt above into your chat LLM (ChatGPT/Claude/GLM)");
+  console.log("  2. The LLM will scan the project, find gaps, and enhance it");
+  console.log("  3. After enhancement, run --geliştir again for v3 (iterative)");
+  console.log("");
+  process.exit(0);
 }
 
 if (mode === "yarat") {

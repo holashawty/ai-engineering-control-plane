@@ -845,6 +845,24 @@ Sistem otomatik:
 
 Sistem: `init-aiecp.mjs` → discovery → kullanıcı devam eder.
 
+### `--geliştir` — Mevcut projeyi v2'ye taşı (otomatik eksiklik tespiti)
+
+```
+[repo linki veya zip] --geliştir
+```
+
+Sistem otomatik:
+1. Proje dosyalarını tarar (src/, specs/, tests/)
+2. Web search ile domain rakiplerini araştırır
+3. `creative-expansion` → görsel/etkileşim eksikliklerini bulur
+4. `self-red-team` → "rakip olsam ne eksik görürdüm?" (3+ tur)
+5. Bulunan tüm eksiklikleri uygular → `quality_gate_passed` → v2 teslim
+
+Her `--geliştir` çalıştırması projeyi bir seviye yukarı taşır:
+- v1 → `--geliştir` → v2 (wow factor)
+- v2 → `--geliştir` → v3 (polish + edge cases)
+- v3 → `--geliştir` → v4 (production hardening)
+
 ### Komut yoksa
 
 Agent kontrol eder: `.aiecp/project-intelligence.json` var mı?
