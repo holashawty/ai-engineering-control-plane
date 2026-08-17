@@ -271,7 +271,7 @@ function runInDocker(
     "--cap-drop=ALL",
     "--network=none",
     "--tmpfs", "/tmp:rw,noexec,nosuid,size=65536k",
-    "-v", `${opts.workDir}:/workspace`,
+    "-v", `${opts.workDir}:/workspace:rw`,
     "-w", "/workspace",
     // Give Docker a few seconds to gracefully terminate the container
     // when the parent kills it on timeout. The `--stop-timeout` is in
