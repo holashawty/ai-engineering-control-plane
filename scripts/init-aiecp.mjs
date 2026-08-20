@@ -364,12 +364,13 @@ if (mode === "yarat") {
     process.exit(1);
   }
 
-  // 3. Run the project-scaffolding skill logic (inline, since we can't spawn an LLM)
-  //    This creates the repo skeleton per skills/project-scaffolding/SKILL.md:
+  // 3. Run the universal-scaffolding skill logic (inline, since we can't spawn an LLM)
+  //    This creates the repo skeleton per skills/universal-scaffolding/SKILL.md:
+  //    - Detect archetype from idea keywords
   //    - src/, tests/, docs/, .github/workflows/ directories
-  //    - README.md, LICENSE (MIT), .gitignore, package.json (or requirements.txt)
-  //    - .aiecp-framework/ (the AIECP framework itself, via the normal integrate flow below)
-  console.log("Step 1/5: Creating project skeleton (project-scaffolding skill)...");
+  //    - README.md, LICENSE (MIT), .gitignore, package.json
+  //    - Archetype foundation files (procedural audio, seed data, view states)
+  console.log("Step 1/5: Creating project skeleton (universal-scaffolding skill)...");
   const projectSlug = ideaText.toLowerCase()
     .replace(/[^a-z0-9\s-]/g, "")
     .trim()
@@ -381,17 +382,73 @@ if (mode === "yarat") {
   for (const d of ["src", "tests", "docs", ".github/workflows"]) {
     mkdirSync(join(projectDir, d), { recursive: true });
   }
-  writeFileSync(join(projectDir, "README.md"), `# ${ideaText}\n\nProject initialized via AIECP --yarat mode on ${new Date().toISOString()}.\nSee .aiecp-framework/ for the AIECP framework.\n`);
+
+  // Detect archetype
+  let detectedArchetype = "web-saas";
+  if (/game|oyun|arcade|futbol|soccer|casual|canvas|2d/i.test(ideaText)) {
+    detectedArchetype = "game-2d";
+  } else if (/api|backend|fastapi|rest|graphql|microservice/i.test(ideaText)) {
+    detectedArchetype = "backend-api";
+  } else if (/mobil|mobile|flutter|react native|ios|android/i.test(ideaText)) {
+    detectedArchetype = "mobile-cross";
+  } else if (/desktop|masaustu|masaüstü|tauri|electron/i.test(ideaText)) {
+    detectedArchetype = "desktop-app";
+  } else if (/cli|terminal|komut|command|system|rust/i.test(ideaText)) {
+    detectedArchetype = "systems-cli";
+  }
+
+  writeFileSync(join(projectDir, "README.md"), `# ${ideaText}\n\nProject initialized via AIECP --yarat mode on ${new Date().toISOString()}.\nArchetype: \`${detectedArchetype}\` (per ADR-0041).\nSee .aiecp-framework/ for the AIECP framework.\n`);
   writeFileSync(join(projectDir, "LICENSE"), "MIT License\n\nCopyright (c) 2026\n");
   writeFileSync(join(projectDir, ".gitignore"), "node_modules/\ndist/\n*.log\n.aiecp/\n");
   writeFileSync(join(projectDir, "package.json"), JSON.stringify({
     name: projectSlug,
     version: "0.1.0",
     description: ideaText,
+    archetype: detectedArchetype,
     license: "MIT",
     scripts: { test: "echo 'no tests yet'" },
   }, null, 2) + "\n");
-  console.log(`  Created: ${projectSlug}/`);
+
+  // Inject Archetype Starter Foundations
+  if (detectedArchetype === "game-2d") {
+    writeFileSync(join(projectDir, "src", "sound.js"), `// Procedural WebAudio Oscillator Sound Engine (ADR-0041)
+export class SoundEngine {
+  constructor() { this.ctx = null; }
+  init() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+  playTone(freq, type = 'sine', duration = 0.1, gainVal = 0.2) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+    gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + duration);
+  }
+  playGoal() {
+    this.init();
+    [261.63, 329.63, 392.00, 523.25].forEach((f, i) => setTimeout(() => this.playTone(f, 'triangle', 0.3, 0.4), i * 100));
+  }
+  playWhistle() {
+    this.init();
+    this.playTone(1800, 'sine', 0.15, 0.3);
+    setTimeout(() => this.playTone(2200, 'sine', 0.35, 0.4), 180);
+  }
+  playKick() { this.init(); this.playTone(120, 'square', 0.08, 0.5); }
+}\n`);
+  } else if (detectedArchetype === "web-saas") {
+    writeFileSync(join(projectDir, "src", "mock-data.js"), `// Rich Mock Seed Data Forge (ADR-0041 / ADR-0042)
+export const initialSeedData = [
+  { id: "item-1", title: "Premium Analytics Suite", category: "Software", price: 149.00, inStock: true, rating: 4.9, reviewsCount: 128 },
+  { id: "item-2", title: "Enterprise Cloud Gateway", category: "Infrastructure", price: 499.00, inStock: true, rating: 4.8, reviewsCount: 94 },
+  { id: "item-3", title: "Automated Workflow Engine", category: "Productivity", price: 89.00, inStock: true, rating: 4.7, reviewsCount: 312 }
+];\n`);
+  }
+
+  console.log(`  Created: ${projectSlug}/ (Archetype: ${detectedArchetype})`);
   console.log(`    src/, tests/, docs/, .github/workflows/`);
   console.log(`    README.md, LICENSE, .gitignore, package.json`);
 
@@ -444,7 +501,7 @@ console.log("Step 1/4: Setting up framework...");
 // Without it, init-aiecp.mjs fails at "Step 3: Generating agent
 // entrypoints" with "canonical entrypoint not found" — see audit
 // finding by end-user onboarding subagent (2026-08-16).
-const essentialDirs = ["workflows", "skills", "constitution", "evidence", "memory", "discovery", "executor", "adapters", "agents", "specs", "scripts"];
+const essentialDirs = ["workflows", "skills", "constitution", "evidence", "memory", "discovery", "executor", "adapters", "agents", "specs", "scripts", "context"];
 const essentialFiles = [
   "AGENTS.md", "CHAT-ENTRYPOINT.md", "CHAT-ENTRYPOINT-SANDBOX.md",
   "MCP-ENTRYPOINT.md", "NOTICE", "DECISIONS.md", "STATUS.md", "docs/archive/sprint-logs/TASKS.md", "docs/archive/sprint-logs/DELIVERABLES.md",
@@ -602,10 +659,12 @@ if (mode === "yarat") {
   console.log("");
   console.log(`     Project idea: ${ideaText}`);
   console.log("");
-  console.log("     This is a --yarat (greenfield) project. Run the orchestrator workflow");
-  console.log("     with project_scale: large. The full planning chain is required:");
+  console.log("     This is a --yarat (greenfield) project. Apply the universal-scaffolding");
+  console.log("     skill to select the optimal architectural archetype and enforce Launch-Ready V1");
+  console.log("     invariants. Run the orchestrator workflow with project_scale: large.");
+  console.log("     The full planning and quality chain is required:");
   console.log("     requirements-gathering → project-planning → architecture-design →");
-  console.log("     ux-design → feature-request → testing → code-review → release.");
+  console.log("     ux-design → feature-request → testing → vibe-antidote-qa → quality-gate → release.");
   console.log("");
   console.log("     Emit evidence per evidence/schema/ at each state. Respect safety");
   console.log("     gates (broad-refactor requires aiecp:confirm). When stuck, use");

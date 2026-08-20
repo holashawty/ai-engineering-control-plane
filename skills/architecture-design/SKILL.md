@@ -115,16 +115,16 @@ Extract from `specs/plan.md`:
 
 ### 2. Select tech stack
 
+Consult [`context/modern-tech-matrix.md`](file:///C:/Users/localUser/.gemini/antigravity/scratch/ai-engineering-control-plane/context/modern-tech-matrix.md) as the canonical catalog of modern, high-leverage technologies across all domains (Games, Web SaaS, Mobile, Desktop, APIs, Systems, AI).
+
 Under `## Technology Stack` in `specs/architecture.md`, name:
 
-- **Language + version** — e.g., Python 3.11, TypeScript 5.4,
-  Rust 1.75, Go 1.22. Cite the source: if the repo is existing,
+- **Language + version** — e.g., Python 3.12+, TypeScript 5.6+,
+  Rust 1.80+, Go 1.23+, Dart 3.5+ (Flutter), Kotlin 2.0+. Cite the source: if the repo is existing,
   cite `.aiecp/project-intelligence.json`'s `project.stack`; if
-  greenfield, cite the requirement that drove the choice (e.g.,
-  "Python per the 'data-heavy + CSV export' requirement signal;
-  the plan's Task 1.4 schedule calculation is well-supported by
-  Python's `datetime` stdlib").
-- **Framework** — e.g., FastAPI, Express, Actix, Next.js. Name
+  greenfield, cross-reference `context/modern-tech-matrix.md`.
+- **Framework & Libraries** — e.g., FastAPI + Pydantic v2, Next.js 15 + Shadcn/UI + Zustand,
+  Phaser 3 + WebAudio API (game-2d), Flutter + Riverpod, Tauri 2.0. Name
   the alternative considered and rejected (per the Decision's
   `alternatives` array): "FastAPI vs. Flask — chose FastAPI for
   native async + Pydantic validation; rejected Flask because

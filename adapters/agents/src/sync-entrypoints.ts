@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import yaml from "js-yaml";
+import * as jsYaml from "js-yaml";
+const yaml: any = (jsYaml as any).default || jsYaml;
 import type { AgentAdapter, CanonicalSources, SkillSummary, RenderedFile } from "./types.js";
 
 /** Reads agents/AGENTS.md + all skills/*\/SKILL.md frontmatter from a

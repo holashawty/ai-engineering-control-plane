@@ -80,7 +80,7 @@ export interface EvidenceEmission {
 
 export interface RunEventLogEntry {
   ts: string;
-  type: "transition" | "question" | "evidence" | "gate-check" | "blocked";
+  type: "transition" | "question" | "evidence" | "gate-check" | "blocked" | "action" | "audit_verification";
   detail: Record<string, unknown>;
 }
 

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import yaml from "js-yaml";
+import * as jsYaml from "js-yaml";
+const yaml: any = (jsYaml as any).default || jsYaml;
 import { WorkflowDefinition, WorkflowViolation } from "./types.js";
 import { StateMachine } from "./state-machine.js";
 

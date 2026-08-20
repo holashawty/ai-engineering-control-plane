@@ -79,41 +79,52 @@ declaring goal_achieved, verify ALL of these:
 6. **User delight test**: Would a real user say "wow" or just "it works"?
    "It works" is NOT sufficient in creation mode.
 
+7. **Modern Tech Matrix**: Did you consult `context/modern-tech-matrix.md`
+   to choose the cutting-edge, high-leverage technology combination
+   (e.g. Next.js 15, Shadcn, Phaser 3 + WebAudio synth, FastAPI, Flutter,
+   Tauri) rather than defaulting to outdated legacy packages?
+
 In fix mode (bug-report, refactor, change-request), this checklist does
 NOT apply — fix mode uses minimalism (see engineering-principles.md
 Mode-Dependent Virtues).
 
 ---
 
-## Zero-Prompt Mode (repo yüklediğinde otomatik başlatma)
+## Zero-Prompt Mode (Evrensel Komut & Repo Linki Desteği)
 
-Kullanıcı uzun bir prompt yazmak ZORUNDA DEĞİL. Yeterli komutlar:
+Kullanıcı uzun talimatlar veya prompt'lar yazmak ZORUNDA DEĞİL. İster web chat'e, ister bulut ajanına (Z.ai, Devin, cloud bash), ister lokal terminale girilsin, doğrudan aşağıdaki formatlar tam otonom çalışır:
 
-### Sadece repoyu yükle + tek kelime:
+### 1. Tek Satırda Repo Linki + Komut (Önerilen En Pratik Format):
 
-| Komut | Ne yapar |
-|-------|----------|
+```text
+https://github.com/holashawty/ai-engineering-control-plane --yarat "2d uzay oyunu yapacaksın"
+```
+```text
+https://github.com/holashawty/ai-engineering-control-plane --geliştir
+```
+```text
+https://github.com/holashawty/ai-engineering-control-plane --entegre
+```
+
+### 2. Sadece Komut (Repo Yüklendiğinde / Klonlandığında):
+
+| Komut | Ne Yapar |
+|---|---|
+| `--yarat "fikir"` | Sıfırdan proje yaratır, mimari arketipi seçer, Launch-Ready V1 üretir |
 | `--yarat` | "Sıfırdan proje yap" — agent "ne yapmak istiyorsun?" diye sorar |
-| `--yarat "fikir"` | Sıfırdan proje yap, fikir verildi |
-| `--geliştir` | Mevcut projeyi tara, eksiklikleri bul, v2'ye taşı |
-| `--entegre` | Mevcut projeye AIECP ekle |
+| `--geliştir` | Mevcut projeyi derinlemesine tarar, eksikleri bulur, v2 "wow" seviyesine taşır |
+| `--entegre` | Mevcut yabancı projeye AIECP beynini ve anayasasını entegre eder |
 | (komut yok) | Agent kontrol eder: AIECP kurulu mu? Kuruluysa "ne yapmak istersin?" sorar |
 
-### Örnek kısa prompt'lar:
+### 3. Bulut Ajanlarında Alt Ajan (Subagent) Kullanımı (Z.ai, Cloud Swarms):
+Eğer çalıştığınız bulut ortamı alt ajan açma yeteneğine sahipse (örn. Z.ai, Cloud Agent Swarms):
+- **Tekil döngüde kalmayın.** Görevi paralel 3-6 alt ajana bölün:
+  1. `Architect Subagent`: Spesifikasyon ve sözleşmeleri (`specs/`) hazırlar.
+  2. `Core Backend Subagent`: Veri modelleri, API router ve iş mantığını kurar.
+  3. `Frontend / UI Subagent`: Bileşenleri, ses sentezleyiciyi ve görsel arayüzü kodlar.
+  4. `Vibe-Antidote QA Subagent`: Property testlerini, fuzzing ve sınır durumlarını doğrular.
 
-```
---yarat "futbol oyunu"
-```
-```
---geliştir
-```
-```
-Bu repoyu oku ve --yarat "e-ticaret API" ile başlat.
-```
-
-Agent, bu komutlardan birini gördüğünde CHAT-ENTRYPOINT'i okumaya GEREK YOK —
-doğrudan çalışmaya başlar. Bu dosya, agent'ın "nasıl" çalışacağını anlatır;
-kullanıcının "ne" yapacağını komut belirler.
+Agent, bu komutlardan birini gördüğünde `CHAT-ENTRYPOINT`'i tekrar tekrar okumaya GEREK DUYMADAN doğrudan çalışmaya başlar.
 
 ---
 
@@ -152,49 +163,31 @@ Agent her seferinde daha az şey bulana kadar devam eder.
 
 ---
 
-## Step 0 (BEFORE step 1): Self-identify your adapter
+## Step 0 (BEFORE step 1): Self-identify your execution tier & adapter
 
-**This is the most important step.** Before doing anything else,
-determine which chat LLM adapter applies to you. The framework
-has TWO chat adapters (per ADR-0020):
+**This is the most important step.** Determine which execution tier applies to your current environment. The framework operates **polymorphically** across 3 execution tiers:
+
+### 3-Tier Execution Matrix
+
+1. **Tier 1: Pure-Text Web Chat (`chat` adapter)**
+   - **Environment:** ChatGPT / Claude web chat (no code execution / no tools).
+   - **Protocol:** Role-perspective mental simulation. You cannot write files to disk, but you generate complete, zero-omission code blocks with clear file path headers. Transition to `blocked` on operations requiring host execution.
+2. **Tier 2: Cloud Linux Sandbox (`chat-sandbox` adapter)**
+   - **Environment:** ChatGPT Code Interpreter / Advanced Data Analysis, Claude code execution, Gemini code execution, cloud container.
+   - **Protocol:** Broad operational authority. You CAN run bash/shell commands, install packages, write files in the sandbox, compile, execute test suites, run property fuzzing (`skills/vibe-antidote-qa`), generate procedural sound/seed data, and verify behavior.
+   - Read `CHAT-ENTRYPOINT-SANDBOX.md` for specific sandbox guidance.
+3. **Tier 3: Local IDE / Agentic Tool (`claude-code`, `codex`, `antigravity`)**
+   - **Environment:** Antigravity, Claude Code, Codex, IDE terminal agent.
+   - **Protocol:** Full host authority + parallel subagent forking (`invoke_subagent`), live devserver hot-loop testing, and MCP tools.
 
 ### Self-identification checklist
 
 Answer these questions honestly:
 
-1. **Do you have a code execution tool?** (e.g. ChatGPT's "Code
-   Interpreter" / "Advanced Data Analysis", Claude's code execution
-   tool, Gemini's code execution, GLM-4.5+ code execution)
-   - **YES** → you are `chat-sandbox`. Read
-     `CHAT-ENTRYPOINT-SANDBOX.md` (generated by the chat-sandbox
-     adapter) for your orientation, and use the chat-sandbox
-     capability declarations: `filesystem_read=true`,
-     `filesystem_write=true`, `shell_exec=true`,
-     `test_runner=true` (all within your sandbox).
-   - **NO** → you are `chat` (pure-text). Continue reading THIS
-     file. Your capability declarations: all false. You must
-     transition to `blocked` on
-     `requires_filesystem_write_capability`.
-
-2. **If unsure** → default to `chat` (pure-text). It is safer to
-   under-declare capabilities and transition to `blocked` than to
-   over-declare and fabricate. The `blocked` state's purpose
-   includes surfacing "I cannot determine my capabilities" as a
-   precise gap.
-
-### Why this matters
-
-The original chat adapter (commit `ff4afbc`) assumed all chat LLMs
-have zero capabilities. This was proven wrong by a real ChatGPT
-session (2026-08-14): ChatGPT correctly followed
-`workflows/_router.md` rule 1 (".aiecp/project-intelligence.json
-missing → project-onboarding first") but couldn't proceed because
-the chat adapter declared `filesystem_write=false`. ChatGPT's Code
-Interpreter is a real Python environment — it CAN write files
-inside the sandbox. The framework's router was right, the chat LLM
-was right, but the adapter's capability model was wrong. This step
-0 fixes that: identify yourself correctly, and the rest of the
-framework will work.
+1. **Do you have a code execution tool or Linux sandbox?**
+   - **YES** → you are `chat-sandbox` (Tier 2). Broad operational capability inside your sandbox: `filesystem_read=true`, `filesystem_write=true`, `shell_exec=true`, `test_runner=true`.
+   - **NO** → you are `chat` (Tier 1, pure-text). Your capability declarations: all false.
+2. **If unsure** → default to `chat` (pure-text). Under-declaring is safer than fabricating host execution.
 
 ---
 

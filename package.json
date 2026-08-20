@@ -1,8 +1,8 @@
 {
   "name": "aiecp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "AI Engineering Control Plane — portable, agent-agnostic framework that makes any LLM (chat, IDE, CLI) operate with senior-engineer discipline: evidence-driven debugging, mandatory tool use, safety gates, workflow state machines, JIT context injection, adaptive risk-based routing, Docker sandbox isolation, Tree-sitter multi-language AST, SWE-bench eval adapter. v1.0.0 Release Candidate: 36 ADRs, 35 skills, 15 workflows, 5 agent adapters, 1356 assertions passing.",
+  "description": "AI Engineering Control Plane — portable, agent-agnostic framework that makes any LLM (chat, IDE, CLI) operate with senior-engineer discipline: evidence-driven debugging, mandatory tool use, safety gates, workflow state machines, JIT context injection, adaptive risk-based routing, Docker sandbox isolation, Tree-sitter multi-language AST, SWE-bench eval adapter, physical RuntimePolicyGateway, subagent swarm coordinator, blast-radius context slicer, and closed-loop browser verifier. v2.0: 44 ADRs, 42 skills, 15 workflows, 5 agent adapters, 1358 assertions passing.",
   "license": "MIT",
   "workspaces": [
     "discovery/cli",
@@ -16,9 +16,16 @@
   "scripts": {
     "install:all": "npm install",
     "prepare": "npm run build",
+    "prepack": "npm run build && npm run validate:metadata && npm run measure-context-savings",
     "build": "npm run build --workspace=discovery/cli && npm run build --workspace=executor && npm run build --workspace=adapters/agents",
-    "test": "npm test --workspace=discovery/cli && npm test --workspace=executor && npm test --workspace=adapters/agents",
-    "bootstrap": "npm run install:all && npm run build && npm run test",
+    "test": "npm test --workspace=discovery/cli && npm test --workspace=executor && npm test --workspace=adapters/agents && npm run test:property",
+    "test:property": "node executor/examples/e2e-property-testing/drive-run.mjs",
+    "measure-context-savings": "node scripts/measure-context-savings.mjs",
+    "postbuild": "node scripts/count-assertions.mjs --write",
+    "validate:metadata": "node scripts/check-metadata-sync.mjs",
+    "benchmark": "node evaluations/benchmark-runner.mjs",
+    "verify:browser": "node scripts/browser-verifier.mjs",
+    "e2e:swarm-demo": "node executor/examples/e2e-swarm/drive-run.mjs",
     "e2e:membership-demo": "node executor/examples/e2e-membership-bug/drive-run.mjs",
     "e2e:feature-request-demo": "node executor/examples/e2e-feature-request/drive-run.mjs",
     "e2e:code-review-demo": "node executor/examples/e2e-code-review/drive-run.mjs",
@@ -53,5 +60,10 @@
     "count-assertions": "node scripts/count-assertions.mjs",
     "download-grammars": "node scripts/download-grammars.mjs",
     "init": "node scripts/init-aiecp.mjs"
+  },
+  "devDependencies": {
+    "fast-check": "^4.9.0",
+    "gpt-tokenizer": "^4.0.0",
+    "js-yaml": "^5.3.0"
   }
 }

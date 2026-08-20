@@ -104,6 +104,7 @@ async function buildToyTsRepo() {
     await writeFile(join(dir, "Dockerfile"), "FROM node:22\n");
     return dir;
 }
+import { runBlastRadiusSelfTest, BlastRadiusSlicer } from "./blast-radius.js";
 async function selfTest() {
     console.log("=== aiecp-discover self-test (structural check, no ajv — per ADR-0022) ===");
     const pyDir = await buildToyPythonRepo();
@@ -112,7 +113,8 @@ async function selfTest() {
     const tsResult = await runAgainst(tsDir, false);
     await rm(pyDir, { recursive: true, force: true });
     await rm(tsDir, { recursive: true, force: true });
-    if (!pyResult.ok || !tsResult.ok) {
+    const blastRes = runBlastRadiusSelfTest();
+    if (!pyResult.ok || !tsResult.ok || blastRes.failed > 0) {
         console.error("SELF-TEST FAILED");
         process.exit(1);
     }
@@ -125,9 +127,22 @@ async function main() {
         await selfTest();
         return;
     }
+    if (args.includes("--blast-radius")) {
+        const idx = args.indexOf("--blast-radius");
+        const targetFile = args[idx + 1];
+        if (!targetFile) {
+            console.error("Usage: aiecp-discover --blast-radius <target-file> [repo-path]");
+            process.exit(1);
+        }
+        const repoPath = args[idx + 2] && !args[idx + 2].startsWith("-") ? args[idx + 2] : ".";
+        const slicer = new BlastRadiusSlicer();
+        const slice = slicer.slice(repoPath, targetFile);
+        console.log(JSON.stringify(slice, null, 2));
+        return;
+    }
     const targetPath = args[0];
     if (!targetPath || !existsSync(targetPath)) {
-        console.error("Usage: aiecp-discover <path-to-repo> | --self-test");
+        console.error("Usage: aiecp-discover <path-to-repo> | --blast-radius <file> | --self-test");
         console.error("");
         console.error("Note: This CLI does NOT do full schema validation (per ADR-0022).");
         console.error("It runs the detector pipeline and writes the JSON. Schema validation");

@@ -39,11 +39,15 @@ function runEvalRunner() {
   // python3 evaluations/eval_runner.py — emits summary lines like:
   //   "Scenarios:  25/25 passed (0 failed)"
   //   "Assertions: 115/115 passed (0 failed)"
-  const r = spawnSync(
-    "python3",
+  const pyCmd = process.platform === "win32" ? "python" : "python3";
+  let r = spawnSync(
+    pyCmd,
     ["evaluations/eval_runner.py"],
     { cwd: REPO_ROOT, encoding: "utf-8" }
   );
+  if (r.error && process.platform === "win32") {
+    r = spawnSync("python3", ["evaluations/eval_runner.py"], { cwd: REPO_ROOT, encoding: "utf-8" });
+  }
   const out = (r.stdout || "") + (r.stderr || "");
   const scenariosLine = out.match(/Scenarios:\s+(\d+)\/(\d+) passed \((\d+) failed\)/);
   const assertionsLine = out.match(/Assertions:\s+(\d+)\/(\d+) passed \((\d+) failed\)/);
@@ -59,21 +63,20 @@ function runEvalRunner() {
 }
 
 function runNpmSelfTest(workspace) {
-  // npm test --workspace=<ws> — emits:
-  //   "=== Results: 20 passed, 0 failed ==="
-  //   "SELF-TEST PASSED" (terminal)
-  // npm writes test output to stderr in some versions; concat both.
-  // Use spawnSync with the npm executable directly to avoid shell:true.
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const r = spawnSync(
-    npmCmd,
-    ["test", `--workspace=${workspace}`],
-    { cwd: REPO_ROOT, encoding: "utf-8" }
-  );
-  const out = (r.stdout || "") + (r.stderr || "");
-  const m = out.match(/Results:\s+(\d+) passed,\s+(\d+) failed/);
-  if (!m) return { pass: 0, fail: 0, error: "could not parse results line" };
-  return { pass: parseInt(m[1], 10), fail: parseInt(m[2], 10) };
+  const cliPath = join(REPO_ROOT, workspace, "dist", "cli.js");
+  let out = "";
+  if (existsSync(cliPath)) {
+    const r = spawnSync("node", [cliPath, "--self-test"], { cwd: REPO_ROOT, encoding: "utf-8" });
+    out = (r.stdout || "") + (r.stderr || "");
+  } else {
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    const r = spawnSync(npmCmd, ["test", `--workspace=${workspace}`], { cwd: REPO_ROOT, encoding: "utf-8" });
+    out = (r.stdout || "") + (r.stderr || "");
+  }
+  const allMatches = Array.from(out.matchAll(/Results:\s+(\d+) passed,\s+(\d+) failed/g));
+  if (allMatches.length === 0) return { pass: 0, fail: 0, error: "could not parse results line" };
+  const lastMatch = allMatches[allMatches.length - 1];
+  return { pass: parseInt(lastMatch[1], 10), fail: parseInt(lastMatch[2], 10) };
 }
 
 function runE2eDriver(scriptPath) {
@@ -421,6 +424,28 @@ if (wantJson) {
 
   writeFileSync(statusPath, status);
   console.log(`Updated STATUS.md assertion table. Total: ${totalPass(components)} pass + ${totalFail(components)} fail`);
+
+  const passes = totalPass(components);
+
+  // Auto-sync package.json
+  const pkgPath = join(REPO_ROOT, "package.json");
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+  pkg.description = pkg.description.replace(/\d+\s+assertions passing/, `${passes} assertions passing`);
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+
+  // Auto-sync README.md
+  const readmePath = join(REPO_ROOT, "README.md");
+  let readme = readFileSync(readmePath, "utf-8");
+  readme = readme.replace(/assertions-\d+-brightgreen/, `assertions-${passes}-brightgreen`);
+  writeFileSync(readmePath, readme);
+
+  // Auto-sync RELEASE_NOTES.md
+  const relPath = join(REPO_ROOT, "RELEASE_NOTES.md");
+  let rel = readFileSync(relPath, "utf-8");
+  rel = rel.replace(/\|\s*Passing Assertions\s*\|\s*\d+\s*\|/, `| Passing Assertions | ${passes} |`);
+  writeFileSync(relPath, rel);
+
+  console.log(`Auto-synced assertion counts (${passes}) across package.json, README.md, and RELEASE_NOTES.md.`);
   console.log("");
   console.log(renderMarkdownTable(components));
 } else if (wantCheck) {

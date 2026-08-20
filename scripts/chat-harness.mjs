@@ -57,7 +57,8 @@ import { mkdtempSync, rmSync, readdirSync, readFileSync as readFileSyncSync } fr
 import { tmpdir } from "node:os";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import yaml from "js-yaml";
+import * as jsYaml from "js-yaml";
+const yaml = jsYaml.default || jsYaml;
 
 const AjvCtor = /** @type {any} */ (Ajv2020);
 const addFormatsFn = /** @type {any} */ (addFormats);

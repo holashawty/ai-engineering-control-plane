@@ -60,11 +60,15 @@ export interface SandboxResult {
   timedOut: boolean;
 }
 
+import { RuntimePolicyGateway, GatewayContext } from "./runtime-gateway.js";
+
 export interface SandboxOptions {
   /** Directory mounted as /workspace inside the container (read-write,
    *  so test artifacts can be written). MUST exist on the host — the
    *  runner does not create it. Resolved to an absolute path. */
   workDir: string;
+  /** Mandatory Runtime Policy Gateway to enforce safety gates on commands before spawning. */
+  gateway: RuntimePolicyGateway;
   /** Max wall-clock time the command may run, in milliseconds.
    *  Default 30000 (30s). On expiry, the container/process is killed
    *  and `timedOut: true` is set in the result. */
@@ -73,6 +77,8 @@ export interface SandboxOptions {
    *  from sandbox/Dockerfile.aiecp-executor). The runner does NOT
    *  build the image — that's an ops step (see ADR-0035 ops checklist). */
   image?: string;
+  /** Optional gateway context for permission tokens. */
+  gatewayContext?: GatewayContext;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -193,6 +199,42 @@ export function runInSandbox(
   const workDir = resolveWorkDir(opts.workDir);
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const image = opts.image ?? DEFAULT_SANDBOX_IMAGE;
+
+  // Always intercept via RuntimePolicyGateway (mandatory physical enforcement)
+  const gateway = opts.gateway;
+  const cmdStr = command.join(" ");
+  const evalResult = gateway.evaluate(
+    {
+      tool: "shell_exec",
+      target: cmdStr,
+      intent: "sandbox command execution",
+    },
+    opts.gatewayContext ?? { workflowState: "execute-workflow" }
+  );
+
+  if (evalResult.decision === "BLOCKED") {
+    return {
+      exitCode: 126,
+      stdout: "",
+      stderr: `SECURITY BLOCK: Runtime Policy Gateway blocked command: ${evalResult.reason}`,
+      durationMs: 0,
+      sandboxed: isDockerAvailable(),
+      timedOut: false,
+      warning: `BLOCKED by RuntimePolicyGateway: ${evalResult.reason}`,
+    };
+  }
+
+  if (evalResult.decision === "REQUIRE_HUMAN_APPROVAL" && !opts.gatewayContext?.humanApprovalToken) {
+    return {
+      exitCode: 126,
+      stdout: "",
+      stderr: `REQUIRE HUMAN APPROVAL: ${evalResult.reason}`,
+      durationMs: 0,
+      sandboxed: isDockerAvailable(),
+      timedOut: false,
+      warning: `REQUIRE_HUMAN_APPROVAL: ${evalResult.reason}`,
+    };
+  }
 
   const start = Date.now();
 

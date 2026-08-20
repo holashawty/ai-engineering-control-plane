@@ -1,4 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -140,6 +141,16 @@ async function scenarioHappyPath(runDir: string) {
   run.advanceWithConfirmation("fix_applied");
   check("state is verify", run.currentState === "verify");
 
+  // Mandatory Shell execution check via WorkflowRun.runShell()
+  const shellBlock = run.runShell(["rm", "-rf", "/"]);
+  check("runShell physically blocks destructive command with exitCode 126", shellBlock.exitCode === 126);
+  check("runShell warning records blocked decision", shellBlock.warning?.includes("BLOCKED") === true);
+
+  // Swarm execution check via WorkflowRun.runSwarm()
+  const swarmReport = await run.runSwarm("Feature implementation with contracts and fuzz testing", "web-saas");
+  check("runSwarm completes 4 tasks successfully", swarmReport.successfulTasks === 4);
+  check("runSwarm reaches consensus", swarmReport.consensusStatus === "CONSENSUS_ACHIEVED");
+
   // verify -> regression-protect
   await run.emitEvidence("validation", {
     id: "validation-verify-1",
@@ -175,6 +186,26 @@ async function scenarioHappyPath(runDir: string) {
   });
   run.advance("replay_matches");
   check("state is report (terminal)", run.currentState === "report" && run.isTerminal());
+  // Tampering detection verification at terminal transition
+  const tamperDir = join(runDir, "tamper");
+  mkdirSync(tamperDir, { recursive: true });
+  const runTamper = new WorkflowRun(def, { runDir: tamperDir });
+  runTamper.advance("intent_classified");
+  runTamper.runShell(["echo", "tamper-test"]);
+  const tamperLog = runTamper.gateway.getAuditLog();
+  if (tamperLog.length > 0) {
+    tamperLog[0].auditHash = "deadbeef12345678";
+  }
+  check("verifyAuditChain detects tampering", runTamper.gateway.verifyAuditChain() === false);
+
+  let tamperCaught = false;
+  try {
+    (runTamper.machine as any).current = "report";
+    (runTamper as any).checkTerminalAuditChain();
+  } catch (e: any) {
+    tamperCaught = e.kind === "audit-chain-corrupted";
+  }
+  check("tampered audit log is caught and throws audit-chain-corrupted", tamperCaught === true);
 
   check("exactly 1 question was asked", run.questions.count === 1);
   check("log has entries for every transition + evidence + gate check", run.log.length > 10);
@@ -230,6 +261,11 @@ async function scenarioInvalidInputsRejected(runDir: string) {
   );
 }
 
+import { runGatewaySelfTest } from "./runtime-gateway.js";
+import { runSwarmSelfTest, SubagentSwarmCoordinator } from "./subagent-swarm.js";
+import { runVerificationBudgetSelfTest, VerificationBudgetEngine } from "./verification-budget.js";
+import { runEvidenceGraphSelfTest, CausalEvidenceGraph } from "./evidence-graph.js";
+
 async function selfTest() {
   console.log("=== aiecp-run self-test ===");
   const tmp = await mkdtemp(join(tmpdir(), "aiecp-run-"));
@@ -237,6 +273,22 @@ async function selfTest() {
     await scenarioHappyPath(join(tmp, "scenario1"));
     await scenarioQuestionEconomy(join(tmp, "scenario2"));
     await scenarioInvalidInputsRejected(join(tmp, "scenario3"));
+    
+    const gwRes = runGatewaySelfTest();
+    passed += gwRes.passed;
+    failed += gwRes.failed;
+
+    const swarmRes = await runSwarmSelfTest();
+    passed += swarmRes.passed;
+    failed += swarmRes.failed;
+
+    const budgetRes = runVerificationBudgetSelfTest();
+    passed += budgetRes.passed;
+    failed += budgetRes.failed;
+
+    const graphRes = runEvidenceGraphSelfTest();
+    passed += graphRes.passed;
+    failed += graphRes.failed;
   } finally {
     await rm(tmp, { recursive: true, force: true });
   }
@@ -255,10 +307,37 @@ async function main() {
     await selfTest();
     return;
   }
+
+  if (args[0] === "swarm") {
+    const goal = args[1] || "Default Engineering Mission";
+    const archetype = args.includes("--archetype")
+      ? args[args.indexOf("--archetype") + 1]
+      : "web-saas";
+    const coordinator = new SubagentSwarmCoordinator();
+    const tasks = coordinator.planSwarm(goal, archetype);
+    console.log(`[AIECP Swarm] Decomposed goal into ${tasks.length} specialized tasks:`);
+    for (const t of tasks) {
+      console.log(`  - [${t.role}] ${t.id}: ${t.objective}`);
+    }
+    const report = await coordinator.executeSwarm(tasks);
+    console.log(`[AIECP Swarm] Execution complete: ${report.consensusStatus} (${report.successfulTasks}/${report.totalTasks} passed)`);
+    return;
+  }
+
+  if (args[0] === "graph") {
+    const runDir = args[1] || ".aiecp/evidence";
+    const graph = new CausalEvidenceGraph();
+    graph.loadFromDir(runDir);
+    console.log(`[AIECP Evidence Graph] Loaded graph from ${runDir}`);
+    return;
+  }
+
   console.log(
-    "aiecp-run: no interactive/agent-driven mode yet (see STATUS.md). " +
-      "Use --self-test to verify the executor engine, or use the WorkflowRun " +
-      "API directly (executor/src/run.ts) from an agent adapter."
+    "aiecp: AI Engineering Control Plane Executor CLI\n" +
+      "Commands:\n" +
+      "  aiecp swarm <goal> [--archetype <archetype>]  Plan & execute parallel subagent swarm\n" +
+      "  aiecp graph [evidence-dir]                    Query causal evidence graph & lineage\n" +
+      "  aiecp --self-test                             Run full executor validation suite\n"
   );
 }
 

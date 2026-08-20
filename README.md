@@ -1,10 +1,10 @@
 # AI Engineering Control Plane (AIECP)
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-v1.0.0-green.svg)
-![ADRs](https://img.shields.io/badge/ADRs-36-orange.svg)
-![Skills](https://img.shields.io/badge/skills-35-yellow.svg)
-![Assertions](https://img.shields.io/badge/assertions-1356-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-v2.0.0-green.svg)
+![ADRs](https://img.shields.io/badge/ADRs-44-orange.svg)
+![Skills](https://img.shields.io/badge/skills-42-yellow.svg)
+![Assertions](https://img.shields.io/badge/assertions-1358-brightgreen.svg)
 
 **AI kodlama ajanlarına senior/principal mühendis disiplinini dayatan**, ajan-
 bağımsız, taşınabilir bir kontrol düzlemi: kanıt odaklı (evidence-driven),

@@ -25,7 +25,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import yaml from "js-yaml";
+import * as jsYaml from "js-yaml";
+const yaml: any = (jsYaml as any).default || jsYaml;
 import { WorkflowDefinition } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

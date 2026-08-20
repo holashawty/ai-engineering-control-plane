@@ -50,9 +50,12 @@ import {
   DEFAULT_TIMEOUT_MS,
   _resetDockerCacheForTests,
 } from "../../dist/sandbox-runner.js";
+import { RuntimePolicyGateway } from "../../dist/runtime-gateway.js";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+const defaultGateway = new RuntimePolicyGateway();
 
 let passed = 0, failed = 0;
 function check(label, cond, detail = "") {
@@ -80,7 +83,7 @@ console.log("\n--- Test 2-7: runInSandbox(['echo','hello']) happy path ---");
 {
   const tmpDir = mkdtempSync(join(tmpdir(), "aiecp-sandbox-echo-"));
   try {
-    const result = runInSandbox(["echo", "hello"], { workDir: tmpDir });
+    const result = runInSandbox(["echo", "hello"], { workDir: tmpDir, gateway: defaultGateway });
 
     check("exitCode === 0 for 'echo hello'",
       result.exitCode === 0, `got exitCode=${result.exitCode}, stderr=${result.stderr}`);
@@ -131,6 +134,7 @@ console.log("\n--- Test 8: timeout is enforced (sleep 5, timeoutMs=500) ---");
     const start = Date.now();
     const result = runInSandbox(["sleep", "5"], {
       workDir: tmpDir,
+      gateway: defaultGateway,
       timeoutMs: 500,
     });
     const elapsed = Date.now() - start;
@@ -165,7 +169,7 @@ console.log("\n--- Test 9: empty command throws TypeError ---");
     let threw = false;
     let caughtType = "";
     try {
-      runInSandbox([], { workDir: tmpDir });
+      runInSandbox([], { workDir: tmpDir, gateway: defaultGateway });
     } catch (e) {
       threw = true;
       caughtType = e.constructor.name;
@@ -189,7 +193,7 @@ console.log("\n--- Test 10: non-existent workDir throws ---");
   const ghostDir = join(tmpdir(), "aiecp-sandbox-ghost-does-not-exist-" + Date.now());
   let threw = false;
   try {
-    runInSandbox(["echo", "x"], { workDir: ghostDir });
+    runInSandbox(["echo", "x"], { workDir: ghostDir, gateway: defaultGateway });
   } catch (e) {
     threw = true;
     check("non-existent workDir throws Error",
@@ -216,7 +220,7 @@ console.log("\n--- Test 11: writes a file to workDir (fallback mode only) ---");
     const markerFile = "sandbox-write-test.txt";
     const result = runInSandbox(
       ["sh", "-c", `echo 'from-sandbox' > ${markerFile}`],
-      { workDir: tmpDir },
+      { workDir: tmpDir, gateway: defaultGateway },
     );
     const written = existsSync(join(tmpDir, markerFile));
 

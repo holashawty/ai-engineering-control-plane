@@ -20,7 +20,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
-import yaml from "js-yaml";
+import * as jsYaml from "js-yaml";
+const yaml = jsYaml.default || jsYaml;
 
 // ajv's ESM exports are awkward at runtime — coerce to plain values
 // without TypeScript syntax (this file is plain .mjs, not .ts).

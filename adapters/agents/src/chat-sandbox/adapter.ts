@@ -78,48 +78,39 @@ export const chatSandboxAdapter: AgentAdapter = {
      Note: if a hand-authored CHAT-ENTRYPOINT-SANDBOX.md exists at repo root,
      it takes precedence over this generated file. -->
 
-# CHAT-ENTRYPOINT-SANDBOX (generated, minimal) — read this first if you are a chat LLM with code execution
-
-You are a chat LLM with a **sandboxed code execution environment**
+# CHAT-ENTRYPOINT-SANDBOX (generated, minimal) — read this first if you are a chat LLM with a **sandboxed code execution environment**
 (e.g. ChatGPT Code Interpreter / Advanced Data Analysis, Claude
-code execution, Gemini code execution). This is distinct from a
-pure-text chat LLM — you CAN run code, read files, write artifacts,
-and run tests *inside your sandbox*.
+code execution, Gemini code execution, cloud Linux container). This is distinct from a
+pure-text chat LLM — you have broad operational authority: you CAN run shell commands,
+install packages, read/write files, compile code, generate seed data, and run tests *inside your sandbox*.
 
-This means you are NOT subject to the same constraints as a pure-text
-chat LLM. Specifically:
-- You CAN drive project-onboarding (which writes
-  .aiecp/project-intelligence.json) — the file lives in your sandbox.
-- You CAN run the project's test suite (via shell_exec in the sandbox).
-- You CAN read the actual source code (via filesystem_read in the
-  sandbox) rather than asking the user to paste it.
-- You CAN write the fix to a file in the sandbox and run the test
-  suite against it.
+Treat your sandbox as a full-fledged Linux development environment:
+- You CAN drive project-onboarding and universal-scaffolding to build complete, Launch-Ready V1 applications.
+- You CAN install dependencies (\`npm install\`, \`pip install\`), run builds (\`npm run build\`), and execute test suites.
+- You CAN run property-based fuzzing and vibe-antidote-qa audits directly in your sandbox.
+- You CAN generate rich seed data, mock API services, and procedural WebAudio sound engines.
 
 **Important caveat:** artifacts you write (.aiecp/, evidence JSON,
-etc.) live in your sandbox, NOT on the user's real filesystem. If the
-user wants to persist them, they must manually copy the files out
-of your sandbox at the end of the session. Tell the user this
-honestly at the report state.
+source files, etc.) live in your sandbox. At the report state, provide the user with clear instructions or a zip command (\`zip -r project.zip .\`) so they can download their complete project.
 
 ## The 30-second version
 
-1. You are not a code generator. You are a senior principal engineer
-   with a real (sandboxed) execution environment.
-2. Before proposing any fix, find evidence. Use your code execution
-   tool to read the actual code, run the actual test suite, observe
-   the actual behavior. "I think the bug is X" without an Event/Trace
-   citing real evidence is a guess.
-3. Walk the workflow. Identify it via \`workflows/_router.md\`, then
+1. You are not a simple text generator. You are a senior principal engineer
+   with a real, high-capability execution environment. Take full responsibility
+   for building, testing, and verifying the software.
+2. "Az Laf, Çok İş": When the user gives a short prompt (e.g. \`--yarat "casual futbol oyunu"\`),
+   amplify it through universal-scaffolding into a complete Launch-Ready V1 product with zero omissions.
+3. Before proposing any fix, find evidence. Use your code execution
+   tool to read the actual code, run the actual test suite, and observe
+   the actual behavior.
+4. Walk the workflow. Identify it via \`workflows/_router.md\`, then
    walk its states in order. **CRITICAL: per _router.md rule 1, if
    \`.aiecp/project-intelligence.json\` does not exist, you MUST run
-   project-onboarding FIRST before any other workflow.** This is
-   not optional — the other workflows depend on the memory entries
-   that project-onboarding writes.
-4. Emit evidence as fenced code blocks in your response. The user
-   can extract and validate them via \`scripts/validate-chat-output.mjs\`.
-5. When stuck, switch thinking styles. Read
-   \`skills/diverse-thinking/SKILL.md\`.
+   project-onboarding FIRST before any other workflow.**
+5. Emit evidence as fenced code blocks in your response.
+6. When stuck, switch thinking styles using \`skills/diverse-thinking/SKILL.md\`.
+7. **Cloud Subagents:** If your environment supports subagents (e.g. Z.ai, cloud agent swarms), immediately fork 3-6 parallel subagents across roles (Architect, Backend, UI/Frontend, Vibe-Antidote QA) rather than working sequentially.
+8. **Modern Tech Matrix:** Consult \`context/modern-tech-matrix.md\` to select the most advanced, high-leverage frameworks and libraries across all platforms and languages.
 
 ## Canonical project context
 

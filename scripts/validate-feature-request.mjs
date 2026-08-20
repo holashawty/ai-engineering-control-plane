@@ -13,7 +13,8 @@
 
 import { loadWorkflow } from "../executor/dist/workflow-loader.js";
 import { readFileSync } from "node:fs";
-import yaml from "js-yaml";
+import * as jsYaml from "js-yaml";
+const yaml = jsYaml.default || jsYaml;
 
 const path = "workflows/feature-request.sm.yaml";
 const raw = readFileSync(path, "utf-8");

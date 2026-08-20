@@ -1828,3 +1828,64 @@ Every framework-level decision — especially anything touching
   new skills — product-vision, creative-expansion, self-red-team —
   are the first 3 role-perspectives. The remaining 3 will be added
   as skills in future commits.)
+
+## ADR-0040 — Polymorphic Multi-Tier Execution Model (Chat Web vs Cloud Sandbox vs Local IDE)
+
+- **Context:** AIECP is executed across diverse runtime environments: pure-text web chats (ChatGPT, Claude web), cloud Linux sandboxes (Code Interpreter, cloud bash VM), and local IDE agentic tools (Antigravity, Claude Code). Previously, the distinction between sandboxed cloud LLMs and local agents was blurry, causing sandboxed agents to under-utilize their real Linux environment.
+- **Decision:** Explicitly codify 3 Polymorphic Execution Tiers:
+  - **Tier 1 (Pure-Text Web Chat):** Role-perspective mental simulation, complete zero-omission code generation, cognitive verification.
+  - **Tier 2 (Cloud Linux Sandbox):** High operational authority. The agent runs shell commands, installs dependencies, compiles code, runs test suites, generates rich seed data, and executes property-based fuzzing inside its sandbox.
+  - **Tier 3 (Local IDE / Agentic Tools):** Full host authority + real parallel subagent swarms (`invoke_subagent`), live devserver hotloops, and MCP tool execution.
+- **Status:** Decided 2026-08-20. Active.
+
+## ADR-0041 — Universal Architectural Archetypes & Launch-Ready V1 Invariants
+
+- **Context:** Supporting every conceivable programming language and framework (Web, Mobile, Casual Games, Desktop, Backend API, Systems CLI) without bloating the repository with thousands of static template files.
+- **Decision:** Introduce 6 dynamic Architectural Archetypes in `skills/universal-scaffolding/SKILL.md`:
+  1. `game-2d`: Phaser 3 / HTML5 Canvas + Procedural WebAudio Oscillator Synthesizer (zero external audio dependencies) + Fixed 60fps Delta Time + LocalStorage persistence.
+  2. `web-saas`: Next.js 15 / Vite + Tailwind v4 + Shadcn UI + Lucide + 20+ realistic Mock Seed Data records + Error Boundaries + Toast notifications.
+  3. `mobile-cross`: Flutter / React Native / Kotlin Compose + Safe Area + Offline Local Storage + Haptics.
+  4. `desktop-app`: Tauri (Rust/TS) / Electron + Secure IPC Bridge + Keyboard Shortcuts.
+  5. `backend-api`: FastAPI / Go Fiber / NestJS + OpenAPI docs + Global RFC 7807 Error Handlers + Automated DB Seed scripts.
+  6. `systems-cli`: Rust / Go / Python Click + Standard Exit Codes (0/1/2) + Structured JSON Output.
+- **Status:** Decided 2026-08-20. Active.
+
+## ADR-0042 — Vibe-Antidote Resilience & Zero-Defect QA Protocol
+
+- **Context:** AI agents frequently fall into the "vibe coder" trap: producing code with green unit tests that crashes in production due to race conditions, rapid double-clicks, offline disconnections, state mutations on unmounted components, or unexpected edge inputs.
+- **Decision:** Introduce `skills/vibe-antidote-qa/SKILL.md` enforcing 6 vulnerability audits:
+  1. State Machine Invariants (discriminated union states over disconnected booleans).
+  2. Concurrency & Debouncing (disabled buttons during mutation, aborted fetches).
+  3. Lifecycle & Cleanup (explicit teardown of intervals, animation frames, and audio nodes).
+  4. Resilience & Offline Fallbacks (graceful degradation, mock fallbacks for external APIs).
+  5. Boundary Hardening (empty collections, long strings, extreme numbers).
+  6. Property-Based Fuzzing (`fast-check` for TS, `Hypothesis` for Python).
+- **Status:** Decided 2026-08-20. Active.
+
+## ADR-0043 — Hardened Runtime Policy Gateway, Subagent Swarms & Blast-Radius Slicing
+
+- **Context:** External peer audits revealed three fundamental limitations:
+  1. Prompt-only governance allows non-deterministic LLMs to bypass safety rules or attempt destructive actions.
+  2. Full-repository context injection triggers token bloat and "Lost-in-the-Middle" attention dilution.
+  3. Lack of executable parallel multi-agent harnesses and automated public verification benchmarks.
+- **Decision:** Implement physical runtime enforcement and evaluation engines:
+  1. `RuntimePolicyGateway` (`executor/src/runtime-gateway.ts`): Intercepts all agent actions (`filesystem_write`, `shell_exec`, `db_mutation`, `secret_access`) before execution and physically blocks unapproved operations with cryptographic audit hashing.
+  2. `SubagentSwarmCoordinator` (`executor/src/subagent-swarm.ts`): Decomposes goals into 4 parallel specialized roles (`ARCHITECT`, `CORE_ENGINEER`, `UI_CRAFTSMAN`, `VIBE_QA_AUDITOR`) with topological dependency resolution.
+  3. `BlastRadiusSlicer` (`discovery/cli/src/blast-radius.ts`): Calculates n-hop AST dependency subgraphs around target files to provide minimal sufficient context slices, saving ~80% context tokens.
+  4. `BrowserVerifier` (`scripts/browser-verifier.mjs`): Performs closed-loop headless Playwright testing to capture runtime console errors, layout shifts, and accessibility violations.
+  5. `BenchmarkRunner` (`evaluations/benchmark-runner.mjs`): Provides a unified public evaluation harness (`npm run benchmark`) measuring Pass@1, policy compliance, regression rates, and token efficiency.
+- **Status:** Decided 2026-08-20. Active.
+
+## ADR-0044 — Verification Budget Engine, Causal Evidence Graph & Browser QA
+
+- **Context:** Large-scale enterprise AI workflows face two major challenges:
+  1. Uncontrolled test execution cost: Running full browser and property fuzzing on trivial single-line changes leads to runaway compute and LLM token expenses.
+  2. Unverifiable causal provenance: In complex agentic workflows, it is difficult to determine which specific AI proposals and decisions resulted in a given production release.
+- **Decision:** Implement adaptive verification budgeting and causal lineage tracking:
+  1. `VerificationBudgetEngine` (`executor/src/verification-budget.ts`): Dynamically assigns verification plans (`TIER_1_UNIT_FAST` to `TIER_4_FULL_AUDIT_SHADOW`) based on classified task risk (`trivial` to `critical`), strictly bounding token and time budgets.
+  2. `CausalEvidenceGraph` (`executor/src/evidence-graph.ts`): Parses all emitted evidence entities into a directed acyclic graph (DAG) enabling backward causal queries (`traceCausalChain`) from validations to root incidents.
+  3. `skills/browser-verification/SKILL.md`: Standardizes closed-loop headless browser execution and DOM/console error auditing.
+- **Status:** Decided 2026-08-20. Active.
+
+
+

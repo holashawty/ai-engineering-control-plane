@@ -465,6 +465,105 @@
       "emitted_by": ["skills/self-red-team/SKILL.md (each tour)"],
       "consumed_by": ["workflows/orchestrator.sm.yaml quality-gate state (critical/high → quality_gate_failed)"],
       "introduced_in": "ADR-0037/0038 (Mode-Dependent Virtues + quality-gate enforcement)"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^runtime_tier_selected:(tier_1_chat|tier_2_sandbox|tier_3_local)$",
+      "category": "polymorphic-runtime",
+      "description": "Step 0 self-identification of the execution environment tier per ADR-0040.",
+      "examples": [
+        "runtime_tier_selected:tier_1_chat",
+        "runtime_tier_selected:tier_2_sandbox",
+        "runtime_tier_selected:tier_3_local"
+      ],
+      "emitted_by": ["CHAT-ENTRYPOINT.md Step 0", "CHAT-ENTRYPOINT-SANDBOX.md Step 0"],
+      "introduced_in": "ADR-0040"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^archetype_selected:(game-2d|web-saas|mobile-cross|desktop-app|backend-api|systems-cli)$",
+      "category": "universal-scaffolding",
+      "description": "Selected architectural archetype for a greenfield project per ADR-0041.",
+      "examples": [
+        "archetype_selected:game-2d",
+        "archetype_selected:web-saas",
+        "archetype_selected:mobile-cross",
+        "archetype_selected:backend-api"
+      ],
+      "emitted_by": ["skills/universal-scaffolding/SKILL.md"],
+      "introduced_in": "ADR-0041"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "scaffolding_verified",
+      "category": "universal-scaffolding",
+      "description": "Universal scaffolding generated and verified with Launch-Ready V1 invariants.",
+      "examples": ["scaffolding_verified"],
+      "emitted_by": ["skills/universal-scaffolding/SKILL.md"],
+      "introduced_in": "ADR-0041"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "vibe_audit_passed",
+      "category": "vibe-antidote-qa",
+      "description": "Vibe-antidote resilience audit confirmed zero runtime vulnerabilities (invariants, race conditions, memory leaks, offline fallback).",
+      "examples": ["vibe_audit_passed"],
+      "emitted_by": ["skills/vibe-antidote-qa/SKILL.md"],
+      "introduced_in": "ADR-0042"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^vibe_defect_fixed:[a-z][a-z0-9_-]*$",
+      "category": "vibe-antidote-qa",
+      "description": "A specific vibe-coding runtime vulnerability was detected and surgically fixed.",
+      "examples": [
+        "vibe_defect_fixed:double_click_race_condition",
+        "vibe_defect_fixed:missing_offline_fallback",
+        "vibe_defect_fixed:uncleaned_timer_interval"
+      ],
+      "emitted_by": ["skills/vibe-antidote-qa/SKILL.md"],
+      "introduced_in": "ADR-0042"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "cartography_mapped",
+      "category": "codebase-cartography",
+      "description": "Codebase topology, state flow, dependency graph, and health radar mapped by codebase-cartographer skill.",
+      "examples": ["cartography_mapped"],
+      "emitted_by": ["skills/codebase-cartographer/SKILL.md"],
+      "introduced_in": "ADR-0040"
+    },
+    {
+      "pattern_type": "regex",
+      "pattern": "^verification_tier_selected:(tier_1_unit_fast|tier_2_contract_integration|tier_3_browser_fuzz_replay|tier_4_full_audit_shadow)$",
+      "category": "verification-budget",
+      "description": "Selected verification budget plan based on classified task risk per ADR-0044.",
+      "examples": [
+        "verification_tier_selected:tier_1_unit_fast",
+        "verification_tier_selected:tier_2_contract_integration",
+        "verification_tier_selected:tier_3_browser_fuzz_replay",
+        "verification_tier_selected:tier_4_full_audit_shadow"
+      ],
+      "emitted_by": ["executor/src/verification-budget.ts"],
+      "introduced_in": "ADR-0044"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "causal_provenance_verified",
+      "category": "causal-evidence",
+      "description": "Causal provenance graph validated from terminal release back to root incident per ADR-0044.",
+      "examples": ["causal_provenance_verified"],
+      "emitted_by": ["executor/src/evidence-graph.ts"],
+      "introduced_in": "ADR-0044"
+    },
+    {
+      "pattern_type": "exact",
+      "pattern": "swarm_consensus_achieved",
+      "category": "subagent-swarm",
+      "description": "Parallel subagent swarm completed all specialized roles with consensus per ADR-0039/0043.",
+      "examples": ["swarm_consensus_achieved"],
+      "emitted_by": ["executor/src/subagent-swarm.ts"],
+      "introduced_in": "ADR-0043"
     }
   ],
 

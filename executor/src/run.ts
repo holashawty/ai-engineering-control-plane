@@ -59,18 +59,70 @@ export interface WorkflowRunOptions {
   sandbox?: boolean;
 }
 
+import { RuntimePolicyGateway, AgentToolAction } from "./runtime-gateway.js";
+import { runInSandbox, SandboxResult } from "./sandbox-runner.js";
+import { SubagentSwarmCoordinator, SwarmExecutionReport } from "./subagent-swarm.js";
+
 export class WorkflowRun {
   readonly machine: StateMachine;
   readonly questions: QuestionBudget;
   readonly evidence: EvidenceStore;
+  readonly gateway: RuntimePolicyGateway;
   readonly log: RunEventLogEntry[] = [];
   private readonly policy: AutonomyPolicy;
+  private readonly runDir: string;
 
   constructor(private readonly def: WorkflowDefinition, opts: WorkflowRunOptions) {
     this.machine = new StateMachine(def);
     this.questions = new QuestionBudget(def.question_economy);
-    this.evidence = new EvidenceStore(opts.runDir ?? ".aiecp");
+    this.runDir = opts.runDir ?? ".aiecp";
+    this.evidence = new EvidenceStore(this.runDir);
     this.policy = opts.autonomyPolicy ?? DEFAULT_AUTONOMY_POLICY;
+    this.gateway = new RuntimePolicyGateway(this.policy);
+  }
+
+  /**
+   * Executes an action guarded by the Runtime Policy Gateway (ADR-0043).
+   * Throws WorkflowViolation if the action violates safety policies.
+   */
+  executeGuardedAction<T>(action: AgentToolAction, executorFn: () => T): T {
+    return this.gateway.executeGuarded(
+      action,
+      { workflowState: this.machine.currentState },
+      executorFn
+    );
+  }
+
+  /**
+   * Runs a shell command through the hardened sandbox runner, physically
+   * enforcing the RuntimePolicyGateway with the current workflow state context.
+   */
+  runShell(command: string[], workDir?: string): SandboxResult {
+    const targetDir = workDir ?? this.runDir;
+    return runInSandbox(command, {
+      workDir: targetDir,
+      gateway: this.gateway,
+      gatewayContext: { workflowState: this.machine.currentState },
+    });
+  }
+
+  /**
+   * Executes a multi-agent swarm coordinated and gated by this workflow run's gateway.
+   */
+  async runSwarm(goal: string, archetype?: string, workDir?: string): Promise<SwarmExecutionReport> {
+    const coordinator = new SubagentSwarmCoordinator(this.gateway);
+    const tasks = coordinator.planSwarm(goal, archetype);
+    const report = await coordinator.executeSwarm(tasks, undefined, workDir ?? this.runDir);
+    this.recordLog({
+      type: "action",
+      detail: {
+        action: "runSwarm",
+        goal,
+        successfulTasks: report.successfulTasks,
+        consensus: report.consensusStatus,
+      },
+    });
+    return report;
   }
 
   get currentState(): string {
@@ -165,6 +217,7 @@ export class WorkflowRun {
 
     const newState = this.machine.advance(on);
     this.recordLog({ type: "transition", detail: { from: fromState, to: newState, on } });
+    this.checkTerminalAuditChain();
     return { newState, gateDecision };
   }
 
@@ -199,6 +252,7 @@ export class WorkflowRun {
     }
     const newState = this.machine.advance(on);
     this.recordLog({ type: "transition", detail: { from: fromState, to: newState, on } });
+    this.checkTerminalAuditChain();
     return { newState };
   }
 
@@ -222,7 +276,27 @@ export class WorkflowRun {
     }
     const newState = this.machine.advance(on);
     this.recordLog({ type: "transition", detail: { from: fromState, to: newState, on } });
+    this.checkTerminalAuditChain();
     return { newState };
+  }
+
+  /**
+   * Automatically verifies cryptographic audit chain integrity when reaching any terminal state.
+   * Throws WorkflowViolation if any log entry was manipulated or forged.
+   */
+  private checkTerminalAuditChain(): void {
+    if (this.machine.isTerminal()) {
+      if (!this.gateway.verifyAuditChain()) {
+        throw new WorkflowViolation(
+          "Cryptographic audit chain integrity check failed at workflow completion (tampering detected)",
+          "audit-chain-corrupted"
+        );
+      }
+      this.recordLog({
+        type: "evidence",
+        detail: { store: "audit", status: "VERIFIED", entries: this.gateway.getAuditLog().length },
+      });
+    }
   }
 
   isTerminal(): boolean {
